@@ -1,26 +1,26 @@
-# RobotSim: Autonomous Exploration & Grasping Simulation
+# Embodied-RobotSim: Autonomous Exploration & Grasping Simulation
 
 [![ROS2](https://img.shields.io/badge/ROS2-Jazzy-brightgreen.svg)](https://docs.ros.org/en/jazzy/index.html)
 [![中文](https://img.shields.io/badge/🌍_Language-中文-blue.svg)](README.md)
 
-RobotSim is a comprehensive ROS 2 (Jazzy) simulation workspace for a differential-drive mobile robot equipped with a **Franka FR3 robotic arm**, a 2D LiDAR, a stereo RGB-D camera, and a rich, advanced sensor suite. The simulation runs in Gazebo and integrates state-of-the-art algorithms for mapping, navigation, 2D/3D perception, and mobile manipulation.
+Embodied-RobotSim is a comprehensive ROS 2 (Jazzy) simulation workspace for a differential-drive mobile robot equipped with a **Franka FR3 robotic arm**, a 2D LiDAR, a stereo RGB-D camera, and a rich, advanced sensor suite. The simulation runs in Gazebo and integrates leading-edge algorithms for mapping, navigation, 2D/3D perception, and mobile manipulation.
 
 ## 🎬 Demos
 
 | Gazebo Sim | Pick & Place |
 | :---: | :---: |
 | ![GazeboSim](assets/GazeboSim.gif) | ![Pick&Place](assets/Pick&Place.gif) |
-| *Indoor Scene Simulation* | *Autonomous Grasping via GraspNet* |
+| *Indoor Scene Simulation* | *Autonomous Grasping via YOLOE & GraspNet* |
 
 ## 🌟 Key Features
 
 * **Mobile Manipulation:** Integration of MoveIt 2 for the Franka FR3 arm with a differential-drive mobile base controller.
-* **Autonomous Exploration & Mapping:** High-accuracy SLAM utilizing Cartographer (fusing 2D LiDAR + IMU) and frontier-based autonomous exploration using `m-explore-ros2`.
+* **Autonomous Exploration & Mapping:** High-precision SLAM with Cartographer (native 2D LiDAR + IMU fusion) and frontier-based autonomous exploration using `m-explore-ros2`.
 * **Advanced Perception (Vision):** 
   * **YOLOE Inference:** Real-time object detection with text prompts (`yoloe_infer`).
 * **Semantic Occupancy & Grasping:** 
   * Generates semantic occupancy mapping using OctoMap.
-  * **GraspNet Integration:** Produces 6-DoF grasp poses from point clouds to achieve reliable pick-and-place capabilities for arbitrary objects, supporting complex collision clearance logic on point cloud and OctoMap levels.
+  * **Autonomous Grasping Integration:** Combines **YOLOE** (target localization) and **GraspNet** (pose estimation) to produce 6-DoF grasp poses from point clouds for arbitrary objects, with complex collision avoidance at both point cloud and OctoMap levels.
 
 ## 📦 Architecture Overview
 
