@@ -1,0 +1,313 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ============================================================== -->
+  <!-- Macro to add an <inertial> tag based on yaml-load properties   -->
+  <!--                                                                -->
+  <!-- name:     Name of the robot link (without prefix)              -->
+  <!-- inertial: Dictionary of inertia properties (see inertial.yaml) -->
+  <!-- ============================================================== -->
+  <xacro:macro name="franka-inertials" params="name inertials:=^">
+      <xacro:unless value="${name in inertials}">${xacro.warning('No inertia properties defined for: ' + name)}</xacro:unless>
+      <xacro:if value="${name in inertials}">
+        <!-- Access inertia properties of link 'name' -->
+        <xacro:property name="link_inertials" value="${inertials[name]}" lazy_eval="false" />
+        <inertial>
+          <origin rpy="${link_inertials.origin.rpy}" xyz="${link_inertials.origin.xyz}" />
+          <mass value="${link_inertials.mass}" />
+          <xacro:if value="${'inertia' in link_inertials}">
+            <xacro:property name="I" value="${link_inertials.inertia}" />
+            <inertia ixx="${I.xx}" ixy="${I.xy}" ixz="${I.xz}" iyy="${I.yy}" iyz="${I.yz}" izz="${I.zz}" />
+          </xacro:if>
+        </inertial>
+      </xacro:if>
+  </xacro:macro>
+
+  <!-- ========================================================== -->
+  <!-- Macro to add a single link, both with                      -->
+  <!--  * detailed meshes for environmental collision checking    -->
+  <!--  * and coarse geometry models for self-collision checking  -->
+  <!--    (only if 'gazebo' param is set)                         -->
+  <!--                                                            -->
+  <!-- name:  Name of the robot link (without prefix)             -->
+  <!-- rpy:   Rotation of the *_sc link relative to parent [rad]  -->
+  <!-- self_collision_geometries:  self <collision> models        -->
+  <!-- ========================================================== -->
+  <xacro:macro name="link_with_sc" params="name no_prefix:='false' rpy:='0 0 0' **self_collision_geometries gazebo:=false with_sc:=false with_accelerometers:=false">
+    <xacro:property name="prefix" value="${'' if no_prefix else arm_prefix + robot_type + '_'}" />
+    <!-- sub-link defining detailed meshes for collision with environment -->
+    <link name="${prefix}${name}">
+      <visual name="${prefix}${name}_visual">
+        <geometry>
+          <mesh filename="package://${description_pkg}/meshes/robot_arms/${robot_type}/visual/${name}.dae" />
+        </geometry>
+      </visual>
+      <collision name="${prefix}${name}_collision">
+        <geometry>
+          <mesh filename="package://franka_description/meshes/robot_arms/${robot_type}/collision/${name}.stl" />
+        </geometry>
+      </collision>
+      <xacro:franka-inertials name="${name}" />
+    </link>
+
+    <!-- sub-link defining coarse geometries of real robot's internal self-collision -->
+    <xacro:if value="${with_sc}">
+      <link name="${prefix}${name}_sc">
+        <xacro:unless value="${gazebo}">
+          <xacro:insert_block name="self_collision_geometries" />
+        </xacro:unless>
+      </link>
+      <!-- fixed joint between both sub-links -->
+      <joint name="${prefix}${name}_sc_joint" type="fixed">
+        <origin rpy="${rpy}" />
+        <parent link="${prefix}${name}" />
+        <child link="${prefix}${name}_sc" />
+      </joint>
+    </xacro:if>
+
+    <xacro:if value="${with_accelerometers}">
+      <xacro:franka-accelerometers prefix="${prefix}" name="${name}" config="${accelerometer_config}" />
+    </xacro:if>
+
+
+  </xacro:macro>
+
+  <!-- =========================================================== -->
+  <!-- Add a <collision> tag with a capsule, made from a cylinder  -->
+  <!-- with two spheres at its caps. The capsule will always be    -->
+  <!-- aligned with the axis of 'direction' you pass along.        -->
+  <!--                                                             -->
+  <!-- radius: Radii of both the cylinder and both spheres [m]     -->
+  <!-- length: Length of the cylinder/distance between the centers -->
+  <!--         of the spheres. NOT overall length of capsule!      -->
+  <!-- xyz:    Position of the center of the capsule/cylinder      -->
+  <!-- direction: One of { x, y, z, -x, -y, -z }                   -->
+  <!-- =========================================================== -->
+  <xacro:macro name="collision_capsule" params="radius length xyz:='0 0 0' direction:='z'">
+    <xacro:property name="r" value="${pi/2.0 if 'y' in direction else 0}" />
+    <xacro:property name="p" value="${pi/2.0 if 'x' in direction else 0}" />
+    <xacro:property name="y" value="0" />
+    <xacro:property name="x" value="${xyz.split(' ')[0]}" />
+    <xacro:property name="y" value="${xyz.split(' ')[1]}" />
+    <xacro:property name="z" value="${xyz.split(' ')[2]}" />
+    <!-- Sphere center offsets from center of cylinder -->
+    <xacro:property name="sx" value="${length / 2.0 if 'x' in direction else 0}" />
+    <xacro:property name="sy" value="${length / 2.0 if 'y' in direction else 0}" />
+    <xacro:property name="sz" value="${length / 2.0 if 'z' in direction else 0}" />
+
+    <collision>
+      <origin xyz="${x} ${y} ${z}" rpy="${r} ${p} ${y}"/>
+      <geometry>
+        <cylinder radius="${radius}" length="${length}" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="${x+sx} ${y+sy} ${z+sz}" />
+      <geometry>
+        <sphere radius="${radius}" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin xyz="${x-sx} ${y-sy} ${z-sz}" />
+      <geometry>
+        <sphere radius="${radius}" />
+      </geometry>
+    </collision>
+  </xacro:macro>
+
+  <!-- ========================================================== -->
+  <!-- Adds the required tags to simulate one joint in gazebo     -->
+  <!--                                                            -->
+  <!-- joint - Name of the fer joint to simulate                  -->
+  <!-- transmission - type of the transmission of the joint       -->
+  <!-- ========================================================== -->
+  <xacro:macro name="gazebo-joint" params="joint transmission:=hardware_interface/EffortJointInterface">
+    <gazebo reference="${joint}">
+      <!-- Needed for ODE to output external wrenches on joints -->
+      <provideFeedback>true</provideFeedback>
+    </gazebo>
+
+    <transmission name="${joint}_transmission">
+      <type>transmission_interface/SimpleTransmission</type>
+      <joint name="${joint}">
+        <hardwareInterface>${transmission}</hardwareInterface>
+      </joint>
+      <actuator name="${joint}_motor">
+        <hardwareInterface>${transmission}</hardwareInterface>
+      </actuator>
+    </transmission>
+  </xacro:macro>
+
+  <xacro:macro name="gazebo-friction" params="link mu">
+    <gazebo reference="${link}">
+      <collision>
+        <max_contacts>10</max_contacts>
+        <surface>
+          <contact>
+            <ode>
+              <!-- These two parameter need application specific tuning. -->
+              <!-- Usually you want no "snap out" velocity and a generous -->
+              <!-- penetration depth to keep the grasping stable -->
+              <max_vel>0</max_vel>
+              <min_depth>0.001</min_depth>
+            </ode>
+          </contact>
+          <friction>
+            <ode>
+              <mu>${mu}</mu>
+              <mu2>${mu}</mu2>
+            </ode>
+          </friction>
+          <bounce/>
+        </surface>
+      </collision>
+    </gazebo>
+  </xacro:macro>
+
+  <!-- ========================================================== -->
+  <!-- Adds the required tags to provide a `FrankaStateInterface` -->
+  <!-- when simulating with franka_hw_sim plugin                  -->
+  <!--                                                            -->
+  <!-- robot_type - Arm ID of the fer to simulate (default 'fer')     -->
+  <!-- ========================================================== -->
+  <xacro:macro name="transmission-franka-state" params="robot_type:=fer">
+    <transmission name="${arm_prefix}${robot_type}_franka_state">
+      <type>franka_hw/FrankaStateInterface</type>
+      <joint name="${arm_prefix}${robot_type}_joint1"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></joint>
+      <joint name="${arm_prefix}${robot_type}_joint2"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></joint>
+      <joint name="${arm_prefix}${robot_type}_joint3"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></joint>
+      <joint name="${arm_prefix}${robot_type}_joint4"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></joint>
+      <joint name="${arm_prefix}${robot_type}_joint5"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></joint>
+      <joint name="${arm_prefix}${robot_type}_joint6"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></joint>
+      <joint name="${arm_prefix}${robot_type}_joint7"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></joint>
+
+      <actuator name="${arm_prefix}${robot_type}_motor1"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></actuator>
+      <actuator name="${arm_prefix}${robot_type}_motor2"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></actuator>
+      <actuator name="${arm_prefix}${robot_type}_motor3"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></actuator>
+      <actuator name="${arm_prefix}${robot_type}_motor4"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></actuator>
+      <actuator name="${arm_prefix}${robot_type}_motor5"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></actuator>
+      <actuator name="${arm_prefix}${robot_type}_motor6"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></actuator>
+      <actuator name="${arm_prefix}${robot_type}_motor7"><hardwareInterface>franka_hw/FrankaStateInterface</hardwareInterface></actuator>
+    </transmission>
+  </xacro:macro>
+
+  <!-- ============================================================ -->
+  <!-- Adds the required tags to provide a `FrankaModelInterface`   -->
+  <!-- when simulating with franka_hw_sim plugin                    -->
+  <!--                                                              -->
+  <!-- robot_type - Arm ID of the fer to simulate (default 'fer')       -->
+  <!-- root   - Joint name of the base of the robot                 -->
+  <!-- tip    - Joint name of the tip of the robot (flange or hand) -->
+  <!-- ============================================================ -->
+  <xacro:macro name="transmission-franka-model" params="robot_type:=fer root:=fer_joint1 tip:=fer_joint7">
+    <transmission name="${arm_prefix}${robot_type}_franka_model">
+      <type>franka_hw/FrankaModelInterface</type>
+      <joint name="${root}">
+        <role>root</role>
+        <hardwareInterface>franka_hw/FrankaModelInterface</hardwareInterface>
+      </joint>
+      <joint name="${tip}">
+        <role>tip</role>
+        <hardwareInterface>franka_hw/FrankaModelInterface</hardwareInterface>
+      </joint>
+
+      <actuator name="${root}_motor_root"><hardwareInterface>franka_hw/FrankaModelInterface</hardwareInterface></actuator>
+      <actuator name="${tip}_motor_tip"  ><hardwareInterface>franka_hw/FrankaModelInterface</hardwareInterface></actuator>
+    </transmission>
+  </xacro:macro>
+
+  <xacro:macro name="inertia-cylinder" params="mass radius h">
+    <inertial>
+      <mass value="${mass}" />
+      <inertia ixx="${1./12 * mass * (3 * radius**2 + h**2)}" ixy = "0" ixz = "0"
+               iyy="${1./12 * mass * (3 * radius**2 + h**2)}" iyz = "0"
+               izz="${1./2  * mass * radius**2}" />
+    </inertial>
+  </xacro:macro>
+
+  <!-- ========================================================================= -->
+  <!-- Adds the <limit ... /> & <safety_controller/> tags given a config file    -->
+  <!-- of joint limits                                                           -->
+  <!--                                                                           -->
+  <!-- config - YAML struct defining joint limits (e.g. fer/joint_limits.yaml)   -->
+  <!-- name   - Name of the joint for which to add limits to                     -->
+  <!-- ========================================================================= -->
+  <xacro:macro name="franka-limits" params="config name">
+      <xacro:property name="limits" value="${config[name]['limit']}" lazy_eval="false" />
+      <limit lower="${limits.lower}"
+             upper="${limits.upper}"
+             effort="${limits.effort}"
+             velocity="${limits.velocity}" />
+      <safety_controller k_position="100.0"
+                         k_velocity="40.0"
+                         soft_lower_limit="${limits.lower}"
+                         soft_upper_limit="${limits.upper}" />
+      
+      <!-- Add position-based velocity limits if they exist -->
+      <xacro:if value="${'position_based_velocity_limits' in config[name]}">
+        <xacro:property name="position_based_velocity_limits" value="${config[name]['position_based_velocity_limits']}" lazy_eval="false" />
+        <position_based_velocity_limits velocity_offset="${position_based_velocity_limits.velocity_offset}" deceleration_limit="${position_based_velocity_limits.deceleration_limit}" />
+      </xacro:if>
+  </xacro:macro>
+
+  <!-- ========================================================================= -->
+  <!-- Adds the <dynamics ... /> tag given a config file of joint dynamics       -->
+  <!--                                                                           -->
+  <!-- config - YAML struct defining joint dynamics (e.g. fer/dynamics.yaml)     -->
+  <!-- name   - Name of the joint for which to add dynamics to                   -->
+  <!-- ========================================================================= -->
+  <xacro:macro name="franka-dynamics" params="config name">
+      <xacro:property name="dynamics" value="${config[name]['dynamic']}" lazy_eval="false" />
+      <dynamics D="${dynamics.D}"
+             K="${dynamics.K}"
+             damping="${dynamics.damping}"
+             friction="${dynamics.friction}"
+             mu_coulomb="${dynamics.mu_coulomb}"
+             mu_viscous="${dynamics.mu_viscous}" />
+  </xacro:macro>
+
+  <!-- ========================================================================= -->
+  <!-- Adds the <kinematics ... /> tag given a config file of joint kinematics   -->
+  <!--                                                                           -->
+  <!-- config - YAML struct defining joint kinematics (e.g. fer/kinematics.yaml) -->
+  <!-- name   - Name of the joint for which to add kinematics to                 -->
+  <!-- ========================================================================= -->
+  <xacro:macro name="franka-kinematics" params="config name">
+      <xacro:property name="kinematics" value="${config[name]['kinematic']}" lazy_eval="false" />
+      <origin rpy="${kinematics.roll} ${kinematics.pitch} ${kinematics.yaw}"
+             xyz="${kinematics.x} ${kinematics.y} ${kinematics.z}" />
+  </xacro:macro>
+
+  <!-- ================================================================================== -->
+  <!-- Adds the accelerometer frames given a config file of link accelerometers           -->
+  <!--                                                                                    -->
+  <!-- name   - Name of the link for which to add accelerometers to                       -->
+  <!-- prefix - Prefix to name                                                            -->
+  <!-- config - YAML struct defining link accelerometers (e.g. fr3v2/accelerometers.yaml) -->
+  <!-- ================================================================================== -->
+  <xacro:macro name="franka-accelerometers" params="name prefix config">
+      <xacro:property name="accelerometer_top" value="${config[name]['accelerometer_top']}" lazy_eval="false" />
+      <xacro:property name="accelerometer_bottom" value="${config[name]['accelerometer_bottom']}" lazy_eval="false" />
+
+      <link name="${prefix}${name}_accelerometer_top">
+      </link>
+      <joint name="${prefix}${name}_accelerometer_top_joint" type="fixed">
+        <origin rpy="${accelerometer_top.roll} ${accelerometer_top.pitch} ${accelerometer_top.yaw}"
+             xyz="${accelerometer_top.x} ${accelerometer_top.y} ${accelerometer_top.z}" />
+        <parent link="${prefix}${name}" />
+        <child link="${prefix}${name}_accelerometer_top" />
+      </joint>
+
+      <link name="${prefix}${name}_accelerometer_bottom">
+      </link>
+      <joint name="${prefix}${name}_accelerometer_bottom_joint" type="fixed">
+        <origin rpy="${accelerometer_bottom.roll} ${accelerometer_bottom.pitch} ${accelerometer_bottom.yaw}"
+             xyz="${accelerometer_bottom.x} ${accelerometer_bottom.y} ${accelerometer_bottom.z}" />
+        <parent link="${prefix}${name}" />
+        <child link="${prefix}${name}_accelerometer_bottom" />
+      </joint>
+
+  </xacro:macro>
+
+
+</robot>

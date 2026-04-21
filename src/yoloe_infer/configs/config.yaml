@@ -1,0 +1,59 @@
+# PointCloud Colorizer Configuration
+# 点云着色器配置
+
+# 类别名称映射 - 类别名称到ID的映射
+# Classes configuration
+classes:
+  - name: person
+    id: 0
+    color: [255, 128, 128]
+  - name: sofa
+    id: 1
+    color: [0, 255, 0]
+  - name: cup
+    id: 2
+    color: [0, 0, 255]
+  - name: book
+    id: 3
+    color: [255, 255, 0]
+  - name: table
+    id: 4
+    color: [255, 0, 255]
+  - name: chair
+    id: 5
+    color: [0, 255, 255]
+  - name: desk #running shoe
+    id: 6
+    color: [255, 165, 0]
+  - name: bed
+    id: 7
+    color: [128, 0, 128]
+  - name: TV #$trash bin
+    id: 8
+    color: [0, 128, 128]
+  - name: coke
+    id: 9
+    color: [255, 0, 0]
+
+# 默认颜色 - 用于未定义类别的对象
+default_color: [255, 255, 255]  # 白色 - White
+
+engine_path: "src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.engine"
+num_classes: 10
+conf_thres: 0.25
+iou_thres: 0.45
+mad_threshold: 3.0 #越小过滤越多
+image_topic: "/x_bot/camera_left/image_raw"
+depth_topic: "/x_bot/camera_left/depth/image_raw"
+# depth_topic: "/x_bot/camera_left/nn_depth"
+camera_info_topic: "/x_bot/camera_left/camera_info"
+mask_path: "src/x_bot/photos/finger_mask_640.png"
+min_depth: 0.2
+
+# Output topics
+image_result_topic: "~/image_result"
+pointcloud_colored_topic: "~/pointcloud_colored"
+detections_3d_topic: "~/detections_3d"
+
+# Ground filtering for pointcloud_colored (in odom frame)
+ground_filter_z_min: 0.0

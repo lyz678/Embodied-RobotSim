@@ -1,0 +1,120 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="intel_rgbd_cam_d435" params="parent *origin">
+    
+    <xacro:property name="M_PI" value="3.1415926535897931" />
+    <xacro:property name="d435_baseline" value="0.050"/>
+
+    <!-- Camera Body (Visual) & Mount -->
+    <!-- Attached directly to parent via camera_joint -->
+    <joint name="camera_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="camera_link" />
+      <xacro:insert_block name="origin"/>
+    </joint>
+
+    <link name="camera_link">
+      <visual>
+        <origin xyz="0 0 0" rpy="${M_PI/2} 0.0 ${M_PI/2}"/>
+        <geometry>
+          <mesh filename="file://$(find x_bot)/meshes/d435.stl" />
+        </geometry>
+        <material name="aluminum">
+          <color rgba="0.5 0.5 0.5 1"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+          <box size="0.02505 0.090 0.025"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.072" />
+        <origin xyz="0 0 0" />
+        <inertia ixx="0.003881243" ixy="0.0" ixz="0.0" iyy="0.000498940" iyz="0.0" izz="0.003879257" />
+      </inertial>
+    </link>
+
+    <!-- Left Camera Frame (RGBD & Infra1) -->
+    <!-- Located at center of camera body for this model -->
+    <joint name="camera_left_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="${-M_PI/2} 0 ${-M_PI/2}"/>
+      <parent link="camera_link"/>
+      <child link="camera_left_frame" />
+    </joint>
+    <link name="camera_left_frame"/>
+
+
+
+    <!-- Right Camera Frame (Infra2) -->
+    <!-- Offset by baseline (50mm) along -Y -->
+    <joint name="camera_right_joint" type="fixed">
+      <origin xyz="0 ${-d435_baseline} 0" rpy="0 0 0"/>
+      <parent link="camera_link"/>
+      <child link="camera_right_frame" />
+    </joint>
+    <link name="camera_right_frame"/>
+
+
+
+    <!-- Depth Frame (Coincident with Left) -->
+    <joint name="camera_depth_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <parent link="camera_left_frame"/>
+      <child link="camera_depth_frame" />
+    </joint>
+    <link name="camera_depth_frame"/>
+
+
+
+    <!-- Gazebo Sensors -->
+    <gazebo reference="camera_link">
+      <!-- Left (RGBD) Sensor -->
+      <sensor name="camera_left" type="rgbd_camera">
+        <pose>0 0 0 0 0 0</pose> 
+        <camera>
+          <horizontal_fov>1.5184</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>640</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.01</near>
+            <far>10.0</far>
+          </clip>
+        </camera>
+        <always_on>1</always_on>
+        <update_rate>30</update_rate>
+        <visualize>true</visualize>
+        <topic>x_bot/camera_left</topic>
+        <gz_frame_id>camera_left_frame</gz_frame_id>
+      </sensor>
+
+      <!-- Right (Mono) Sensor -->
+      <sensor name="camera_right" type="camera">
+        <pose>0 ${-d435_baseline} 0 0 0 0</pose>
+        <camera>
+          <horizontal_fov>1.5184</horizontal_fov>
+          <image>
+            <width>640</width>
+            <height>640</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.01</near>
+            <far>10.0</far>
+          </clip>
+        </camera>
+        <always_on>1</always_on>
+        <update_rate>30</update_rate>
+        <visualize>true</visualize>
+        <topic>x_bot/camera_right</topic>
+        <gz_frame_id>camera_right_frame</gz_frame_id>
+      </sensor>
+    </gazebo>
+
+  </xacro:macro>
+</robot>

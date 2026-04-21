@@ -1,0 +1,26 @@
+hand:
+  origin:
+    xyz: -0.0000376 0.0119128 0.0207260
+    rpy: 0 0 0
+  mass: 0.6544
+  inertia:
+    xx: 0.00186
+    yy: 0.00030
+    zz: 0.00174
+    xy: 0.00000
+    xz: 0.00000
+    yz: -0.00002
+
+leftfinger: &finger
+  origin:
+    xyz: 0 0.0152850 0.0219675
+    rpy: 0 0 0
+  mass: 0.0291
+  inertia:
+    xx: 0.00000849
+    yy: 0.00000853
+    zz: 0.00000177
+    xy: 0.00000000
+    xz: 0.00000000
+    yz: -0.00000106
+rightfinger: *finger

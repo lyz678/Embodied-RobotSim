@@ -1,0 +1,49 @@
+# GraspNet ROS Node Configuration
+# This file uses ROS 2 parameter file format
+
+graspnet_node:
+  ros__parameters:
+    # TensorRT Engine Configuration
+    engine_path: "/home/lyz/graspnet-baseline/graspnet.trt"  # Path to TensorRT engine file
+    plugin_path: "/home/lyz/graspnet-baseline/tensorrt_plugins/build/libfps_plugin.so"  # Path to TensorRT plugin library
+    
+    # Point Cloud Processing
+    num_point: 20000  # Number of points to sample from input cloud
+    frame_id: "odom"  # Target frame for transformations
+    
+    # Color Mapping Configuration
+    yoloe_config_path: "src/yoloe_infer/configs/config.yaml"  # Path to YOLOE config for color mapping
+    
+    # Topic Names
+    topics:
+      # Subscribers
+      input_cloud: "/yoloe_multi_text_prompt/pointcloud_colored"
+      detections_3d: "/yoloe_multi_text_prompt/detections_3d"
+      cloud_filter: "/set_cloud_filter"
+      
+      # Publishers
+      grasp_markers: "grasp_markers"
+      sampled_cloud: "graspnet_sampled_cloud"
+      grasp_pose: "grasp_pose"
+      matched_detections: "graspnet/detections_3d"
+      matched_markers: "matched_grasp_markers"
+      grasp_axes: "grasp_pose_axes"
+      convex_hull: "graspnet/target_convex_hull"
+      collision_object: "collision_object"
+    
+    # Queue Sizes
+    queue_sizes:
+      input_cloud: 1
+      detections_3d: 1
+      cloud_filter: 10
+      publishers: 1
+    
+    # NMS (Non-Maximum Suppression) Parameters
+    nms:
+      distance_threshold: 0.03  # Distance threshold in meters
+      angle_threshold_deg: 30.0  # Angle threshold in degrees
+    
+    # Point Cloud Filtering
+    filtering:
+      white_point_threshold: 200  # Threshold for filtering white background points (R,G,B)
+      color_tolerance: 30  # Tolerance for color matching when filtering by class

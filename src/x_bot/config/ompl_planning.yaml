@@ -1,0 +1,46 @@
+planning_plugins:
+  - ompl_interface/OMPLPlanner
+request_adapters:
+  - default_planning_request_adapters/ResolveConstraintFrames
+  - default_planning_request_adapters/ValidateWorkspaceBounds
+  - default_planning_request_adapters/CheckStartStateBounds
+  - default_planning_request_adapters/CheckStartStateCollision
+response_adapters:
+  - default_planning_response_adapters/AddTimeOptimalParameterization
+  - default_planning_response_adapters/ValidateSolution
+  - default_planning_response_adapters/DisplayMotionPath
+
+planner_configs:
+  RRTConnect:
+    type: geometric::RRTConnect
+    range: 0.0
+  RRT:
+    type: geometric::RRT
+    range: 0.0
+    goal_bias: 0.05
+  PRM:
+    type: geometric::PRM
+    max_nearest_neighbors: 10
+
+arm:
+  planner_configs:
+    - RRTConnect
+    - RRT
+    - PRM
+  default_planner_config: RRTConnect
+  projection_evaluator: joints(fr3_joint1,fr3_joint2)
+  longest_valid_segment_fraction: 0.005
+
+arm_with_gripper:
+  planner_configs:
+    - RRTConnect
+    - RRT
+    - PRM
+  default_planner_config: RRTConnect
+  projection_evaluator: joints(fr3_joint1,fr3_joint2)
+  longest_valid_segment_fraction: 0.005
+
+gripper:
+  planner_configs:
+    - RRTConnect
+  default_planner_config: RRTConnect

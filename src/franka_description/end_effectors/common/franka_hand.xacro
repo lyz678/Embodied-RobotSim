@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="hand">
+  <!-- safety_distance: Minimum safety distance in [m] by which the collision volumes are expanded and which is enforced during robot motions -->
+  <xacro:macro name="franka_hand"
+               params="connected_to:=''
+                       robot_type arm_prefix:=''
+                       ee_id ee_inertials
+                       rpy_ee:='0 0 0'
+                       xyz_ee:='0 0 0'
+                       tcp_xyz:='0 0 0.1034'
+                       tcp_rpy:='0 0 0'
+                       safety_distance:=0
+                       gazebo:=false
+                       description_pkg:=franka_description
+                       with_sc:=false
+                       no_prefix:=false">
+    <xacro:property name="ee_prefix" default="robot_"/>
+    <xacro:unless value="${robot_type == ''}">
+      <xacro:property name="ee_prefix" value="${arm_prefix}${robot_type}_" />
+    </xacro:unless>
+    <xacro:unless value="${connected_to == ''}">
+      <joint name="${ee_prefix}hand_joint" type="fixed">
+        <parent link="${connected_to}" />
+        <child link="${ee_prefix}hand" />
+        <origin xyz="${xyz_ee}" rpy="${rpy_ee}" />
+      </joint>
+    </xacro:unless>
+
+    <xacro:ee_link_with_sc name="hand" gazebo="${gazebo}" with_sc="${with_sc}">
+      <self_collision_geometries>
+        <xacro:collision_capsule xyz="0 0 0.04" direction="y" radius="${0.04+safety_distance}" length="0.1" />
+        <xacro:collision_capsule xyz="0 0 0.10" direction="y" radius="${0.02+safety_distance}" length="0.1" />
+      </self_collision_geometries>
+    </xacro:ee_link_with_sc>
+
+    <!-- Define the hand_tcp frame -->
+    <link name="${ee_prefix}hand_tcp" />
+    <joint name="${ee_prefix}hand_tcp_joint" type="fixed">
+      <origin xyz="${tcp_xyz}" rpy="${tcp_rpy}" />
+      <parent link="${ee_prefix}hand" />
+      <child link="${ee_prefix}hand_tcp" />
+    </joint>
+    <link name="${ee_prefix}leftfinger">
+      <visual name="${ee_prefix}leftfinger_visual">
+        <geometry>
+          <mesh filename="package://${description_pkg}/meshes/robot_ee/${ee_id}/visual/finger.dae" scale="1 1 2.0"/>
+        </geometry>
+      </visual>
+      <!-- screw mount -->
+      <collision>
+        <origin xyz="0 18.5e-3 22e-3" rpy="0 0 0" />
+        <geometry>
+          <box size="22e-3 15e-3 40e-3" />
+        </geometry>
+      </collision>
+      <!-- cartriage sledge -->
+      <collision>
+        <origin xyz="0 6.8e-3 4.4e-3" rpy="0 0 0" />
+        <geometry>
+          <box size="22e-3 8.8e-3 7.6e-3" />
+        </geometry>
+      </collision>
+      <!-- diagonal finger -->
+      <collision>
+        <origin xyz="0 15.9e-3 56.7e-3" rpy="${pi/6} 0 0" />
+        <geometry>
+          <box size="17.5e-3 7e-3 47e-3" />
+        </geometry>
+      </collision>
+      <!-- rubber tip with which to grasp -->
+      <collision>
+        <origin xyz="0 7.58e-3 90.5e-3" rpy="0 0 0" />
+        <geometry>
+          <box size="17.5e-3 15.2e-3 37e-3" />
+        </geometry>
+      </collision>
+      <xacro:ee-inertials name="leftfinger" />
+    </link>
+    <link name="${ee_prefix}rightfinger">
+      <visual name="${ee_prefix}rightfinger_visual">
+        <origin xyz="0 0 0" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://${description_pkg}/meshes/robot_ee/${ee_id}/visual/finger.dae" scale="1 1 2.0"/>
+        </geometry>
+      </visual>
+      <!-- screw mount -->
+      <collision>
+        <origin xyz="0 18.5e-3 22e-3" rpy="0 0 0" />
+        <geometry>
+          <box size="22e-3 15e-3 40e-3" />
+        </geometry>
+      </collision>
+      <!-- cartriage sledge -->
+      <collision>
+        <origin xyz="0 6.8e-3 4.4e-3" rpy="0 0 0" />
+        <geometry>
+          <box size="22e-3 8.8e-3 7.6e-3" />
+        </geometry>
+      </collision>
+      <!-- diagonal finger -->
+      <collision>
+        <origin xyz="0 15.9e-3 56.7e-3" rpy="${-pi/6} 0 ${pi}" />
+        <geometry>
+          <box size="17.5e-3 7e-3 47e-3" />
+        </geometry>
+      </collision>
+      <!-- rubber tip with which to grasp -->
+      <collision>
+        <origin xyz="0 7.58e-3 90.5e-3" rpy="0 0 0" />
+        <geometry>
+          <box size="17.5e-3 15.2e-3 37e-3" />
+        </geometry>
+      </collision>
+      <xacro:ee-inertials name="rightfinger" />
+    </link>
+    <joint name="${ee_prefix}finger_joint1" type="prismatic">
+      <parent link="${ee_prefix}hand" />
+      <child link="${ee_prefix}leftfinger" />
+      <origin xyz="0 0 0.0584" rpy="0 0 0" />
+      <axis xyz="0 1 0" />
+      <limit effort="100" lower="0.0" upper="0.06" velocity="0.2" />
+      <dynamics damping="10.0" friction="2.0"/>
+    </joint>
+    <joint name="${ee_prefix}finger_joint2" type="prismatic">
+      <parent link="${ee_prefix}hand" />
+      <child link="${ee_prefix}rightfinger" />
+      <origin xyz="0 0 0.0584" rpy="0 0 ${pi}" />
+      <axis xyz="0 1 0" />
+      <limit effort="100" lower="0.0" upper="0.06" velocity="0.2" />
+      <mimic joint="${ee_prefix}finger_joint1" />
+      <dynamics damping="10.0" friction="2.0"/>
+    </joint>
+  </xacro:macro>
+</robot>

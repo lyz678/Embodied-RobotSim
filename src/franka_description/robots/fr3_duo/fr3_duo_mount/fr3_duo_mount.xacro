@@ -1,0 +1,40 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" >
+
+  <xacro:include filename="$(find franka_description)/robots/common/utils.xacro" />
+
+  <xacro:macro name="mount" params="name parent inertials *origin">   
+    <link name="mount_link" >
+      <visual>
+        <geometry>
+          <mesh filename="package://franka_description/meshes/accessories/fr3_duo_mount/visual/fr3_duo_mount.dae"/>
+        </geometry>
+      </visual>
+      <visual>
+        <origin xyz="0 0 0.068" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://franka_description/meshes/accessories/fr3_duo_mount/visual/fr3_duo_cover.dae"/>
+        </geometry>
+      </visual>
+      <collision>
+        <geometry>
+          <mesh filename="package://franka_description/meshes/accessories/fr3_duo_mount/collision/fr3_duo_mount.stl"/>
+        </geometry>
+      </collision>
+      <collision>
+        <origin xyz="0 0 0.068" rpy="0 0 0" />
+        <geometry>
+          <mesh filename="package://franka_description/meshes/accessories/fr3_duo_mount/collision/fr3_duo_cover.stl"/>
+        </geometry>
+      </collision>
+      <xacro:franka-inertials name="mount" />
+    </link>
+
+    <joint name="mount_joint" type="fixed">
+      <xacro:insert_block name="origin" />
+      <parent link="${parent}" />
+      <child  link="mount_link" />
+    </joint>
+  </xacro:macro>
+
+</robot>

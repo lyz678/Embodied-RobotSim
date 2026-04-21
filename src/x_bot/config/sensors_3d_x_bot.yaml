@@ -1,0 +1,27 @@
+move_group:
+  ros__parameters:
+    # octomap config for obstacle avoidance
+    octomap_frame: odom
+    octomap_resolution: 0.02
+    max_range: 2.0
+    
+    # Octomap probability parameters
+    sensor_model:
+      hit: 0.9      # Probability of a hit (0.5 to 1.0), higher = faster obstacle creation
+      miss: 0.1     # Probability of a miss (0.0 to 0.5), lower = faster obstacle clearing
+      min: 0.12     # Clamping min probability
+      max: 0.97     # Clamping max probability
+    
+    # sensor plugins for point cloud
+    sensors:
+      - d435_point_cloud
+    d435_point_cloud:
+      sensor_plugin: occupancy_map_monitor/PointCloudOctomapUpdater
+      point_cloud_topic: /yoloe_multi_text_prompt/pointcloud_colored
+      # point_cloud_topic: /x_bot/camera_left/nn_pointcloud
+      max_range: 2.0
+      point_subsample: 5
+      padding_offset: 0.2
+      padding_scale: 1.0
+      max_update_rate: 10.0
+      filtered_cloud_topic: filtered_cloud

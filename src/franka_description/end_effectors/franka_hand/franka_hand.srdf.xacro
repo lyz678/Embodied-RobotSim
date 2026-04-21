@@ -1,0 +1,42 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="franka_hand_srdf" params="prefix">
+
+    <group name="${prefix}hand">
+      <link name="${prefix}hand"/>
+      <link name="${prefix}leftfinger"/>
+      <link name="${prefix}rightfinger"/>
+      <joint name="${prefix}finger_joint1"/>
+      <passive_joint name="${prefix}finger_joint2"/>
+    </group>
+
+    <group_state name="open" group="${prefix}hand">
+      <joint name="${prefix}finger_joint1" value="0.035"/>
+      <joint name="${prefix}finger_joint2" value="0.035"/>
+    </group_state>
+    <group_state name="close" group="${prefix}hand">
+      <joint name="${prefix}finger_joint1" value="0"/>
+      <joint name="${prefix}finger_joint2" value="0"/>
+    </group_state>
+    <end_effector name="${prefix}hand" parent_link="${prefix}hand_tcp" group="${prefix}hand" parent_group="${prefix}arm"/>
+
+    <disable_collisions link1="${prefix}hand" link2="${prefix}leftfinger" reason="Adjacent"/>
+    <disable_collisions link1="${prefix}hand" link2="${prefix}rightfinger" reason="Adjacent"/>
+    <disable_collisions link1="${prefix}leftfinger" link2="${prefix}rightfinger" reason="Default"/>
+    <disable_collisions link1="${prefix}hand" link2="${prefix}link3" reason="Never"/>
+    <disable_collisions link1="${prefix}hand" link2="${prefix}link4" reason="Never"/>
+    <disable_collisions link1="${prefix}hand" link2="${prefix}link6" reason="Never"/>
+    <disable_collisions link1="${prefix}hand" link2="${prefix}link7" reason="Adjacent"/>
+    <disable_collisions link1="${prefix}hand" link2="${prefix}link8" reason="Adjacent"/>
+    <disable_collisions link1="${prefix}leftfinger" link2="${prefix}link3" reason="Never"/>
+    <disable_collisions link1="${prefix}leftfinger" link2="${prefix}link4" reason="Never"/>
+    <disable_collisions link1="${prefix}leftfinger" link2="${prefix}link6" reason="Never"/>
+    <disable_collisions link1="${prefix}leftfinger" link2="${prefix}link7" reason="Never"/>
+    <disable_collisions link1="${prefix}leftfinger" link2="${prefix}link8" reason="Never"/>
+    <disable_collisions link1="${prefix}link3" link2="${prefix}rightfinger" reason="Never"/>
+    <disable_collisions link1="${prefix}link4" link2="${prefix}rightfinger" reason="Never"/>
+    <disable_collisions link1="${prefix}link6" link2="${prefix}rightfinger" reason="Never"/>
+    <disable_collisions link1="${prefix}link7" link2="${prefix}rightfinger" reason="Never"/>
+    <disable_collisions link1="${prefix}link8" link2="${prefix}rightfinger" reason="Never"/>
+  </xacro:macro>
+</robot>

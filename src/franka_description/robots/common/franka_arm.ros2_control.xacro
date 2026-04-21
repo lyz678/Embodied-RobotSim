@@ -1,0 +1,119 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+<xacro:macro name="franka_arm_ros2_control"
+         params="robot_type
+                 robot_ip
+                 use_fake_hardware:=false
+                 fake_sensor_commands:=false
+                 gazebo:=false
+                 hand:=false
+                 gazebo_effort:=false
+                 arm_prefix:=''
+                 is_async:=false
+                 thread_priority:=50">
+
+    <ros2_control name="${arm_prefix}FrankaHardwareInterface" type="system" is_async="${is_async}">
+        <xacro:if value="${is_async}">
+          <properties>
+            <async scheduling_policy="detached" print_warnings="true" thread_priority="${thread_priority}" manage_overruns="false"/>
+          </properties>
+        </xacro:if>
+        <hardware>
+          <param name="version">1.0.0</param>
+          <param name="robot_type">${robot_type}</param>
+          <param name="prefix">${arm_prefix}</param>
+          <xacro:if value="${use_fake_hardware}">
+            <plugin>mock_components/GenericSystem</plugin>
+            <param name="fake_sensor_commands">${fake_sensor_commands}</param>
+            <param name="state_following_offset">0.0</param>
+          </xacro:if>
+
+          <xacro:if value="${gazebo}">
+            <plugin>franka_gz_ros2_control/GZSystem</plugin>
+          </xacro:if>
+
+          <xacro:if value="${use_fake_hardware == 0 and gazebo == 0}">
+            <plugin>franka_hardware/FrankaHardwareInterface</plugin>
+            <param name="robot_ip">${robot_ip}</param>
+            <param name="arm_prefix">${arm_prefix}</param>
+          </xacro:if>
+        </hardware>
+
+      <!-- Joint position, velocity and effort interfaces -->
+      <xacro:macro name="configure_joint" params="joint_name initial_position">
+        <joint name="${joint_name}">
+          <!--
+            deactivated for gazebo velocity and position interface due to a bug
+            https://github.com/ros-controls/gz_ros2_control/issues/343
+
+            Command Interfaces -->
+            <command_interface name="position"/>
+            <command_interface name="velocity"/>
+          <xacro:if value="${gazebo == 0 or gazebo_effort == 1}">
+            <command_interface name="effort"/>
+          </xacro:if>
+
+          <!-- State Interfaces -->
+          <state_interface name="position">
+            <param name="initial_value">${initial_position}</param>
+          </state_interface>
+          <state_interface name="velocity"/>
+            <param name="initial_value">0.0</param>
+          <state_interface name="effort"/>
+        </joint>
+      </xacro:macro>
+
+
+      <xacro:configure_joint joint_name="${arm_prefix}${robot_type}_joint1" initial_position="0.0"/>
+      <xacro:configure_joint joint_name="${arm_prefix}${robot_type}_joint2" initial_position="${-pi/4}"/>
+      <xacro:configure_joint joint_name="${arm_prefix}${robot_type}_joint3" initial_position="0.0"/>
+      <xacro:configure_joint joint_name="${arm_prefix}${robot_type}_joint4" initial_position="${-3*pi/4}"/>
+      <xacro:configure_joint joint_name="${arm_prefix}${robot_type}_joint5" initial_position="0.0"/>
+      <xacro:configure_joint joint_name="${arm_prefix}${robot_type}_joint6" initial_position="${pi/2}"/>
+      <xacro:configure_joint joint_name="${arm_prefix}${robot_type}_joint7" initial_position="${pi/4}"/>
+      <xacro:if value="${gazebo and hand}">
+        <xacro:configure_joint joint_name="${arm_prefix}${robot_type}_finger_joint1" initial_position="0.0" />
+      </xacro:if>
+
+
+      <xacro:macro name="general_purpose_io" params="prefix command_interface index">
+        <gpio name="${arm_prefix}${prefix}">
+          <command_interface name="${command_interface}"/>
+          <param name="index">${index}</param>
+        </gpio>
+      </xacro:macro>
+
+      <!-- Cartesian velocity interfaces -->
+      <xacro:general_purpose_io prefix="vx" command_interface="cartesian_velocity" index="0"/>
+      <xacro:general_purpose_io prefix="vy" command_interface="cartesian_velocity" index="1"/>
+      <xacro:general_purpose_io prefix="vz" command_interface="cartesian_velocity" index="2"/>
+      <xacro:general_purpose_io prefix="wx" command_interface="cartesian_velocity" index="3"/>
+      <xacro:general_purpose_io prefix="wy" command_interface="cartesian_velocity" index="4"/>
+      <xacro:general_purpose_io prefix="wz" command_interface="cartesian_velocity" index="5"/>
+
+      <!-- Cartesian pose interfaces, in total 16 interfaces -->
+      <xacro:macro name="loop" params="i">
+        <xacro:unless value="${i == 16}">
+          <xacro:general_purpose_io prefix="${i}" command_interface="cartesian_pose_command" index="${i}"/>
+          <xacro:loop i="${i+1}"/>
+        </xacro:unless>
+      </xacro:macro>
+      <xacro:loop i="0"/>
+
+      <!-- Elbow command interfaces -->
+      <xacro:general_purpose_io prefix="joint_3_position" command_interface="elbow_command" index="0"/>
+      <xacro:general_purpose_io prefix="joint_4_sign" command_interface="elbow_command" index="1"/>
+
+
+    </ros2_control>
+    <xacro:if value="${gazebo}">
+      <gazebo>
+        <plugin filename="franka_gz_ros2_control-system" name="gz_ros2_control::GZROS2ControlPlugin">
+          <parameters>$(find franka_gazebo_bringup)/config/franka_gazebo_controllers.yaml</parameters>
+        </plugin>
+      </gazebo>
+    </xacro:if>
+
+  </xacro:macro>
+</robot>

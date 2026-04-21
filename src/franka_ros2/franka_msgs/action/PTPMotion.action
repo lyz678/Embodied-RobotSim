@@ -1,0 +1,20 @@
+### This defines a PTPMotion action for controlling a Franka robot using point-to-point motion commands.
+# The goal_joint_configuration specifies the desired joint angles.
+float64[] goal_joint_configuration # [rad]
+
+# The maximum allowed joint velocities for the motion.
+float64[] maximum_joint_velocities # [rad/s]
+
+# The acceptable goal tolerance for the motion. The 'target reached condition is met when
+# - the absolute difference between the current and goal joint positions is within this goal_tolerance
+# - the joint velocities are below a small threshold
+float64 goal_tolerance # [rad]
+---
+# Result of the point-to-point motion action
+TargetStatus target_status
+
+# In case of failure, an error message describing the issue
+string error_message
+---
+# Feedback during the execution of the point-to-point motion
+TargetStatus target_status

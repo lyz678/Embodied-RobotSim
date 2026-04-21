@@ -1,0 +1,54 @@
+# ROS2 Build Artifacts
+/build/
+/install/
+/log/
+/swp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Deep Learning Models & Weights
+*.engine
+*.plan
+*.onnx
+*.pt
+*.pth
+*.weights
+*.tflite
+*.pb
+*.data
+*.caffemodel
+
+# Datasets & Large Files
+*.jpg
+*.png
+*.mp4
+*.bag
+*.mcap
+# *.gz
+*.zip
+*.pdf
+*.gv
+*.so
+
+*.trt
+*.engine
+*.onnx
+
+/assets/OctoMap.gif
+/src/graspnet_infer/tensorrt_plugins/build/
+cmd
+/src/LSM_depth_infer/

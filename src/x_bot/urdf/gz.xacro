@@ -1,0 +1,184 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="x_bot">
+
+    <!-- ........................... SENSOR PLUGIN ................................... -->
+
+    <gazebo>
+        <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+            <render_engine>ogre2</render_engine>
+        </plugin>
+
+        <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu">
+        </plugin>
+
+        <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+            <topic>x_bot/joint_states</topic>
+        </plugin>
+
+        <!-- ........................... FOUR-WHEEL DRIVE PLUGIN ................................... -->
+
+        <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+            <left_joint>front_left_wheel_joint</left_joint>
+            <left_joint>back_left_wheel_joint</left_joint>
+            <right_joint>front_right_wheel_joint</right_joint>
+            <right_joint>back_right_wheel_joint</right_joint>
+            <wheel_separation>${traction_track_width+traction_wheel_width-0.01}</wheel_separation>
+            <wheel_radius>${traction_wheel_radius+0.01}</wheel_radius>
+            <odom_publish_frequency>50</odom_publish_frequency>
+            <topic>x_bot/cmd_vel</topic>
+            <xacro:if value="${odometry_source == 'encoders'}">
+                <odom_topic>$(arg wheel_odom_topic)</odom_topic>
+                <tf_topic>/tf</tf_topic>
+            </xacro:if>
+            <min_acceleration>-20</min_acceleration>
+            <max_acceleration>20</max_acceleration>
+            <min_velocity>-80</min_velocity>
+            <max_velocity>80</max_velocity>
+            <frame_id>odom</frame_id>
+            <child_frame_id>base_footprint</child_frame_id>
+        </plugin>
+    </gazebo>
+
+    <!-- ............................. ground truth (仅用于 Cartographer 以外的模式) .................................... -->
+
+    <xacro:if value="${odometry_source == 'world'}">
+    <gazebo>
+        <plugin filename="libgz-sim-odometry-publisher-system"
+            name="gz::sim::systems::OdometryPublisher">
+            <odom_frame>odom</odom_frame>
+            <robot_base_frame>base_footprint</robot_base_frame>
+            <odom_topic>x_bot/odom</odom_topic>
+            <!-- 禁用 TF 发布，由 Cartographer 或其他 SLAM 系统提供 -->
+            <!-- <tf_topic>/tf</tf_topic> -->
+            <dimensions>2</dimensions>
+            <odom_publish_frequency>50</odom_publish_frequency>
+        </plugin>
+    </gazebo>
+    </xacro:if>
+
+    <!-- ........................... 2D LIDAR config ................................... -->
+
+    <xacro:if value="$(arg two_d_lidar_enabled)">
+        <gazebo reference="two_d_lidar">
+            <sensor name='gpu_lidar' type='gpu_lidar'>
+                <topic>x_bot/scan</topic>
+                <update_rate>${two_d_lidar_update_rate}</update_rate>
+                <gz_frame_id>two_d_lidar</gz_frame_id>
+                <lidar>
+                    <scan>
+                        <horizontal>
+                            <samples>${two_d_lidar_sample_size}</samples>
+                            <resolution>1</resolution>
+                            <min_angle>${radians(two_d_lidar_min_angle)}</min_angle>
+                            <max_angle>${radians(two_d_lidar_max_angle)}</max_angle>
+                        </horizontal>
+                    </scan>
+                    <range>
+                        <min>${two_d_lidar_min_range}</min>
+                        <max>${two_d_lidar_max_range}</max>
+                        <resolution>0.01</resolution>
+                    </range>
+                    <noise>
+                        <type>gaussian</type>
+                        <mean>0.0</mean>
+                        <stddev>0.001</stddev>
+                    </noise>
+                </lidar>
+                <always_on>1</always_on>
+                <visualize>false</visualize>
+            </sensor>
+        </gazebo>
+    </xacro:if>
+
+    <!-- ........................... CAMERA config ................................... -->
+
+    <xacro:if value="$(arg camera_enabled)">
+        <gazebo reference="kinect_camera">
+            <sensor type="depth_camera" name="kinect_camera">
+                <update_rate>30.0</update_rate>
+                <topic>kinect_camera</topic>
+                <gz_frame_id>kinect_camera</gz_frame_id>
+                <camera>
+                    <camera_info_topic>kinect_camera/camera_info</camera_info_topic>
+                    <horizontal_fov>${radians(camera_horizontal_fov)}</horizontal_fov>
+                    <image>
+                        <width>640</width>
+                        <height>640</height>
+                        <format>R8G8B8</format>
+                    </image>
+                    <clip>
+                        <near>0.05</near>
+                        <far>8.0</far>
+                    </clip>
+                </camera>
+            </sensor>
+        </gazebo>
+    </xacro:if>
+
+    <!-- ........................... IMU config ................................... -->
+
+    <gazebo reference="imu_frame">
+        <sensor name="imu_sensor" type="imu">
+            <always_on>1</always_on>
+            <update_rate>200</update_rate>  <!-- 提高到 200Hz 供 Cartographer 使用 -->
+            <gz_frame_id>imu_frame</gz_frame_id>
+            <visualize>false</visualize>
+            <topic>x_bot/imu</topic>
+            <imu>
+                <angular_velocity>
+                    <x><noise type="gaussian"><mean>0.0</mean><stddev>0.0002</stddev></noise></x>
+                    <y><noise type="gaussian"><mean>0.0</mean><stddev>0.0002</stddev></noise></y>
+                    <z><noise type="gaussian"><mean>0.0</mean><stddev>0.0002</stddev></noise></z>
+                </angular_velocity>
+                <linear_acceleration>
+                    <x><noise type="gaussian"><mean>0.0</mean><stddev>0.017</stddev></noise></x>
+                    <y><noise type="gaussian"><mean>0.0</mean><stddev>0.017</stddev></noise></y>
+                    <z><noise type="gaussian"><mean>0.0</mean><stddev>0.017</stddev></noise></z>
+                </linear_acceleration>
+            </imu>
+        </sensor>
+    </gazebo>
+
+    <!-- ........................... Stereo camera ................................... -->
+    <xacro:if value="$(arg stereo_camera_enabled)">
+        <gazebo reference="stereo_camera">
+            <sensor type="camera" name="right">
+                <update_rate>10.0</update_rate>
+                <always_on>true</always_on>
+                <gz_frame_id>stereo_camera_optical</gz_frame_id>
+                <pose>0 -0.12 0 0 0 0</pose>
+                <topic>stereo_camera/right/image_raw</topic>
+                <camera_info_topic>stereo_camera/right/camera_info</camera_info_topic>
+                <horizontal_fov>1.3962634</horizontal_fov>
+                <image>
+                    <width>640</width>
+                    <height>640</height>
+                    <format>R8G8B8</format>
+                </image>
+                <clip>
+                    <near>0.3</near>
+                    <far>20</far>
+                </clip>
+            </sensor>
+
+            <sensor type="camera" name="left">
+                <topic>stereo_camera/left/image_raw</topic>
+                <update_rate>10.0</update_rate>
+                <always_on>true</always_on>
+                <gz_frame_id>stereo_camera_optical</gz_frame_id>
+                <camera_info_topic>stereo_camera/left/camera_info</camera_info_topic>
+                <pose>0 0 0 0 0 0</pose>
+                <horizontal_fov>1.3962634</horizontal_fov>
+                <image>
+                    <width>640</width>
+                    <height>640</height>
+                    <format>R8G8B8</format>
+                </image>
+                <clip>
+                    <near>0.3</near>
+                    <far>20</far>
+                </clip>
+            </sensor>
+        </gazebo>
+    </xacro:if>
+</robot>

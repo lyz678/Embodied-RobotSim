@@ -1,0 +1,46 @@
+# Octomap Server Configuration
+# This runs an independent Octomap Server that maintains a persistent 3D map
+# in the global coordinate frame (odom), not relative to the robot.
+
+octomap_server:
+  ros__parameters:
+    # Coordinate frame for the Octomap
+    frame_id: odom
+    
+    # Resolution in meters (3cm voxels)
+    resolution: 0.10
+    
+    # Sensor model parameters
+    sensor_model:
+      max_range: 10.0           # Maximum range for inserting point cloud
+      hit: 0.7                 # Probability of hit (occupied)
+      miss: 0.4                # Probability of miss (free)
+      min: 0.12                # Clamping minimum probability
+      max: 0.97                # Clamping maximum probability
+    
+    # Latch topics (keep last message for new subscribers)
+    latch: true
+    
+    # Filter ground plane (optional, set to false to keep all points)
+    filter_ground: true
+    
+    # Base frame for ground filtering
+    base_frame_id: odom
+    
+    # Height parameters for ground filtering
+    ground_filter:
+      distance: 0.04           # Distance threshold for ground detection
+      angle: 0.15              # Angle threshold for ground plane
+      plane_distance: 0.07     # Plane distance threshold
+    
+    # Occupancy grid height range for 2D projection
+    occupancy_min_z: 0.1       # Minimum Z for projection
+    occupancy_max_z: 2.0       # Maximum Z for projection
+    
+    # Point cloud filtering
+    pointcloud_min_z: 0.1      # Minimum Z for accepted points
+    pointcloud_max_z: 2.5      # Maximum Z for accepted points
+
+    # Color configuration
+    height_map: false          # Use input point cloud colors instead of Z-height
+    colored_map: true          # Enable color map

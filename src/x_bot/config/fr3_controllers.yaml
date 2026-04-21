@@ -1,0 +1,65 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 1000  # Hz
+
+    fr3_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    fr3_gripper_controller:
+      type: position_controllers/GripperActionController
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+fr3_arm_controller:
+  ros__parameters:
+    joints:
+      - fr3_joint1
+      - fr3_joint2
+      - fr3_joint3
+      - fr3_joint4
+      - fr3_joint5
+      - fr3_joint6
+      - fr3_joint7
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+
+    state_publish_rate: 100.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: false
+    
+    constraints:
+      goal_time: 0.6
+      stopped_velocity_tolerance: 0.05
+      fr3_joint1: {trajectory: 0.1, goal: 0.1}
+      fr3_joint2: {trajectory: 0.1, goal: 0.1}
+      fr3_joint3: {trajectory: 0.1, goal: 0.1}
+      fr3_joint4: {trajectory: 0.1, goal: 0.1}
+      fr3_joint5: {trajectory: 0.1, goal: 0.1}
+      fr3_joint6: {trajectory: 0.1, goal: 0.1}
+      fr3_joint7: {trajectory: 0.1, goal: 0.1}
+
+    gains:
+      fr3_joint1: { p: 600., d: 30., i: 0., i_clamp: 1. }
+      fr3_joint2: { p: 600., d: 30., i: 0., i_clamp: 1. }
+      fr3_joint3: { p: 600., d: 30., i: 0., i_clamp: 1. }
+      fr3_joint4: { p: 600., d: 30., i: 0., i_clamp: 1. }
+      fr3_joint5: { p: 250., d: 10., i: 0., i_clamp: 1. }
+      fr3_joint6: { p: 300., d: 20., i: 0., i_clamp: 1. }
+      fr3_joint7: { p: 200., d: 10., i: 0., i_clamp: 1. }
+
+fr3_gripper_controller:
+  ros__parameters:
+    # The gripper controller expects a single joint for 1-DOF grippers, or multiple for multi-DOF?
+    # Usually GripperActionController expects 'joint' (string) for parallel grippers logic or 'joints' (list)
+    # Franka gripper has two fingers: fr3_finger_joint1, fr3_finger_joint2.
+    # But usually one command drives both via mimicking or the controller handles it.
+    # Let's specify the main finger joint. The simulation plugin might need to handle mimicry or we list both.
+    # The GripperActionController typically works on a single dimension.
+    joint: fr3_finger_joint1
+    goal_tolerance: 0.01
+    stalled_velocity_threshold: 0.01
+    stall_timeout: 0.2

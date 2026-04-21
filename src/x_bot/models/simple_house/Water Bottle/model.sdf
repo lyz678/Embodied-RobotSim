@@ -1,0 +1,40 @@
+<?xml version="1.0" ?>
+<sdf version="1.10">
+  <model name="water_bottle">
+    <link name="link">
+      <collision name="collision">
+        <geometry>
+          <mesh>
+            <uri>meshes/WaterBottle.glb</uri>
+          </mesh>
+        </geometry>
+      </collision>
+      <visual name="visual">
+        <geometry>
+          <mesh>
+            <uri>meshes/WaterBottle.glb</uri>
+          </mesh>
+        </geometry>
+        <!-- The WaterBottle.glb mesh contains all the pbr textures and value
+             already so the <material> tag below is not necessary.
+             Added here only for demonstrative purpose -->
+        <!--
+        <material>
+          <diffuse>1.0 1.0 1.0</diffuse>
+          <specular>1.0 1.0 1.0</specular>
+          <pbr>
+            <metal>
+              <roughness>1.0</roughness>
+              <metalness>1.0</metalness>
+              <albedo_map>materials/textures/WaterBottle_BottleMat_Diffuse.png</albedo_map>
+              <normal_map>materials/textures/WaterBottle_BottleMat_Normal.png</normal_map>
+              <metalness_map>materials/textures/WaterBottle_BottleMat_Metalness.png</metalness_map>
+              <roughness_map>materials/textures/WaterBottle_BottleMat_Roughness.png</roughness_map>
+            </metal>
+          </pbr>
+        </material>
+        -->
+      </visual>
+    </link>
+  </model>
+</sdf>

@@ -1,0 +1,88 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+<xacro:macro name="fr3_ros2_control" params="arm_id">
+
+    <xacro:property name="initial_positions" value="${xacro.load_yaml('$(find x_bot)/config/initial_positions.yaml')['initial_positions']}"/>
+
+    <ros2_control name="FrankaHardwareInterface" type="system">
+      <hardware>
+        <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+      </hardware>
+
+      <joint name="${arm_id}_joint1">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial_positions['fr3_joint1']}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="${arm_id}_joint2">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial_positions['fr3_joint2']}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="${arm_id}_joint3">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial_positions['fr3_joint3']}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="${arm_id}_joint4">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial_positions['fr3_joint4']}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="${arm_id}_joint5">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial_positions['fr3_joint5']}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="${arm_id}_joint6">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial_positions['fr3_joint6']}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="${arm_id}_joint7">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${initial_positions['fr3_joint7']}</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+      <joint name="${arm_id}_finger_joint1">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">0.04</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="${arm_id}_finger_joint2">
+        <param name="mimic">${arm_id}_finger_joint1</param>
+        <param name="multiplier">1</param>
+        <state_interface name="position">
+          <param name="initial_value">0.04</param>
+        </state_interface>
+        <state_interface name="velocity"/>
+      </joint>
+
+    </ros2_control>
+
+    <gazebo>
+      <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+        <parameters>$(find x_bot)/config/fr3_controllers.yaml</parameters>
+      </plugin>
+    </gazebo>
+
+</xacro:macro>
+</robot>

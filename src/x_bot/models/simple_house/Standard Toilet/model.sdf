@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version="1.6">
+  <model name="Toilet">
+    <static>true</static>
+    <link name="base_link">
+      <visual name="visual">
+        <geometry>
+          <mesh>
+            <uri>meshes/toilet.dae</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <diffuse>1.0 1.0 1.0</diffuse>
+          <specular>1.0 1.0 1.0</specular>
+          <pbr>
+            <metal>
+              <albedo_map>materials/textures/Toilet_Albedo.png</albedo_map>
+              <normal_map>materials/textures/Toilet_Normal.png</normal_map>
+              <roughness_map>materials/textures/Toilet_Roughness.png</roughness_map>
+            </metal>
+          </pbr>
+        </material>
+      </visual>
+      <collision name="Box001">
+        <pose>0.0 1.16967 0.388813 0.0 0.0 -1.5708</pose>
+        <geometry>
+          <box>
+            <size>0.0425444 1.52334 0.777627</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="Box002">
+        <pose>0.0 -0.0264773 0.143861 0.0 0.0 -1.5708</pose>
+        <geometry>
+          <box>
+            <size>2.35526 1.55381 0.287722</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="Box003">
+        <pose>-0.00401034 0.897211 0.481077 1.5708 0.456787 -1.5708</pose>
+        <geometry>
+          <box>
+            <size>0.60728 0.471611 1.48256</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="Box004">
+        <pose>0.123479 0.36017 0.264194 1.5708 -0.125019 -1.5708</pose>
+        <geometry>
+          <box>
+            <size>0.60728 0.471611 1.99479</size>
+          </box>
+        </geometry>
+      </collision>
+      <collision name="Box005">
+        <pose>0.163765 -0.521168 0.276162 0.0 0.0 -1.5708</pose>
+        <geometry>
+          <box>
+            <size>1.3896 2.04844 0.399703</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+  </model>
+</sdf>

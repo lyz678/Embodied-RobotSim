@@ -1,0 +1,39 @@
+model {
+  file: "model.sdf"
+}
+name: "Weston_No_22_Cajun_Jerky_Tonic_12_fl_oz_nLj64ZnGwDh"
+description: "Weston No. 22 Cajun Jerky Tonic - 12 fl oz\nWeston Premium Jerky Tonic - the cure for the tired tastebud! Our bottles let you use only what you need. Mix one tablespoon of seasoning with one tablespoon of water for every one pound of meat."
+version: 1
+authors {
+  name: "Google"
+  email: "scanned-objects@google.com"
+}
+legal {
+  copyright: "Copyright 2020 Google LLC."
+  license: "Creative Commons Attribution 4.0 International"
+}
+annotations {
+  key: "brand"
+  value: "Weston"
+}
+annotations {
+  key: "gtin"
+  value: "810671031445"
+}
+annotations {
+  key: "mpn"
+  value: "02-0022-w"
+}
+annotations {
+  key: "sku"
+  value: "02-0022-W"
+}
+compatibilities {
+  name: "Gazebo"
+  version {
+    major: 11
+  }
+}
+categories {
+  first: "Bottles and Cans and Cups"
+}

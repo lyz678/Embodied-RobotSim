@@ -1,0 +1,39 @@
+model {
+  file: "model.sdf"
+}
+name: "Womens_Bluefish_2Eye_Boat_Shoe_in_Linen_Oat"
+description: "Women\'s Bluefish 2-Eye Boat Shoe in Linen Oat\nWomen\'s Bluefish 2-Eye Boat Shoe"
+version: 1
+authors {
+  name: "Google"
+  email: "scanned-objects@google.com"
+}
+legal {
+  copyright: "Copyright 2020 Google LLC."
+  license: "Creative Commons Attribution 4.0 International"
+}
+annotations {
+  key: "brand"
+  value: "Sperry Top-Sider"
+}
+annotations {
+  key: "gtin"
+  value: "044211561615"
+}
+annotations {
+  key: "mpn"
+  value: "9276619"
+}
+annotations {
+  key: "sku"
+  value: "BluefishBoatShoeF0502-5"
+}
+compatibilities {
+  name: "Gazebo"
+  version {
+    major: 11
+  }
+}
+categories {
+  first: "Shoe"
+}

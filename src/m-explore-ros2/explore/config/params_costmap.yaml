@@ -1,0 +1,33 @@
+# Explore Lite 自主探索算法参数配置
+# 基于前沿探索(Frontier-based Exploration)实现未知环境自主探索
+
+explore_node:
+  ros__parameters:
+
+    # 机器人坐标系配置
+    robot_base_frame: base_link                    # 机器人基座坐标系
+
+    # 代价地图话题配置
+    costmap_topic: /global_costmap/costmap        # 全局代价地图话题（Nav2提供）
+    costmap_updates_topic: /global_costmap/costmap_updates  # 代价地图更新话题
+
+    # 可视化配置
+    visualize: true                               # 启用探索过程可视化
+
+    # 规划器配置
+    planner_frequency: 0.5                        # 规划器频率（Hz）- 每2秒检测一次
+    # 🔄 导航决策逻辑：
+    # - 只有检测到卡住时才重新规划并发送新导航目标
+    # - 正常移动时继续当前导航目标，不会被定时器中断
+    stuck_distance_threshold: 0.05               # 卡住距离检测阈值（米）- 位置变化<5cm认为卡住
+    stuck_angle_threshold: 0.17                   # 卡住角度检测阈值（弧度）- 角度变化<10度认为卡住
+
+    # 探索评分权重
+    potential_scale: 5.0                          # 势场权重 - 吸引机器人向未知区域移动
+    orientation_scale: 0.0                        # 朝向权重 - 当前设为0，不考虑朝向
+    gain_scale: 0.5                              # 增益权重 - 平衡探索新区域vs深入探索
+
+    # 系统参数
+    transform_tolerance: 0.5                      # TF变换容忍度（秒）
+    min_frontier_size: 0.2                       # 最小前沿大小（米）- 过滤太小的探索目标
+    return_to_init: true                          # 探索完成后返回初始位置

@@ -1,0 +1,161 @@
+<sdf version='1.10'>
+  <world name='manipulation_test'>
+    <gui>
+      <camera name='gzclient_camera'>
+        <pose>-2 -3 3 3.1627309863406472e-17 0.5 1.2</pose>
+      </camera>
+    </gui>
+    <gravity>0 0 -9.8000000000000007</gravity>
+    <magnetic_field>6.0000000000000002e-06 2.3e-05 -4.1999999999999998e-05</magnetic_field>
+    <atmosphere type='adiabatic'/>
+    <physics name='default_physics' default='false' type='ode'>
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+    <scene>
+      <ambient>0.5 0.5 0.5 1</ambient>
+      <background>0.699999988 0.699999988 0.699999988 1</background>
+      <shadows>false</shadows>
+      <grid>true</grid>
+      <origin_visual>false</origin_visual>
+    </scene>
+    <model name='ground_plane'>
+      <static>true</static>
+      <link name='link'>
+        <collision name='collision'>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1 1</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode/>
+            </friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>100 100</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.850000024 0.800000012 0.699999988 1</ambient>
+            <diffuse>0.850000024 0.800000012 0.699999988 1</diffuse>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+        <inertial>
+          <pose>0 0 0 0 0 0</pose>
+          <mass>1</mass>
+          <inertia>
+            <ixx>1</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>1</iyy>
+            <iyz>0</iyz>
+            <izz>1</izz>
+          </inertia>
+        </inertial>
+        <enable_wind>false</enable_wind>
+      </link>
+      <pose>0 0 0 0 0 0</pose>
+      <self_collide>false</self_collide>
+    </model>
+    <include>
+      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_KitchenTable_01</uri>
+      <name>kitchen_table</name>
+      <pose>0.80099999913421072 -1.9101334627884561e-06 -2.4500677200766195e-06 3.1185218403136033e-06 -7.124527503649615e-10 -6.8777985939350177e-05</pose>
+    </include>
+    <include>
+      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/simple_house/Coke</uri>
+      <name>coke_can</name>
+      <pose>0.7104652429592917 -0.22386705207148347 0.7999938009058144 -3.2109303966905192e-06 -7.3676413248259966e-07 2.7714900178903883</pose>
+    </include>
+    <include>
+      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_Trash_01</uri>
+      <name>trash_bin</name>
+      <pose>0.0022253538481891181 -0.80899393558502186 0.00090369599722313516 -2.6573641194778322e-11 2.6239444488241425e-11 0.000999232651501619</pose>
+    </include>
+    <include>
+      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_Carpet_01</uri>
+      <name>carpet</name>
+      <pose>0 0 0.001 0 0 0</pose>
+    </include>
+    <include>
+      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/simple_house/ACE_Coffee_Mug_Kristen_16_oz_cup</uri>
+      <name>coffee_mug</name>
+      <pose>0.65361203360971909 0.037913016200427634 0.7993453801573166 -0.0035606491860642998 0.013767693537215372 -1.0175086775693065</pose>
+    </include>
+    <include>
+      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/simple_house/Eat_to_Live_The_Amazing_NutrientRich_Program_for_Fast_and_Sustained_Weight_Loss_Revised_Edition_Book</uri>
+      <name>book</name>
+      <pose>0.64062776230035046 0.30366273421741746 0.79944935768957848 0.00024507310136731434 -0.0077588136382490229 -0.10201647261222341</pose>
+    </include>
+    <include>
+      <uri>model://simple_house/Weston_No_22_Cajun_Jerky_Tonic_12_fl_oz_nLj64ZnGwDh</uri>
+      <name>water_bottle</name>
+      <pose>0.10751853914477273 0.78785381226511286 0.031999985397721455 -1.5707963267948901 -0.26640253161440053 -2.6946610863550027</pose>
+    </include>
+    <include>
+      <uri>model://simple_house/Womens_Bluefish_2Eye_Boat_Shoe_in_Linen_Oat</uri>
+      <name>shoe</name>
+      <pose>-0.20512398478423557 0.75470275806592746 -6.3233450429837481e-05 -0.0030437998427116503 -0.0010999764991083574 -0.54373957546303897</pose>
+    </include>
+    <include>
+      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_FoldingDoor_01</uri>
+      <name>wall_north_1</name>
+      <pose>-0.63117146492004395 2.5000050067901611 0 0 0 1.5708000357176291</pose>
+    </include>
+    <include>
+      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_FoldingDoor_01</uri>
+      <name>wall_north_2</name>
+      <pose>1.9166383743286133 2.4999997615814209 0 0 0 1.5708000357176291</pose>
+    </include>
+    <include>
+      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_FoldingDoor_01</uri>
+      <name>wall_south_1</name>
+      <pose>-0.57947838306427002 -2.6104195117950439 0 0 0 1.5708000357176291</pose>
+    </include>
+    <include>
+      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_FoldingDoor_01</uri>
+      <name>wall_south_2</name>
+      <pose>1.9357520341873169 -2.5684797763824463 0 0 0 1.5708000357176291</pose>
+    </include>
+    <include>
+      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_FoldingDoor_01</uri>
+      <name>wall_east_1</name>
+      <pose>3.2442901134490967 -1.2967008352279663 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_FoldingDoor_01</uri>
+      <name>wall_east_2</name>
+      <pose>3.234489917755127 1.2163598537445068 0 0 0 0</pose>
+    </include>
+    <light name='sun' type='directional'>
+      <pose>0 0 10 0 0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1</intensity>
+      <direction>1 0 -0.90000000000000002</direction>
+      <diffuse>0.800000012 0.800000012 0.800000012 1</diffuse>
+      <specular>0.200000003 0.200000003 0.200000003 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <linear>0.01</linear>
+        <constant>0.90000000000000002</constant>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+      <spot>
+        <inner_angle>0</inner_angle>
+        <outer_angle>0</outer_angle>
+        <falloff>0</falloff>
+      </spot>
+    </light>
+  </world>
+</sdf>

@@ -1,0 +1,39 @@
+model {
+  file: "model.sdf"
+}
+name: "Mens_Gold_Cup_ASV_2Eye_Boat_Shoe_in_Cognac_Leather"
+description: "Men\'s Gold Cup ASV 2-Eye Boat Shoe in Cognac Leather\nMen\'s Gold Cup ASV 2-Eye Boat Shoe"
+version: 1
+authors {
+  name: "Google"
+  email: "scanned-objects@google.com"
+}
+legal {
+  copyright: "Copyright 2020 Google LLC."
+  license: "Creative Commons Attribution 4.0 International"
+}
+annotations {
+  key: "brand"
+  value: "Sperry Top-Sider"
+}
+annotations {
+  key: "gtin"
+  value: "886129101787"
+}
+annotations {
+  key: "mpn"
+  value: "0579060"
+}
+annotations {
+  key: "sku"
+  value: "GoldCupASVBoatShoeS1202-7"
+}
+compatibilities {
+  name: "Gazebo"
+  version {
+    major: 11
+  }
+}
+categories {
+  first: "Shoe"
+}

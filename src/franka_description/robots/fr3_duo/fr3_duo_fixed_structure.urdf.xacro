@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="fr3_duo">
+
+  <xacro:include filename="$(find franka_description)/robots/common/franka_robot.xacro"/>
+  <xacro:include filename="$(find franka_description)/robots/fr3_duo/fr3_duo_mount/fr3_duo_mount.xacro" />
+
+  <link name="base">
+  </link>
+
+  <xacro:mount name="mount" parent="base" inertials="${xacro.load_yaml('$(find franka_description)/robots/fr3_duo/fr3_duo_mount/inertials.yaml')}">
+      <origin xyz="0 0 0" rpy="0 0 0" />
+  </xacro:mount>
+</robot>

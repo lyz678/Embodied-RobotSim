@@ -1,0 +1,60 @@
+<?xml version="1.0"?>
+
+<sdf version="1.6">
+  <model name='Coke'>
+    <static>false</static>
+    <link name="body">
+      <pose>0 0 0 0 0 0</pose>
+
+        <visual name="visual">
+          <geometry>
+            <mesh><uri>model://simple_house/Coke/meshes/coke.obj</uri></mesh>
+          </geometry>
+        </visual>
+
+        <!-- Use simplified cylinder for collision to avoid interpenetration -->
+        <collision name="collision">
+          <pose>0 0 0.0725 0 0 0</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.03</radius>
+              <length>0.145</length>
+            </cylinder>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.8</mu>
+                <mu2>0.8</mu2>
+              </ode>
+            </friction>
+            <contact>
+              <ode>
+                <kp>1000000</kp>
+                <kd>100</kd>
+                <max_vel>0.1</max_vel>
+                <min_depth>0.001</min_depth>
+              </ode>
+            </contact>
+            <bounce>
+              <restitution_coefficient>0.0</restitution_coefficient>
+              <threshold>0.0</threshold>
+            </bounce>
+          </surface>
+        </collision>
+
+        <inertial>
+          <mass>0.35</mass>
+          <inertia>
+            <ixx>0.00058</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>0.00058</iyy>
+            <iyz>0</iyz>
+            <izz>0.00019</izz>
+          </inertia>
+        </inertial>
+    </link>
+  </model>
+</sdf>
+

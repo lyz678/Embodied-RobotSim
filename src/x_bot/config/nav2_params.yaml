@@ -1,0 +1,371 @@
+# Nav2行为树导航器配置
+bt_navigator:
+  ros__parameters:
+    enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+    global_frame: map                       # 全局坐标系
+    robot_base_frame: base_link             # 机器人基座坐标系
+    odom_topic: /odom               # 里程计话题（x命名空间）
+    bt_loop_duration: 10                    # 行为树循环持续时间（秒）
+    default_server_timeout: 20             # 默认服务器超时时间（秒）
+    wait_for_service_timeout: 1000          # 等待服务超时时间（毫秒）
+    action_server_result_timeout: 900.0    # 动作服务器结果超时时间（秒）
+    navigators: ["navigate_to_pose", "navigate_through_poses"]  # 支持的导航器类型
+    navigate_to_pose:                       # 单点导航配置
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
+    navigate_through_poses:                 # 多点导航配置
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
+    error_code_names:                       # 错误代码名称列表
+      - compute_path_error_code              # 路径规划错误
+      - follow_path_error_code               # 路径跟随错误
+
+# Nav2控制器服务器配置
+controller_server:
+  ros__parameters:
+    enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+    controller_frequency: 20.0              # 控制器运行频率（Hz）
+    min_x_velocity_threshold: 0.001         # X方向最小速度阈值
+    min_y_velocity_threshold: 0.5           # Y方向最小速度阈值
+    min_theta_velocity_threshold: 0.001     # 角度最小速度阈值
+    failure_tolerance: 0.3                  # 失败容忍度（米）
+    progress_checker_plugins: ["progress_checker"]    # 进度检查器插件
+    goal_checker_plugins: ["general_goal_checker"]    # 目标检查器插件
+    controller_plugins: ["FollowPath"]      # 控制器插件列表
+    use_realtime_priority: false            # 是否使用实时优先级
+
+    # 进度检查器配置
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5         # 所需移动半径
+      movement_time_allowance: 10.0         # 允许移动时间
+
+    # 通用目标检查器配置
+    general_goal_checker:
+      stateful: true                        # 是否有状态
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25               # XY目标容忍度（米）
+      yaw_goal_tolerance: 0.25              # 偏航角目标容忍度（弧度）
+    FollowPath:
+      plugin: "nav2_mppi_controller::MPPIController"
+      time_steps: 56
+      model_dt: 0.05
+      batch_size: 1000
+      # 加速度约束 (m/s²)
+      ax_max: 20.0     # x方向最大加速度 (前进)
+      ax_min: -20.0    # x方向最小加速度 (减速/后退)
+      ay_max: 20.0     # y方向最大加速度 (侧向)
+      az_max: 20.0    # 最大角加速度 (转向)
+
+      # MPPI 噪声标准差 (控制轨迹采样随机性)
+      vx_std: 0.2     # x方向线速度噪声标准差
+      vy_std: 0.2     # y方向线速度噪声标准差
+      wz_std: 0.4     # 角速度噪声标准差
+
+      # 速度约束 (m/s 和 rad/s)
+      vx_max: 80.0    # 最大前进线速度
+      vx_min: -5.0   # 最大后退线速度
+      vy_max: 80.0    # 最大侧向速度
+      wz_max: 40.0    # 最大角速度
+      iteration_count: 1
+      prune_distance: 1.7
+      transform_tolerance: 0.1
+      temperature: 0.1
+      gamma: 0.015
+      motion_model: "DiffDrive"
+      visualize: true
+      regenerate_noises: true
+      TrajectoryVisualizer:
+        trajectory_step: 5
+        time_step: 3
+      AckermannConstraints:
+        min_turning_r: 0.2
+      critics: [
+        "ConstraintCritic", "CostCritic", "GoalCritic",
+        "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic",
+        "PathAngleCritic", "PreferForwardCritic"]
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 1.4
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+        threshold_to_consider: 0.5
+      PreferForwardCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 0.5
+      CostCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.81
+        critical_cost: 300.0
+        consider_footprint: false
+        collision_cost: 1000000.0
+        near_goal_distance: 1.0
+        trajectory_point_step: 2
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 14.0
+        max_path_occupancy_ratio: 0.05
+        trajectory_point_step: 4
+        threshold_to_consider: 0.5
+        offset_from_furthest: 20
+        use_path_orientations: false
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        offset_from_furthest: 5
+        threshold_to_consider: 1.4
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
+        offset_from_furthest: 4
+        threshold_to_consider: 0.5
+        max_angle_to_furthest: 1.0
+        mode: 0
+
+# 本地代价地图配置（用于局部路径规划和避障）
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+      update_frequency: 5.0                   # 代价地图更新频率（Hz）
+      publish_frequency: 2.0                  # 代价地图发布频率（Hz）
+      global_frame: odom                      # 全局坐标系（使用里程计坐标系）
+      robot_base_frame: base_link             # 机器人基座坐标系
+      rolling_window: true                    # 是否使用滚动窗口（跟随机器人移动）
+      width: 10                               # 代价地图宽度（米）
+      height: 10                              # 代价地图高度（米）
+      resolution: 0.06                        # 代价地图分辨率（米/像素）
+      robot_radius: 0.45
+      plugins: ["static_layer", "voxel_layer", "inflation_layer"]
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.50
+      voxel_layer:
+        plugin: "nav2_costmap_2d::VoxelLayer"
+        enabled: true
+        publish_voxel_map: true
+        origin_z: 0.0
+        z_resolution: 0.05
+        z_voxels: 16
+        max_obstacle_height: 2.0
+        mark_threshold: 0
+        observation_sources: scan
+        scan:
+          topic: /x_bot/scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+      always_send_full_costmap: true
+
+# 全局代价地图配置（用于全局路径规划）
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+      update_frequency: 10.0                  # 代价地图更新频率（Hz）
+      publish_frequency: 10.0                 # 代价地图发布频率（Hz）
+      global_frame: map                       # 全局坐标系（使用地图坐标系）
+      robot_base_frame: base_link             # 机器人基座坐标系
+      robot_radius: 0.45
+      resolution: 0.06
+      track_unknown_space: true
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: scan
+        scan:
+          topic: /x_bot/scan
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+          raytrace_max_range: 10.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 10.0
+          obstacle_min_range: 0.0
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: false
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.50
+      always_send_full_costmap: true
+
+# Nav2路径规划服务器配置
+planner_server:
+  ros__parameters:
+    enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+    #expected_planner_frequency: 20.0      # 期望的规划器频率（已注释）
+    planner_plugins: ["GridBased"]          # 路径规划器插件列表
+
+    # 基于网格的路径规划器配置
+    GridBased:
+      plugin: "nav2_navfn_planner::NavfnPlanner"  # NavFn规划器插件
+      tolerance: 0.5                        # 目标点容忍度（米）
+      use_astar: true                      # 是否使用A*算法（false=使用Dijkstra）
+      allow_unknown: true                   # 是否允许在未知空间规划路径
+
+# Nav2路径平滑服务器配置
+smoother_server:
+  ros__parameters:
+    enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+    smoother_plugins: ["simple_smoother"]   # 路径平滑器插件列表
+
+    # 简单路径平滑器配置
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10                    # 平滑容忍度（收敛阈值）
+      max_its: 1000                        # 最大迭代次数
+      do_refinement: true                   # 是否进行细化
+
+# Nav2行为服务器配置（处理恢复行为）
+behavior_server:
+  ros__parameters:
+    enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+    local_costmap_topic: local_costmap/costmap_raw      # 本地代价地图话题
+    global_costmap_topic: global_costmap/costmap_raw    # 全局代价地图话题
+    local_footprint_topic: local_costmap/published_footprint    # 本地足迹话题
+    global_footprint_topic: global_costmap/published_footprint   # 全局足迹话题
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    spin:
+      plugin: "nav2_behaviors::Spin"
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors::DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors::Wait"
+    assisted_teleop:
+      plugin: "nav2_behaviors::AssistedTeleop"
+    global_frame: map
+    local_frame: odom
+    robot_base_frame: base_link
+    transform_tolerance: 0.1
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.4
+    rotational_acc_lim: 3.2
+
+waypoint_follower:
+  ros__parameters:
+    enable_stamped_cmd_vel: false
+    loop_rate: 20
+    stop_on_failure: false
+    action_server_result_timeout: 900.0
+    waypoint_task_executor_plugin: "wait_at_waypoint"
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: true
+      waypoint_pause_duration: 200
+
+velocity_smoother:
+  ros__parameters:
+    enable_stamped_cmd_vel: false
+    smoothing_frequency: 20.0
+    scale_velocities: False
+    feedback: "OPEN_LOOP"
+    max_velocity: [80.0, 0.0, 40.0]  # [线速度, 侧向速度, 角速度] m/s 和 rad/s
+    min_velocity: [-5.0, 0.0, -40.0]  # 最小速度限制
+    max_accel: [20.0, 0.0, 40.0]     # 最大加速度
+    max_decel: [-20.0, 0.0, -40.0]     # 最大减速度 (注意是负值)
+    odom_topic: "/odom"
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
+collision_monitor:
+  ros__parameters:
+    enable_stamped_cmd_vel: false
+    base_frame_id: "base_link"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "/cmd_vel_smoothed"
+    cmd_vel_out_topic: "/x_bot/cmd_vel"
+    state_topic: "collision_monitor_state"
+    transform_tolerance: 0.2
+    source_timeout: 1.0
+    base_shift_correction: True
+    stop_pub_timeout: 2.0
+    # Polygons represent zone around the robot for "stop", "slowdown" and "limit" action types,
+    # and robot footprint for "approach" action type.
+    polygons: ["FootprintApproach"]
+    FootprintApproach:
+      type: "polygon"
+      action_type: "approach"
+      footprint_topic: "local_costmap/published_footprint"
+      time_before_collision: 1.2
+      simulation_time_step: 0.1
+      min_points: 6
+      visualize: False
+      enabled: false
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "/x_bot/scan"
+      min_height: 0.15
+      max_height: 2.0
+      enabled: True
+
+# 停靠服务器配置（用于自动充电/停靠功能）
+docking_server:
+  ros__parameters:
+    enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+    controller_frequency: 50.0              # 控制器频率（Hz）
+    initial_perception_timeout: 5.0         # 初始感知超时时间（秒）
+    wait_charge_timeout: 5.0                # 等待充电超时时间（秒）
+    dock_approach_timeout: 30.0             # 停靠接近超时时间（秒）
+    undock_linear_tolerance: 0.05           # 脱离停靠线性容忍度（米）
+    undock_angular_tolerance: 0.1           # 脱离停靠角度容忍度（弧度）
+    max_retries: 3                          # 最大重试次数
+    base_frame: "base_link"                 # 机器人基座坐标系
+    fixed_frame: "odom"                     # 固定坐标系（里程计）
+    dock_backwards: false                   # 是否倒退停靠
+    dock_prestaging_tolerance: 0.5          # 停靠预定位容忍度（米）
+
+    # 停靠类型配置
+    dock_plugins: ['simple_charging_dock']  # 启用的停靠插件列表
+    simple_charging_dock:                   # 简单充电停靠配置
+      plugin: 'opennav_docking::SimpleChargingDock'  # 插件类型
+      docking_threshold: 0.05               # 停靠阈值（米）
+      staging_x_offset: -0.7                # 预定位X轴偏移（米）
+      use_external_detection_pose: true     # 是否使用外部检测位姿
+      use_battery_status: false             # 是否使用电池状态（已禁用）
+      use_stall_detection: false            # 是否使用堵转检测（已禁用）
+
+      # 外部检测参数
+      external_detection_timeout: 1.0       # 外部检测超时时间（秒）
+      external_detection_translation_x: -0.18    # 外部检测X轴平移
+      external_detection_translation_y: 0.0      # 外部检测Y轴平移
+      external_detection_rotation_roll: -1.57    # 外部检测滚转角
+      external_detection_rotation_pitch: -1.57   # 外部检测俯仰角
+      external_detection_rotation_yaw: 0.0       # 外部检测偏航角
+      filter_coef: 0.1                     # 滤波器系数
+
+    controller:
+      k_phi: 3.0
+      k_delta: 2.0
+      v_linear_min: 0.15
+      v_linear_max: 0.15

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<sdf version="1.6">
+  <model name="aws_robomaker_residential_Ball_01">
+    <link name="link">
+      <inertial>
+        <mass>0.12</mass>
+        <inertia>
+          <ixx>0.030752</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.030752</iyy>
+          <iyz>0</iyz>
+          <izz>0.030752</izz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry>
+          <sphere>
+            <radius>0.31 </radius>
+          </sphere>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>0.85</mu>
+              <mu2>0.85</mu2>
+            </ode>
+          </friction>
+          <contact>
+            <ode>
+              <kd>8500</kd>
+              <max_vel>5.1</max_vel>
+            </ode>
+          </contact>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <geometry>
+          <sphere>
+            <radius>0.31 </radius>
+          </sphere>
+        </geometry>
+        <material>
+          <diffuse>0.12 0.76 0.97 1</diffuse>
+          <ambient>0.03 0.21 0.27 1</ambient>
+        </material>
+        <meta>
+          <layer> 1 </layer>
+        </meta>
+      </visual>
+    </link>
+  </model>
+</sdf>
