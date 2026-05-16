@@ -3,7 +3,7 @@
 [![ROS2](https://img.shields.io/badge/ROS2-Jazzy-brightgreen.svg)](https://docs.ros.org/en/jazzy/index.html)
 [![中文](https://img.shields.io/badge/🌍_Language-中文-blue.svg)](README.md)
 
-Embodied-RobotSim is a comprehensive ROS 2 (Jazzy) simulation workspace for a differential-drive mobile robot equipped with a **Franka FR3 robotic arm**, a 2D LiDAR, a stereo RGB-D camera, and a rich, advanced sensor suite. The simulation runs in Gazebo and integrates leading-edge algorithms for mapping, navigation, 2D/3D perception, and mobile manipulation.
+Embodied-RobotSim is a comprehensive ROS 2 (Jazzy) simulation workspace for a differential-drive mobile robot equipped with a **Franka FR3 robotic arm**, a 2D LiDAR, a stereo RGB-D camera, and a rich, advanced sensor suite. The system is deeply optimized for **low hardware requirements** and high efficiency, integrating leading-edge algorithms for mapping, navigation, and mobile manipulation.
 
 ## 🎬 Demos
 
@@ -16,9 +16,9 @@ Embodied-RobotSim is a comprehensive ROS 2 (Jazzy) simulation workspace for a di
 
 * **Mobile Manipulation:** Integration of MoveIt 2 for the Franka FR3 arm with a differential-drive mobile base controller.
 * **Autonomous Exploration & Mapping:** High-precision SLAM with Cartographer (native 2D LiDAR + IMU fusion) and frontier-based autonomous exploration using `m-explore-ros2`.
-* **Advanced Perception (Vision):** 
+* **Advanced Perception (Vision):**
   * **YOLOE Inference:** Real-time object detection with text prompts (`yoloe_infer`).
-* **Semantic Occupancy & Grasping:** 
+* **Semantic Occupancy & Grasping:**
   * Generates semantic occupancy mapping using OctoMap.
   * **Autonomous Grasping Integration:** Combines **YOLOE** (target localization) and **GraspNet** (pose estimation) to produce 6-DoF grasp poses from point clouds for arbitrary objects, with complex collision avoidance at both point cloud and OctoMap levels.
 
@@ -47,6 +47,13 @@ To ensure the simulation system runs correctly, please deploy in the following e
 | **CUDA** | [13.1](https://developer.nvidia.com/cuda-toolkit) |
 | **TensorRT** | [10.14.1.48](https://developer.nvidia.com/tensorrt) |
 | **Python** | 3.12+ |
+
+> **💻 Tested Hardware Reference**
+>
+> This project runs smoothly on the following mid-range consumer hardware, making it accessible and easy to deploy:
+> *   **CPU**: Intel Core i5-13400F
+> *   **GPU**: NVIDIA GeForce RTX 4060
+> *   **Memory**: 32GB RAM
 
 ## 📦 Models Download
 
