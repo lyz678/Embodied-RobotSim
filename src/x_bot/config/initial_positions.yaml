@@ -6,5 +6,5 @@ initial_positions:
   fr3_joint5: 0.0
   fr3_joint6: 2.0
   fr3_joint7: 0.7853
-  fr3_finger_joint1: 0.0
-  fr3_finger_joint2: 0.0
+  fr3_finger_joint1: 0.04
+  fr3_finger_joint2: 0.04

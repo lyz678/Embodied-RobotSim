@@ -146,9 +146,10 @@ local_costmap:
       rolling_window: true                    # 是否使用滚动窗口（跟随机器人移动）
       width: 10                               # 代价地图宽度（米）
       height: 10                              # 代价地图高度（米）
-      resolution: 0.06                        # 代价地图分辨率（米/像素）
+      resolution: 0.05                        # 与地图分辨率一致
       robot_radius: 0.45
-      plugins: ["static_layer", "voxel_layer", "inflation_layer"]
+      # 局部代价地图在 odom 坐标系下滚动，不要加 static_layer（会与 map 坐标系冲突）
+      plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 4.0
@@ -173,9 +174,6 @@ local_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: true
       always_send_full_costmap: true
 
 # 全局代价地图配置（用于全局路径规划）
@@ -188,8 +186,9 @@ global_costmap:
       global_frame: map                       # 全局坐标系（使用地图坐标系）
       robot_base_frame: base_link             # 机器人基座坐标系
       robot_radius: 0.45
-      resolution: 0.06
+      resolution: 0.05                        # 与 map.yaml 一致
       track_unknown_space: true
+      rolling_window: false                   # 全局地图覆盖整张静态地图
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
@@ -207,7 +206,8 @@ global_costmap:
           obstacle_min_range: 0.0
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: false
+        map_subscribe_transient_local: true   # 必须 true，否则收不到 map_server 的 latched /map
+        map_topic: /map
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 4.0
@@ -369,3 +369,46 @@ docking_server:
       k_delta: 2.0
       v_linear_min: 0.15
       v_linear_max: 0.15
+
+# AMCL 粒子滤波定位（静态地图模式）
+amcl:
+  ros__parameters:
+    use_sim_time: true
+    # ── 话题与坐标系 ──
+    scan_topic: /x_bot/scan          # 激光雷达话题（与 Gazebo 桥接一致）
+    odom_frame_id: odom
+    base_frame_id: base_footprint
+    global_frame_id: map
+    # ── 粒子滤波参数 ──
+    min_particles: 500
+    max_particles: 2000
+    kld_err: 0.05
+    kld_z: 0.99
+    update_min_d: 0.25               # 移动 0.25m 才更新
+    update_min_a: 0.2                # 旋转 0.2rad 才更新
+    resample_interval: 1
+    transform_tolerance: 0.5
+    recovery_alpha_slow: 0.001
+    recovery_alpha_fast: 0.1
+    initial_pose_x: 0.0
+    initial_pose_y: 0.0
+    initial_pose_a: 0.0
+    # ── 激光模型 ──
+    laser_model_type: likelihood_field
+    laser_max_range: 10.0
+    laser_min_range: -1.0
+    laser_likelihood_max_dist: 2.0
+    max_beams: 60
+    laser_z_hit: 0.5
+    laser_z_short: 0.05
+    laser_z_max: 0.05
+    laser_z_rand: 0.5
+    laser_sigma_hit: 0.2
+    laser_lambda_short: 0.1
+    # ── 运动模型 ──
+    robot_model_type: nav2_amcl::DifferentialMotionModel
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.2
+    alpha4: 0.2
+    set_initial_pose: true           # 启动时自动设置初始位姿为上面的 initial_pose_*

@@ -37,6 +37,7 @@ def generate_launch_description():
     two_d_lidar_enabled = LaunchConfiguration("two_d_lidar_enabled", default=True)  # 2D激光雷达使能
     camera_enabled = LaunchConfiguration("camera_enabled", default=True)            # 相机使能
     odometry_source = LaunchConfiguration("odometry_source")  # 里程计源配置
+    publish_odom_tf = LaunchConfiguration("publish_odom_tf", default="false")
     world_name = LaunchConfiguration("world_name")  # 世界名称配置
 
 
@@ -55,6 +56,7 @@ def generate_launch_description():
                          ' two_d_lidar_enabled:=', two_d_lidar_enabled,      # 激光雷达参数
                          ' camera_enabled:=', camera_enabled,                # 相机参数
                          ' odometry_source:=', odometry_source,       # 里程计源参数
+                         ' publish_odom_tf:=', publish_odom_tf,        # 是否发布 odom→base TF
                          ' sim_gz:=', "true"                          # 启用Gazebo仿真模式
                         ]),
                     value_type=str
@@ -109,8 +111,10 @@ def generate_launch_description():
             # 时钟同步桥接：Gazebo时钟 -> ROS2时钟
             "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
 
-            # 里程计桥接：Gazebo里程计 -> ROS2里程计
-            "/gazebo/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry",
+            # 里程计桥接（world 模式 OdometryPublisher → /x_bot/odom）
+            "/x_bot/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry",
+            # 里程计桥接（encoders 模式 diff_drive → /odom）
+            "/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry",
 
             # TF变换桥接：Gazebo位姿 -> ROS2 TF消息
             "/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
@@ -173,6 +177,8 @@ def generate_launch_description():
         DeclareLaunchArgument("position_y", default_value="0.0"),
         DeclareLaunchArgument("orientation_yaw", default_value="0.0"),
         DeclareLaunchArgument("odometry_source", default_value="world"),
+        DeclareLaunchArgument("publish_odom_tf", default_value="false",
+                              description="Publish odom->base_footprint TF (true for AMCL nav, false for Cartographer)"),
         DeclareLaunchArgument("world_name", default_value="ware_house"),
 
         # 启动的核心节点

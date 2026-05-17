@@ -75,6 +75,7 @@ Explore::Explore()
   this->declare_parameter<float>("gain_scale", 1.0);
   this->declare_parameter<float>("min_frontier_size", 0.5);
   this->declare_parameter<bool>("return_to_init", false);
+  this->declare_parameter<std::string>("map_save_path", "");
 
   this->get_parameter("planner_frequency", planner_frequency_);
   this->get_parameter("stuck_distance_threshold", stuck_distance_threshold_);  // 获取卡住距离检测阈值
@@ -530,18 +531,31 @@ void Explore::handleReturnToInitialResult(const NavigationGoalHandle::WrappedRes
 
 void Explore::saveMap()
 {
-  // 💾 自动保存地图
+  // 💾 自动保存地图到源码目录 src/x_bot/maps（不写 install）
   RCLCPP_INFO(logger_, "Saving map automatically...");
-  
-  // 构建保存命令
-  // 自动获取 x_bot 功能包的 share 路径
-  std::string x_bot_share = ament_index_cpp::get_package_share_directory("x_bot");
-  std::string map_dir = x_bot_share + "/maps";
-  std::string map_name = "map";
-  std::string map_path = map_dir + "/" + map_name;
-  
-  std::string command = "ros2 run nav2_map_server map_saver_cli -f " + map_path + " &";
-  
+
+  std::string map_path;
+  this->get_parameter("map_save_path", map_path);
+
+  if (map_path.empty()) {
+    const std::string share =
+        ament_index_cpp::get_package_share_directory("x_bot");
+    const std::string install_suffix = "/install/x_bot/share/x_bot";
+    const auto pos = share.find(install_suffix);
+    if (pos != std::string::npos) {
+      map_path = share.substr(0, pos) + "/src/x_bot/maps/map";
+    } else {
+      RCLCPP_ERROR(
+          logger_,
+          "map_save_path 未设置且无法从 install 路径推断 src 目录。"
+          "请在 params_costmap.yaml 中设置 map_save_path。");
+      return;
+    }
+  }
+
+  std::string command =
+      "ros2 run nav2_map_server map_saver_cli -f " + map_path + " &";
+
   RCLCPP_INFO(logger_, "Saving map to: %s", map_path.c_str());
   
   // 执行保存命令

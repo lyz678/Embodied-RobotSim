@@ -1,6 +1,10 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="x_bot">
 
+    <!-- 探索+Cartographer 时必须为 false，否则会与 Cartographer 争抢 odom→base_footprint TF -->
+    <xacro:arg name="publish_odom_tf" default="false"/>
+    <xacro:property name="publish_odom_tf" value="$(arg publish_odom_tf)"/>
+
     <!-- ........................... SENSOR PLUGIN ................................... -->
 
     <gazebo>
@@ -48,8 +52,10 @@
             <odom_frame>odom</odom_frame>
             <robot_base_frame>base_footprint</robot_base_frame>
             <odom_topic>x_bot/odom</odom_topic>
-            <!-- 禁用 TF 发布，由 Cartographer 或其他 SLAM 系统提供 -->
-            <!-- <tf_topic>/tf</tf_topic> -->
+            <!-- 仅导航(AMCL)模式开启；Cartographer 模式由 SLAM 发布 odom→base -->
+            <xacro:if value="${publish_odom_tf}">
+            <tf_topic>/tf</tf_topic>
+            </xacro:if>
             <dimensions>2</dimensions>
             <odom_publish_frequency>50</odom_publish_frequency>
         </plugin>

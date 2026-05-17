@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RobotSim 控制面板</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ===== 顶部状态栏 ===== -->
+<header class="header">
+  <div class="header-left">
+    <span class="logo">🤖 RobotSim Dashboard</span>
+    <span class="divider">|</span>
+    <span id="ros-status" class="status-badge status-disconnected">● 未连接</span>
+  </div>
+  <div class="header-center">
+    <span class="header-info" id="robot-pos">位置: --</span>
+    <span class="header-info" id="robot-vel">速度: --</span>
+    <span class="header-info" id="agent-scene">场景: --</span>
+  </div>
+  <div class="header-right">
+    <button class="btn btn-outline" id="btn-config" title="配置">⚙ 配置</button>
+    <button class="btn btn-danger" id="btn-estop" title="急停">⛔ 急停</button>
+  </div>
+</header>
+
+<!-- ===== 主体布局：左区 + 右侧对话栏 ===== -->
+<div class="body-wrapper">
+
+<!-- 左区：包含上方面板 + 底部地图 -->
+<div class="left-area">
+
+<!-- ===== 上方面板 ===== -->
+<main class="main-grid">
+
+  <!-- 列 1：Gazebo 相机视图 -->
+  <section class="panel panel-camera" id="panel-camera">
+    <div class="panel-header">
+      <span class="panel-title">📷 Gazebo 相机视图</span>
+      <div class="panel-actions">
+        <select id="camera-topic-select" class="mini-select">
+          <option value="/x_bot/camera_left/image_raw">左相机（原始）</option>
+          <option value="/yoloe_multi_text_prompt/image_result">YOLOE 检测结果</option>
+          <option value="/x_bot/camera_right/image_raw">右相机（原始）</option>
+          <option value="/x_bot/camera_left/depth/image_raw">深度图</option>
+        </select>
+        <span id="camera-fps" class="badge">-- fps</span>
+      </div>
+    </div>
+    <div class="camera-container">
+      <img id="camera-img" src="" alt="相机未连接" class="camera-img"/>
+      <canvas id="camera-canvas" class="camera-img hidden"></canvas>
+      <div id="camera-overlay" class="camera-overlay hidden">
+        <span>等待相机数据...</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 分割条 1：相机 ↔ 遥控 -->
+  <div class="col-resize-handle" id="resize-col-1"></div>
+
+  <!-- 列 2：遥控控制面板 -->
+  <section class="panel panel-teleop" id="panel-teleop">
+    <div class="panel-header">
+      <span class="panel-title">🕹 遥控控制</span>
+      <label class="toggle-label">
+        <input type="checkbox" id="teleop-enable"> 启用键盘
+      </label>
+    </div>
+
+    <!-- 状态条 -->
+    <div id="teleop-banner" class="teleop-banner teleop-off">⌨ 键盘遥控已禁用</div>
+
+    <div class="control-panel">
+      <!-- 底盘控制 -->
+      <div class="tp-section">
+        <div class="tp-section-title">
+          底盘
+          <span class="tp-hint-toggle" onclick="this.closest('.tp-section').querySelector('.tp-kb-hint').classList.toggle('hidden')" title="键盘快捷键">⌨</span>
+        </div>
+        <div class="tp-kb-hint hidden">
+          <table class="tp-kb-table">
+            <tr><td class="kk">W / S</td><td>前进 / 后退</td></tr>
+            <tr><td class="kk">A / D</td><td>左转 / 右转</td></tr>
+            <tr><td class="kk">Z / X</td><td>线速 ±0.05 m/s</td></tr>
+            <tr><td class="kk">C / V</td><td>角速 ±0.10 r/s</td></tr>
+            <tr><td class="kk">Space</td><td>急停</td></tr>
+          </table>
+        </div>
+        <div class="tp-base-row">
+          <div class="tp-dpad">
+            <div class="tp-dpad-row">
+              <button class="tp-dpad-btn" id="tp-btn-w" data-key="w">
+                <span class="dpad-arrow">▲</span><span class="dpad-key">W</span>
+              </button>
+            </div>
+            <div class="tp-dpad-row">
+              <button class="tp-dpad-btn" id="tp-btn-a" data-key="a">
+                <span class="dpad-arrow">◄</span><span class="dpad-key">A</span>
+              </button>
+              <button class="tp-dpad-btn tp-dpad-stop" id="tp-btn-stop">■</button>
+              <button class="tp-dpad-btn" id="tp-btn-d" data-key="d">
+                <span class="dpad-arrow">►</span><span class="dpad-key">D</span>
+              </button>
+            </div>
+            <div class="tp-dpad-row">
+              <button class="tp-dpad-btn" id="tp-btn-s" data-key="s">
+                <span class="dpad-arrow">▼</span><span class="dpad-key">S</span>
+              </button>
+            </div>
+          </div>
+          <div class="tp-speeds">
+            <div class="tp-speed-row">
+              <span class="tp-lbl">线速</span>
+              <button class="tp-adj-btn" id="tp-lin-down">−</button>
+              <span class="tp-speed-val" id="tp-lin-val">0.20</span>
+              <button class="tp-adj-btn" id="tp-lin-up">+</button>
+              <span class="tp-unit">m/s</span>
+            </div>
+            <div class="tp-speed-row">
+              <span class="tp-lbl">角速</span>
+              <button class="tp-adj-btn" id="tp-ang-down">−</button>
+              <span class="tp-speed-val" id="tp-ang-val">0.50</span>
+              <button class="tp-adj-btn" id="tp-ang-up">+</button>
+              <span class="tp-unit">r/s</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 机械臂关节控制 -->
+      <div class="tp-section">
+        <div class="tp-section-title">
+          机械臂
+          <span class="tp-hint-toggle" onclick="this.closest('.tp-section').querySelector('.tp-kb-hint').classList.toggle('hidden')" title="键盘快捷键">⌨</span>
+        </div>
+        <div class="tp-kb-hint hidden">
+          <table class="tp-kb-table">
+            <tr><td class="kk">1 – 7</td><td>选择关节</td></tr>
+            <tr><td class="kk">+ / =</td><td>关节角度 +步长</td></tr>
+            <tr><td class="kk">− / _</td><td>关节角度 −步长</td></tr>
+            <tr><td class="kk">[ / ]</td><td>步长 ±0.05 rad</td></tr>
+            <tr><td class="kk">H</td><td>机械臂归零</td></tr>
+            <tr><td class="kk">I / K / L</td><td>预设姿态</td></tr>
+            <tr><td class="kk">O / P</td><td>夹爪张开 / 关闭</td></tr>
+          </table>
+        </div>
+        <div class="tp-joint-btns">
+          <button class="tp-joint-sel active" id="tp-j1">1</button>
+          <button class="tp-joint-sel" id="tp-j2">2</button>
+          <button class="tp-joint-sel" id="tp-j3">3</button>
+          <button class="tp-joint-sel" id="tp-j4">4</button>
+          <button class="tp-joint-sel" id="tp-j5">5</button>
+          <button class="tp-joint-sel" id="tp-j6">6</button>
+          <button class="tp-joint-sel" id="tp-j7">7</button>
+        </div>
+        <div class="tp-joint-ctrl">
+          <span class="tp-lbl" id="tp-joint-label">J1</span>
+          <button class="tp-adj-btn" id="tp-joint-dec">−</button>
+          <div class="tp-joint-info">
+            <span class="tp-joint-val" id="tp-joint-val">0.000</span>
+            <div class="tp-joint-bar-wrap"><div class="tp-joint-bar" id="tp-joint-bar"></div></div>
+          </div>
+          <button class="tp-adj-btn" id="tp-joint-inc">+</button>
+          <span class="tp-unit">rad</span>
+        </div>
+        <div class="tp-step-row">
+          <span class="tp-lbl">步长</span>
+          <button class="tp-adj-btn" id="tp-step-down">[</button>
+          <span class="tp-speed-val" id="tp-step-val">0.10</span>
+          <button class="tp-adj-btn" id="tp-step-up">]</button>
+          <span class="tp-unit">rad</span>
+        </div>
+      </div>
+
+      <!-- 夹爪 + 预设姿态 -->
+      <div class="tp-section">
+        <div class="tp-section-title">夹爪 &amp; 姿态</div>
+        <div class="tp-gripper-row">
+          <button class="btn btn-sm tp-preset-btn" id="tp-gripper-open">○ 张开 (O)</button>
+          <button class="btn btn-sm tp-preset-btn" id="tp-gripper-close">○ 关闭 (P)</button>
+        </div>
+        <div class="tp-preset-row">
+          <button class="btn btn-sm tp-preset-btn" id="tp-pose-i">Init (I)</button>
+          <button class="btn btn-sm tp-preset-btn" id="tp-pose-k">抓取 (K)</button>
+          <button class="btn btn-sm tp-preset-btn" id="tp-pose-l">放置 (L)</button>
+          <button class="btn btn-sm tp-preset-btn" id="tp-home">归零 (H)</button>
+        </div>
+      </div>
+
+      <!-- 速度显示条 -->
+      <div class="velocity-display">
+        <div class="vel-item">
+          <span class="vel-label">线速度</span>
+          <div class="vel-bar-wrap"><div class="vel-bar" id="vel-linear"></div></div>
+          <span class="vel-val" id="vel-linear-val">0.00 m/s</span>
+        </div>
+        <div class="vel-item">
+          <span class="vel-label">角速度</span>
+          <div class="vel-bar-wrap"><div class="vel-bar vel-angular" id="vel-angular"></div></div>
+          <span class="vel-val" id="vel-angular-val">0.00 rad/s</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 分割条 2：遥控 ↔ 系统信息 -->
+  <div class="col-resize-handle" id="resize-col-2"></div>
+
+  <!-- 列 3：系统信息面板 -->
+  <section class="panel panel-info" id="panel-info">
+    <div class="panel-header">
+      <span class="panel-title">📊 系统状态</span>
+    </div>
+
+    <!-- 话题状态 -->
+    <div class="info-group">
+      <div class="info-title">话题连接状态</div>
+      <div class="topic-list">
+        <div class="topic-item">
+          <span class="topic-indicator" id="topic-map"></span>
+          <span>/map</span>
+        </div>
+        <div class="topic-item">
+          <span class="topic-indicator" id="topic-tf"></span>
+          <span>/tf</span>
+        </div>
+        <div class="topic-item">
+          <span class="topic-indicator" id="topic-scan"></span>
+          <span>/x_bot/scan</span>
+        </div>
+        <div class="topic-item">
+          <span class="topic-indicator" id="topic-camera"></span>
+          <span>/camera_left</span>
+        </div>
+        <div class="topic-item">
+          <span class="topic-indicator" id="topic-octomap"></span>
+          <span>/octomap</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 机器人姿态 -->
+    <div class="info-group">
+      <div class="info-title">机器人姿态 (map frame)</div>
+      <div class="pose-grid">
+        <div class="pose-item"><span>X</span><span id="pose-x">--</span><span>m</span></div>
+        <div class="pose-item"><span>Y</span><span id="pose-y">--</span><span>m</span></div>
+        <div class="pose-item"><span>Yaw</span><span id="pose-yaw">--</span><span>°</span></div>
+      </div>
+    </div>
+
+    <!-- Nav2 目标 -->
+    <div class="info-group">
+      <div class="info-title">当前导航目标</div>
+      <div class="pose-grid">
+        <div class="pose-item"><span>X</span><span id="goal-x">--</span><span>m</span></div>
+        <div class="pose-item"><span>Y</span><span id="goal-y">--</span><span>m</span></div>
+        <div class="pose-item"><span>Yaw</span><span id="goal-yaw">--</span><span>°</span></div>
+      </div>
+    </div>
+
+    <!-- OctoMap 统计 -->
+    <div class="info-group">
+      <div class="info-title">OctoMap 统计</div>
+      <div class="stat-grid">
+        <div class="stat-item"><span class="stat-label">体素数量</span><span id="octo-voxels">--</span></div>
+        <div class="stat-item"><span class="stat-label">分辨率</span><span id="octo-res">0.10 m</span></div>
+        <div class="stat-item"><span class="stat-label">最后更新</span><span id="octo-time">--</span></div>
+      </div>
+    </div>
+
+    <!-- 快捷操作 -->
+    <div class="info-group">
+      <div class="info-title">快捷操作</div>
+      <div class="btn-grid">
+        <button class="btn btn-sm btn-outline" id="btn-clear-octomap">清除OctoMap</button>
+        <button class="btn btn-sm btn-outline" id="btn-save-map">保存地图</button>
+        <button class="btn btn-sm btn-outline" id="btn-reset-view">重置视图</button>
+        <button class="btn btn-sm btn-outline" id="btn-toggle-scan">显示激光</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ===== 纵向分割条（上区 ↕ 底部条）===== -->
+<div class="row-resize-handle" id="resize-row"></div>
+
+<!-- ===== 底部条：Nav2 导航地图 + OctoMap 3D 并排 ===== -->
+<div class="bottom-area" id="bottom-area">
+
+  <!-- 导航地图 -->
+  <section class="panel panel-navmap" id="panel-navmap">
+    <div class="panel-header">
+      <span class="panel-title">🗺 Nav2 导航地图</span>
+      <div class="panel-actions">
+        <button class="btn btn-sm" id="btn-fit-map" title="适应窗口">⊡ 适应</button>
+        <button class="btn btn-sm btn-goal" id="btn-set-goal" title="设置导航目标">
+          🎯 设置目标
+        </button>
+        <button class="btn btn-sm btn-warn" id="btn-cancel-goal" title="取消导航">✕ 取消</button>
+        <span id="map-scale" class="badge">-- m/px</span>
+      </div>
+    </div>
+    <div class="map-container">
+      <canvas id="nav-canvas"></canvas>
+      <div id="map-overlay" class="map-overlay hidden">等待地图数据...</div>
+    </div>
+    <div class="map-legend">
+      <span class="legend-item"><span class="legend-color" style="background:#dcdcdc"></span> 自由</span>
+      <span class="legend-item"><span class="legend-color" style="background:#111"></span> 障碍</span>
+      <span class="legend-item"><span class="legend-color" style="background:#888"></span> 未知</span>
+      <span class="legend-item"><span class="legend-color" style="background:#0078ff"></span> 机器人</span>
+      <span class="legend-item"><span class="legend-color" style="background:#00ff88"></span> 路径</span>
+      <span class="legend-item"><span class="legend-color" style="background:#ff6b00"></span> 目标</span>
+    </div>
+  </section>
+
+  <!-- 中间分割条：导航地图 ↔ OctoMap -->
+  <div class="col-resize-handle" id="resize-col-mid"></div>
+
+  <!-- OctoMap 3D 建图效果 -->
+  <section class="panel panel-octomap" id="panel-octomap">
+    <div class="panel-header">
+      <span class="panel-title">🌐 OctoMap 3D 建图效果</span>
+      <div class="panel-actions">
+        <label class="toggle-label">
+          <input type="checkbox" id="octomap-auto-update" checked> 自动更新
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="octomap-voxel-mode" checked> 稀疏体素
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="octomap-height-color"> 高度着色
+        </label>
+        <button class="btn btn-sm" id="btn-reset-3d-view">重置视角</button>
+        <span id="octomap-color-mode" class="badge">高度着色</span>
+        <span id="octomap-voxel-count" class="badge">0 点</span>
+      </div>
+    </div>
+    <div id="octomap-container" class="octomap-container"></div>
+  </section>
+
+</div><!-- /bottom-area -->
+
+</div><!-- /left-area -->
+
+<!-- ===== 分割条：左区 ↔ 右侧对话栏 ===== -->
+<div class="col-resize-handle chat-resize-handle" id="resize-col-3"></div>
+
+<!-- ===== 右侧全高对话栏 ===== -->
+<section class="panel panel-chat" id="panel-chat">
+  <div class="panel-header">
+    <span class="panel-title">💬 Qwen3 助手</span>
+    <div class="panel-actions">
+      <span id="agent-ws-status" class="status-badge status-disconnected">● 未连接</span>
+      <button class="btn btn-sm btn-outline" id="btn-scene-detect" title="识别当前场景">🔍 场景</button>
+    </div>
+  </div>
+  <div id="chat-messages" class="chat-messages"></div>
+  <div class="chat-quick">
+    <button class="chat-chip" data-msg="帮我去厨房拿瓶可乐">🥤 厨房拿可乐</button>
+    <button class="chat-chip" data-msg="到书房拿本书">📚 书房拿书</button>
+    <button class="chat-chip" data-msg="导航到客厅">🏠 去客厅</button>
+    <button class="chat-chip" data-msg="识别一下当前在哪个房间">🔍 识别场景</button>
+  </div>
+  <div class="chat-input-row">
+    <textarea id="chat-input" class="chat-input" rows="2"
+      placeholder="输入指令，如：帮我去厨房拿瓶可乐"></textarea>
+    <button class="btn btn-primary" id="btn-chat-send" title="发送">发送</button>
+  </div>
+</section>
+
+</div><!-- /body-wrapper -->
+
+<!-- ===== 配置面板（弹出层）===== -->
+<div id="config-panel" class="config-panel hidden">
+  <div class="config-inner">
+    <div class="config-header">
+      <span>⚙ 连接配置</span>
+      <button class="btn btn-sm" id="btn-close-config">✕</button>
+    </div>
+    <div class="config-body">
+      <div class="config-row">
+        <label>rosbridge 地址</label>
+        <input type="text" id="cfg-rosbridge" value="ws://localhost:9090" class="config-input">
+      </div>
+      <div class="config-row">
+        <label>web_video_server 地址</label>
+        <input type="text" id="cfg-video-server" value="http://localhost:8080" class="config-input">
+      </div>
+      <div class="config-row">
+        <label>机器人基坐标系</label>
+        <input type="text" id="cfg-base-frame" value="base_footprint" class="config-input">
+      </div>
+      <div class="config-row">
+        <label>Qwen3 Agent WebSocket</label>
+        <input type="text" id="cfg-agent-ws" value="ws://localhost:8889/ws/chat" class="config-input">
+      </div>
+      <div class="config-row">
+        <label>OctoMap 话题</label>
+        <select id="cfg-octomap-topic" class="config-input" style="padding:8px 12px;font-family:monospace">
+        <option value="/octomap_point_cloud_centers">/octomap_point_cloud_centers (完整点云，保留原始颜色)</option>
+        <option value="/occupied_cells_vis_array">/occupied_cells_vis_array (稀疏体素)</option>
+      </select>
+      </div>
+    </div>
+    <div class="config-footer">
+      <button class="btn btn-primary" id="btn-apply-config">应用并重连</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 消息提示 ===== -->
+<div id="toast" class="toast hidden"></div>
+
+<!-- ===== JS 库（CDN）===== -->
+<script src="https://cdn.jsdelivr.net/npm/eventemitter2@6.4.9/lib/eventemitter2.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/roslib@1.3.0/build/roslib.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+<!-- ===== 应用 JS ===== -->
+<script src="js/camera.js"></script>
+<script src="js/nav_map.js"></script>
+<script src="js/octomap.js"></script>
+<script src="js/teleop.js"></script>
+<script src="js/resize.js"></script>
+<script src="js/chat_agent.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

@@ -29,6 +29,7 @@ def generate_launch_description():
 
     # 里程计源配置
     odometry_source = LaunchConfiguration("odometry_source", default="world")  # 里程计参考系
+    publish_odom_tf = LaunchConfiguration("publish_odom_tf", default="false")
 
     # 世界文件配置（默认为ware_house）
     world_name = LaunchConfiguration("world_name", default="ware_house")  # 仿真世界名称
@@ -64,6 +65,7 @@ def generate_launch_description():
 
             # 传递里程计配置参数
             "odometry_source": odometry_source,
+            "publish_odom_tf": publish_odom_tf,
 
             # 传递世界名称
             "world_name": world_name,
@@ -80,6 +82,7 @@ def generate_launch_description():
         DeclareLaunchArgument("position_y", default_value=position_y),
         DeclareLaunchArgument("orientation_yaw", default_value=orientation_yaw),
         DeclareLaunchArgument("odometry_source", default_value=odometry_source),
+        DeclareLaunchArgument("publish_odom_tf", default_value=publish_odom_tf),
         DeclareLaunchArgument("world_name", default_value=world_name),
         DeclareLaunchArgument("world_file", default_value=world_file),
 

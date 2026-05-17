@@ -31,3 +31,7 @@ explore_node:
     transform_tolerance: 0.5                      # TF变换容忍度（秒）
     min_frontier_size: 0.2                       # 最小前沿大小（米）- 过滤太小的探索目标
     return_to_init: true                          # 探索完成后返回初始位置
+
+    # 地图保存路径（不含扩展名；生成 map.pgm / map.yaml）
+    # 留空 → 自动保存到 <工作空间>/src/x_bot/maps/map（不写 install）
+    map_save_path: ""

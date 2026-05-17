@@ -2,7 +2,7 @@
   <world name='simple_room'>
     <gui>
       <camera name='gzclient_camera'>
-        <pose>-5 -8 8 3.1627309863406472e-17 0.5 1.2</pose>
+        <pose>-5 -8 8 0 0.49999999999999989 1.2</pose>
       </camera>
     </gui>
     <gravity>0 0 -9.8000000000000007</gravity>
@@ -633,7 +633,7 @@
       <include>
         <uri>model://aws_robomaker_residential_Wardrobe_01</uri>
       </include>
-      <pose>-6.4672431945800781 -0.38076016306877136 0 0 0 1.5537800067340375</pose>
+      <pose>-6.467243194580079 -0.38076016306877181 0 0 0 1.5537800067340379</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='ReadingDesk_bedroom'>
@@ -641,7 +641,7 @@
       <include>
         <uri>model://aws_robomaker_residential_ReadingDesk_01</uri>
       </include>
-      <pose>-6.4543199539182998 1.6162511110474855 0.0014541368373930858 1.8511403738337709e-07 -1.1035215786078898e-08 -6.8754213546308363e-11</pose>
+      <pose>-6.4543199539448741 1.6162511112614071 0.0014548284755344643 3.805164990772162e-08 -2.9248016272361952e-08 -6.8754756224534249e-11</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='Sofa_living'>
@@ -649,7 +649,7 @@
       <include>
         <uri>model://aws_robomaker_residential_Sofa_01</uri>
       </include>
-      <pose>1.5897819288945054 4.4858456637287309 -3.9982487362027997e-05 2.129155200021063e-05 -1.7291113657944155e-05 -1.5695766878000603</pose>
+      <pose>1.5897806628122124 4.4858452365232964 -3.9979425698779712e-05 2.0925514249260803e-05 -1.7831019603611973e-05 -1.5695758388221748</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='TVCabinet_living'>
@@ -665,7 +665,7 @@
       <include>
         <uri>model://aws_robomaker_residential_TV_01</uri>
       </include>
-      <pose>-1.2294299602508545 3.6781198978424072 0.64999997615814209 0 0 3.1333422841517082</pose>
+      <pose>-1.2294299602508549 3.6781198978424081 0.64999997615814209 0 0 3.1333422841517082</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='TrashBin_living'>
@@ -681,7 +681,7 @@
       <include>
         <uri>model://aws_robomaker_residential_Refrigerator_01</uri>
       </include>
-      <pose>6.4463628341460062 -0.059681743961058235 -4.0408547113350494e-07 1.3418000347865412e-05 -6.4293165757132908e-06 -1.5652543944728219</pose>
+      <pose>6.4463628346977293 -0.059681736294644697 -2.5667330448579026e-05 2.6053197884984374e-06 -1.1962456601130271e-05 -1.5652543961485201</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='KitchenCabinet_kitchen'>
@@ -689,7 +689,7 @@
       <include>
         <uri>model://aws_robomaker_residential_KitchenCabinet_01</uri>
       </include>
-      <pose>5.2451295852661133 4.6331872940063477 0 0 0 -1.5626399617337108</pose>
+      <pose>5.2451295852661124 4.6331872940063477 0 0 0 -1.5626399617337108</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='KitchenTable_kitchen'>
@@ -697,7 +697,7 @@
       <include>
         <uri>model://aws_robomaker_residential_KitchenTable_01</uri>
       </include>
-      <pose>4.7297203504722765 2.6525500423045663 -2.8964754900340337e-06 3.8936701438694729e-06 -2.1205887402257385e-07 0.0031595545589449452</pose>
+      <pose>4.7297203512687105 2.6525500424903932 -1.8329402257743901e-06 2.3484310001222227e-06 8.6842196738987665e-09 0.0031595549724049306</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='ChairA_kitchen_1'>
@@ -705,7 +705,7 @@
       <include>
         <uri>model://aws_robomaker_residential_ChairA_01</uri>
       </include>
-      <pose>5.9247941970825195 2.5236330032348633 -6.7064925559226853e-08 3.3486178658183448e-08 -4.4362771238533161e-12 -0.024342900793000225</pose>
+      <pose>5.9247941970825195 2.5236330032348637 -3.3255168412486539e-08 -1.6866696145943335e-11 9.4657036632514959e-11 -0.024342900792999913</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='Coke_table_2'>
@@ -713,7 +713,7 @@
       <include>
         <uri>model://Coke</uri>
       </include>
-      <pose>4.8622210566952271 2.5508092410421339 0.81845105257335626 2.2760365979996162e-06 -1.1596193422027324e-06 0.4999977335025495</pose>
+      <pose>4.4482698440551767 2.3246700763702384 0.79999601840972889 -2.1621811820404538e-06 2.712222151704233e-07 -2.9678794924926941</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='CoffeeCup_table_1'>
@@ -721,7 +721,7 @@
       <include>
         <uri>model://ACE_Coffee_Mug_Kristen_16_oz_cup</uri>
       </include>
-      <pose>4.5875341608438642 2.9190941966732664 0.81780551758188302 -0.0035586365648043565 0.013764262578042611 0.60900062649210462</pose>
+      <pose>4.587534176856563 2.9190945421121817 0.79934673397183165 -0.0035587890568196819 0.013764390573428752 0.6090006254480882</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='toilet_bathroom'>
@@ -729,7 +729,7 @@
       <include>
         <uri>model://Standard Toilet</uri>
       </include>
-      <pose>-6.3279767036437988 -5.199894905090332 0 0 0 1.5700000042340219</pose>
+      <pose>-6.3279767036438006 -5.1998949050903311 0 0 0 1.5700000042340219</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='sink_bathroom'>
@@ -783,7 +783,7 @@
       <include>
         <uri>model://aws_robomaker_residential_Trash_01</uri>
       </include>
-      <pose>2.6230840683102739 -0.017465386551239942 0.00090279055838026617 -2.070397334226829e-07 -2.0873467557751057e-07 0.027011099812610836</pose>
+      <pose>2.6230840683102747 -0.017465386551239918 0.00090279055838026617 -2.0703973342268267e-07 -2.0873467557751049e-07 0.027011099812610819</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='ShoeRack_entry'>
@@ -791,7 +791,7 @@
       <include>
         <uri>model://aws_robomaker_residential_ShoeRack_01</uri>
       </include>
-      <pose>1.9997513293266689 -5.6400051116886782 0.0044500745641274878 1.634496949150598e-07 -5.4175700264740434e-10 -0.00056984913413901759</pose>
+      <pose>1.9997513293265428 -5.6400051116851984 0.0044543267023263652 1.6273719343015056e-07 -5.393949699359833e-10 -0.00057001182837519628</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='Shoe_rack_1'>
@@ -799,7 +799,7 @@
       <include>
         <uri>model://Womens_Bluefish_2Eye_Boat_Shoe_in_Linen_Oat</uri>
       </include>
-      <pose>1.9886496024432474 -3.8635445157273995 -0.00016595777984744977 0.0022253984603449019 0.00031038002801399316 0.50764430962176776</pose>
+      <pose>1.9886495701817801 -3.8635445512976365 -6.5281626671697649e-05 -0.0030337355520972669 -0.0018047128029599257 0.50765159448959074</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='Shoe_rack_2'>
@@ -807,7 +807,7 @@
       <include>
         <uri>model://Womens_Bluefish_2Eye_Boat_Shoe_in_Linen_Oat</uri>
       </include>
-      <pose>1.9006317838189568 -4.3807072635011961 -0.00016600390563037054 0.0022254124240768018 0.00031055373061096092 -1.1727500942366573</pose>
+      <pose>1.9006317438088089 -4.3807072031467822 -6.0252761952468017e-05 -0.0030463980970306887 -0.0011026965457465205 -1.1727424576933545</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='WaterBottle_floor_1'>
@@ -815,7 +815,7 @@
       <include>
         <uri>model://simple_house/Weston_No_22_Cajun_Jerky_Tonic_12_fl_oz_nLj64ZnGwDh</uri>
       </include>
-      <pose>2.5642289593704328 -0.92183765905126047 0.035 0 1.57 0</pose>
+      <pose>2.5642544319478673 -0.92183765905126236 0.031999985397382538 -5.8958843222686013e-23 1.5707963267948966 0</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='Book_on_desk'>
@@ -823,7 +823,7 @@
       <include>
         <uri>model://Eat_to_Live_The_Amazing_NutrientRich_Program_for_Fast_and_Sustained_Weight_Loss_Revised_Edition_Book</uri>
       </include>
-      <pose>-6.4499979899410658 1.6200019162101351 0.74455481909752963 0.00024333232464179909 -0.0077585991321125012 0.30001295466139427</pose>
+      <pose>-6.4499980034299433 1.6200020258001826 0.74455605499589694 0.00024333305082485746 -0.0077585992161762676 0.30001295466484978</pose>
       <self_collide>false</self_collide>
     </model>
     <model name='Person_on_sofa'>
@@ -831,7 +831,7 @@
       <include>
         <uri>model://MaleVisitorSit</uri>
       </include>
-      <pose>2.0203085175056676 4.4762116557911664 0.0044387512289360076 0.00023309544117988462 -0.026052253730208495 -1.570568524433424</pose>
+      <pose>2.020304131934294 4.4762128202839797 0.0044387544370224456 0.00023332487284881396 -0.026051677911450598 -1.5705665684612176</pose>
       <self_collide>false</self_collide>
     </model>
     <light name='Bedroom_CeilingLight' type='point'>

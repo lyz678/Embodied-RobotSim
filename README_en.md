@@ -3,14 +3,24 @@
 [![ROS2](https://img.shields.io/badge/ROS2-Jazzy-brightgreen.svg)](https://docs.ros.org/en/jazzy/index.html)
 [![中文](https://img.shields.io/badge/🌍_Language-中文-blue.svg)](README.md)
 
-Embodied-RobotSim is a comprehensive ROS 2 (Jazzy) simulation workspace for a differential-drive mobile robot equipped with a **Franka FR3 robotic arm**, a 2D LiDAR, a stereo RGB-D camera, and a rich, advanced sensor suite. The system is deeply optimized for **low hardware requirements** and high efficiency, integrating leading-edge algorithms for mapping, navigation, and mobile manipulation.
+Embodied-RobotSim is a comprehensive ROS 2 (Jazzy) simulation workspace for a differential-drive mobile robot equipped with a **Franka FR3 robotic arm**, a 2D LiDAR, a stereo RGB-D camera, and a rich, advanced sensor suite. The system is deeply optimized for **low hardware requirements** and high efficiency, integrating leading-edge algorithms for mapping, navigation, advanced visual perception, mobile manipulation, and a **Qwen3 LLM-driven embodied intelligence closed-loop**, enabling complex robotic interactions via natural language instructions and a Web UI dashboard.
 
 ## 🎬 Demos
 
-| Gazebo Sim | Pick & Place |
-| :---: | :---: |
-| ![GazeboSim](assets/GazeboSim.gif) | ![Pick&Place](assets/Pick&Place.gif) |
-| *Indoor Scene Simulation* | *Autonomous Grasping via YOLOE & GraspNet* |
+### 1. Large Language Model Embodied Closed-Loop (LLM Agent)
+![LLMAgent](assets/Embodied_LLM.gif)
+
+*Multi-modal interaction loop via Qwen3 and VLM*
+
+### 2. Autonomous Mobile Grasping (Pick & Place)
+![Pick&Place](assets/Pick&Place.gif)
+
+*Autonomous Grasping via YOLOE & GraspNet*
+
+### 3. Simulation Environment (Gazebo Sim)
+![GazeboSim](assets/GazeboSim.gif)
+
+*Indoor Scene Simulation with Nav2 Autonomous Navigation and OctoMap 3D Mapping*
 
 ## 🌟 Key Features
 
@@ -21,6 +31,10 @@ Embodied-RobotSim is a comprehensive ROS 2 (Jazzy) simulation workspace for a di
 * **Semantic Occupancy & Grasping:**
   * Generates semantic occupancy mapping using OctoMap.
   * **Autonomous Grasping Integration:** Combines **YOLOE** (target localization) and **GraspNet** (pose estimation) to produce 6-DoF grasp poses from point clouds for arbitrary objects, with complex collision avoidance at both point cloud and OctoMap levels.
+* **Embodied Intelligence & Multi-modal LLM Interaction:**
+  * **Qwen3 LLM Engine:** Integrates the Qwen3 large language model, capable of parsing natural language instructions into robotic task sequences (navigation, grasping, etc.).
+  * **Scene Pre-recognition:** Utilizes Vision-Language Models (VLM) to automatically "look at" the current environment before executing tasks, dynamically adjusting and planning subsequent operations.
+  * **WebSocket-based Full-featured Web UI:** Provides an intuitive and beautiful browser-based control dashboard (including maps, camera streams, teleop joystick, status display, and an AI chat sidebar), completely eliminating the need for complex terminal operations.
 
 ## 📦 Architecture Overview
 
@@ -107,6 +121,12 @@ Navigate the robot in an already mapped environment using Nav2 and Cartographer 
 Spawn the robot in the `manipulation_test` world, start perception pipelines (YOLOE, GraspNet), and execute a semantic pick-and-place loop using MoveIt! (for example: identifying, grabbing, and placing a coke, a book, and a cup):
 ```bash
 ./start_pick_and_place_demo.sh
+```
+
+#### Mode 4: Large Language Model Embodied Closed-Loop (LLM Agent + Web UI)
+This mode launches the full suite of low-level control and perception nodes, mounts the Qwen3 LLM Agent server, and finally opens the Web UI dashboard automatically in your browser. You can directly input natural language commands in the chat sidebar (e.g., "Go to the kitchen to get a coke", "Get a book from the study"), and the system will automatically recognize the scene and plan the execution:
+```bash
+./start_llm_agent.sh
 ```
 
 > **Note:** To quickly kill all related simulation and ROS 2 processes, use the helper script:  

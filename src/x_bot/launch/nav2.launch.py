@@ -126,6 +126,17 @@ def generate_launch_description():
                    'map', 'odom']    # 父坐标系->子坐标系
     )
 
+    # 里程计话题中继：/x_bot/odom → /odom
+    # Gazebo diff_drive 插件发布在 /x_bot/odom，AMCL/Nav2 订阅 /odom
+    odom_relay_node = Node(
+        package='topic_tools',
+        executable='relay',
+        name='odom_relay',
+        output='screen',
+        arguments=['/x_bot/odom', '/odom'],
+        parameters=[{'use_sim_time': True}]
+    )
+
     # 话题重映射节点（已定义但未在启动描述中使用）
     # 功能：处理x机器人特有的话题重映射需求
     remapper_node = Node(
@@ -147,7 +158,7 @@ def generate_launch_description():
     # 添加核心启动动作
     ld.add_action(nav2_launch_cmd)               # Nav2导航栈
     ld.add_action(rviz_launch_cmd)               # RViz可视化工具
-    # ld.add_action(static_transform_publisher_node)  # Removed: Conflicts with SLAM
+    ld.add_action(odom_relay_node)               # odom 话题中继（/x_bot/odom → /odom）
 
     # 注意：map_server_node和remapper_node已定义但未添加到启动描述中
 
