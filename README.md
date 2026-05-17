@@ -124,6 +124,13 @@ source install/setup.bash
 ```
 
 #### 模式 4: 大语言模型具身智能闭环 (LLM Embodied Agent + Web UI)
+> ⚠️ **运行前准备**：本模式依赖阿里云百炼平台提供的 Qwen 大语言模型服务。
+> 1. 请先前往 [阿里云百炼平台](https://www.aliyun.com/product/bailian) 注册/登录，并在“API-KEY管理”页面创建获取您的 **API Key**。
+> 2. 在运行启动脚本之前，需要在**当前终端**中导出该 API Key 环境变量：
+>    ```bash
+>    export DASHSCOPE_API_KEY="您的_DASHSCOPE_API_KEY"
+>    ```
+
 此模式将启动全套底层控制与感知节点，并挂载 Qwen3 LLM Agent 服务器，最终自动打开 Web UI 浏览器面板。你可以直接在浏览器右侧用自然语言输入指令（如：“帮我去厨房拿瓶可乐”、“到书房拿本书”），系统会自动识别场景并规划执行：
 ```bash
 ./start_llm_agent.sh

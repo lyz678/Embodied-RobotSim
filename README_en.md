@@ -124,6 +124,13 @@ Spawn the robot in the `manipulation_test` world, start perception pipelines (YO
 ```
 
 #### Mode 4: Large Language Model Embodied Closed-Loop (LLM Agent + Web UI)
+> ⚠️ **Preparation before running**: This mode depends on the Qwen Large Language Model service provided by the Alibaba Cloud Bailian platform.
+> 1. Please go to the [Alibaba Cloud Bailian Platform](https://www.aliyun.com/product/bailian) to register/login, and create your **API Key** on the "API-KEY Management" page.
+> 2. Before running the startup script, you must export this API Key as an environment variable in your **current terminal**:
+>    ```bash
+>    export DASHSCOPE_API_KEY="your_DASHSCOPE_API_KEY"
+>    ```
+
 This mode launches the full suite of low-level control and perception nodes, mounts the Qwen3 LLM Agent server, and finally opens the Web UI dashboard automatically in your browser. You can directly input natural language commands in the chat sidebar (e.g., "Go to the kitchen to get a coke", "Get a book from the study"), and the system will automatically recognize the scene and plan the execution:
 ```bash
 ./start_llm_agent.sh
