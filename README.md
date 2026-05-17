@@ -1,4 +1,4 @@
-# Embodied-RobotSim: 自主探索与移动抓取仿真系统
+# Embodied-RobotSim: 基于大模型的具身智能移动抓取仿真系统
 
 [![ROS2](https://img.shields.io/badge/ROS2-Jazzy-brightgreen.svg)](https://docs.ros.org/en/jazzy/index.html)
 [![English](https://img.shields.io/badge/🌍_Language-English-blue.svg)](README_en.md)

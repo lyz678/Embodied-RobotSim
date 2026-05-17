@@ -1,4 +1,4 @@
-# Embodied-RobotSim: Autonomous Exploration & Grasping Simulation
+# Embodied-RobotSim: LLM-Driven Embodied Intelligence & Mobile Manipulation Simulation
 
 [![ROS2](https://img.shields.io/badge/ROS2-Jazzy-brightgreen.svg)](https://docs.ros.org/en/jazzy/index.html)
 [![中文](https://img.shields.io/badge/🌍_Language-中文-blue.svg)](README.md)
