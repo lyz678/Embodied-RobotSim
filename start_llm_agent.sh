@@ -187,7 +187,7 @@ fi
 # ========================================
 # Step 5: 启动 Web UI
 # ========================================
-WEB_UI_SCRIPT="$WORKSPACE_ROOT/web_ui/start_web_ui.sh"
+WEB_UI_SCRIPT="$WORKSPACE_ROOT/start_web_ui.sh"
 
 echo "🌐 启动 Web UI (http://localhost:8888)..."
 if [ -f "$WEB_UI_SCRIPT" ]; then

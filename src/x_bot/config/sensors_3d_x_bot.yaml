@@ -17,8 +17,9 @@ move_group:
       - d435_point_cloud
     d435_point_cloud:
       sensor_plugin: occupancy_map_monitor/PointCloudOctomapUpdater
-      point_cloud_topic: /yoloe_multi_text_prompt/pointcloud_colored
       # point_cloud_topic: /x_bot/camera_left/nn_pointcloud
+      # point_cloud_topic: /obstacle_pointcloud
+      point_cloud_topic: /yoloe_multi_text_prompt/pointcloud_colored
       max_range: 2.0
       point_subsample: 5
       padding_offset: 0.2

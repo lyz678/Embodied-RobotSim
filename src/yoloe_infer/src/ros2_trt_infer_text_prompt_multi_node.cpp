@@ -51,6 +51,7 @@ YoloeMultiTextPromptNode::YoloeMultiTextPromptNode()
     float conf = config["conf_thres"].as<float>();
     float iou = config["iou_thres"].as<float>();
     float mad_threshold = config["mad_threshold"].as<float>();
+    bool use_mad_filter = config["use_mad_filter"].as<bool>(true);
     std::string image_topic = config["image_topic"].as<std::string>();
     std::string depth_topic = config["depth_topic"].as<std::string>();
     std::string info_topic = config["camera_info_topic"].as<std::string>();
@@ -77,7 +78,7 @@ YoloeMultiTextPromptNode::YoloeMultiTextPromptNode()
     engine_ = std::make_unique<MultiTextPromptTRTEngine>(engine_path, tokenizer_, num_classes, conf, iou);
 
     // Initialize PointCloudColorizer
-    pointcloud_colorizer_ = std::make_unique<PointCloudColorizer>(color_map, default_color, mad_threshold, min_depth);
+    pointcloud_colorizer_ = std::make_unique<PointCloudColorizer>(color_map, default_color, use_mad_filter, mad_threshold, min_depth);
     
     // Set prompts from config
     engine_->set_prompts(prompts);

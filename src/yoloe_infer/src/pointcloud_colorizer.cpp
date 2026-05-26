@@ -10,9 +10,10 @@ namespace yoloe_infer {
 PointCloudColorizer::PointCloudColorizer(
     const std::map<int, cv::Vec3b>& color_mapping,
     const cv::Vec3b& default_color,
+    bool use_mad_filter,
     float mad_threshold,
     float min_depth)
-    : color_mapping_(color_mapping), default_color_(default_color), mad_threshold_(mad_threshold), min_depth_(min_depth) {
+    : color_mapping_(color_mapping), default_color_(default_color), use_mad_filter_(use_mad_filter), mad_threshold_(mad_threshold), min_depth_(min_depth) {
 }
 
 
@@ -119,7 +120,7 @@ bool PointCloudColorizer::extract_filtered_depth(
     float k = 0.6745f;  // Constant for modified Z-score
     for (size_t i = 0; i < valid_depths.size(); ++i) {
         float modified_z = k * std::abs(valid_depths[i] - result.median_depth) / (result.mad + 1e-6f);
-        if (modified_z < mad_threshold_) {
+        if (!use_mad_filter_ || modified_z < mad_threshold_) {
             result.depths.push_back(valid_depths[i]);
             filtered_xs.push_back(result.pixel_xs[i]);
             filtered_ys.push_back(result.pixel_ys[i]);
@@ -171,7 +172,7 @@ void PointCloudColorizer::process_detections(
                     }
                     if (std::isfinite(d) && d > 0.0f) {
                         float modified_z = std::abs(d - depth_data.median_depth) * k;
-                        if (modified_z < mad_threshold_) {
+                        if (!use_mad_filter_ || modified_z < mad_threshold_) {
                             // Inlier - Color it
                             color_roi.at<cv::Vec3b>(r, c) = cls_color;
                         }

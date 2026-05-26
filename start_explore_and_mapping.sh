@@ -34,14 +34,14 @@ echo ""
 
 # 启动所有服务在多个终端标签页中
 echo "📡 启动 Gazebo 仿真环境..."
-gnome-terminal --title="Gazebo" -- bash -c "ros2 launch x_bot gz.launch.py world_name:=simple_room; exec bash"
+gnome-terminal --title="Gazebo" -- bash -c "source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 launch x_bot gz.launch.py world_name:=simple_room orientation_yaw:=1.5708; exec bash"
 sleep 5
 
 echo "🗺️  启动 Cartographer SLAM 建图..."
 gnome-terminal --title="Cartographer SLAM" -- bash -c "ros2 launch x_bot cartographer.launch.py; exec bash"
 
-# echo "👁️  启动立体匹配..."
-# gnome-terminal --title="Stereo Matching" -- bash -c "ros2 launch stereo_matching stereo_matching.launch.py; exec bash"
+echo "👁️  启动立体匹配..."
+gnome-terminal --title="Stereo Matching" -- bash -c "ros2 launch stereo_matching stereo_matching.launch.py; exec bash"
 
 sleep 3
 echo "🧭 启动 Nav2 导航 (Cartographer 模式)..."

@@ -4,10 +4,11 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
+        - /Input Cloud1
         - /Grasps1/Topic1
         - /Odometry1
       Splitter Ratio: 0.5
-    Tree Height: 502
+    Tree Height: 720
   - Class: rviz_common/Selection
     Name: Selection
   - Class: rviz_common/Tool Properties
@@ -63,7 +64,7 @@ Visualization Manager:
       Name: Input Cloud
       Position Transformer: XYZ
       Selectable: true
-      Size (Pixels): 3
+      Size (Pixels): 10
       Size (m): 0.009999999776482582
       Style: Points
       Topic:
@@ -93,7 +94,7 @@ Visualization Manager:
       Axes Radius: 0.009999999776482582
       Class: rviz_default_plugins/PoseArray
       Color: 255; 25; 0
-      Enabled: true
+      Enabled: false
       Head Length: 0.05000000074505806
       Head Radius: 0.019999999552965164
       Name: Best Grasp Poses
@@ -107,43 +108,44 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /grasp_pose
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
+      Enabled: false
       Name: Matched Grasps
       Namespaces:
-        matched_grasps: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /matched_grasp_markers
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Marker
-      Enabled: true
+      Enabled: false
       Name: Target Pose Markers
       Namespaces:
-        target_poses: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
+        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /target_pose_marker
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
+      Enabled: false
       Name: Grasp Pose Axes
       Namespaces:
-        grasp_axes: true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /grasp_pose_axes
-      Value: true
+      Value: false
     - Angle Tolerance: 0.10000000149011612
       Class: rviz_default_plugins/Odometry
       Covariance:
@@ -161,7 +163,7 @@ Visualization Manager:
           Scale: 1
           Value: true
         Value: true
-      Enabled: true
+      Enabled: false
       Keep: 100
       Name: Odometry
       Position Tolerance: 0.10000000149011612
@@ -182,7 +184,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /odom
-      Value: true
+      Value: false
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -229,39 +231,39 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.4466278553009033
+      Distance: 3.570812940597534
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.5829250812530518
-        Y: 0.3070986270904541
-        Z: 0.7922764420509338
+        X: 2.105487585067749
+        Y: 0.016072947531938553
+        Z: 0.2796892523765564
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: -0.029797254130244255
+      Pitch: 0.345202773809433
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 2.5740013122558594
+      Yaw: 3.114051342010498
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1019
+  Height: 1371
   Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd000000010000000000000200000003a1fc0200000004fb000000100044006900730070006c006100790073010000003d00000233000000c900fffffffb0000001200530065006c0065006300740069006f006e01000002760000005c0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007301000002d80000005c0000005c00fffffffb0000000a00560069006500770073010000033a000000a4000000a400ffffff00000548000003a100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd00000001000000000000020000000501fc0200000004fb000000100044006900730070006c006100790073010000003d0000030d000000c900fffffffb0000001200530065006c0065006300740069006f006e01000003500000007f0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007301000003d5000000800000005c00fffffffb0000000a00560069006500770073010000045b000000e3000000a400ffffff000007b80000050100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Selection:
     collapsed: false
   Tool Properties:
     collapsed: false
   Views:
     collapsed: false
-  Width: 1870
-  X: 690
-  Y: 348
+  Width: 2494
+  X: 66
+  Y: 32

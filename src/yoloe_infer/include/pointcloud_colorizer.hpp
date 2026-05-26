@@ -28,7 +28,7 @@ struct Object3DCoordinate {
 
 class PointCloudColorizer {
 public:
-    PointCloudColorizer(const std::map<int, cv::Vec3b>& color_mapping, const cv::Vec3b& default_color, float mad_threshold = 3.0f, float min_depth = 0.0f);
+    PointCloudColorizer(const std::map<int, cv::Vec3b>& color_mapping, const cv::Vec3b& default_color, bool use_mad_filter = true, float mad_threshold = 3.0f, float min_depth = 0.0f);
     ~PointCloudColorizer() = default;
 
     void process(
@@ -81,6 +81,7 @@ private:
 
     std::map<int, cv::Vec3b> color_mapping_;
     cv::Vec3b default_color_;
+    bool use_mad_filter_;
     float mad_threshold_;
     float min_depth_;
 };

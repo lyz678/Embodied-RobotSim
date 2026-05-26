@@ -42,10 +42,11 @@ engine_path: "src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.engin
 num_classes: 10
 conf_thres: 0.25
 iou_thres: 0.45
-mad_threshold: 3.0 #越小过滤越多
+use_mad_filter: true
+mad_threshold: 2.0 #越小过滤越多
 image_topic: "/x_bot/camera_left/image_raw"
-depth_topic: "/x_bot/camera_left/depth/image_raw"
-# depth_topic: "/x_bot/camera_left/nn_depth"
+# depth_topic: "/x_bot/camera_left/depth/image_raw"
+depth_topic: "/x_bot/camera_left/nn_depth"
 camera_info_topic: "/x_bot/camera_left/camera_info"
 mask_path: "src/x_bot/photos/finger_mask_640.png"
 min_depth: 0.2
