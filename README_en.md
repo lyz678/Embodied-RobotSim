@@ -86,19 +86,45 @@ Since the model files are quite large, please download the pre-trained weights f
 
 > **IMPORTANT**: Before starting the build process, please ensure you have completed the installation of **ROS 2**, **Gazebo**, **CUDA**, and **TensorRT** as specified in the table above.
 
-### 1. Build the Workspace
+### 1. Install Additional System Dependencies
+
+Some dependencies are not covered by `rosdep` and must be installed manually:
+
+```bash
+sudo apt install ros-jazzy-gz-ros2-control
+```
+
+### 2. Build the Workspace
 
 ```bash
 cd ~/robotSim
 # 1. Build TensorRT Plugins (required for GraspNet)
 bash src/graspnet_infer/tensorrt_plugins/build.sh
 
-# 2. Install dependencies (recommended to use FishRos tool or rosdep)
+# 2. Install dependencies (rosdep)
+rosdep update
 rosdep install --from-paths src --ignore-src -r -y
 
 # 3. Build all ROS 2 packages
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
+```
+
+### 3. Generate TensorRT Engine Files
+
+TensorRT engine files are tied to your specific GPU and TensorRT version. They cannot be shared across devices and must be regenerated locally:
+
+```bash
+# Stereo matching model (LSM)
+trtexec --onnx=src/LSM_depth_infer/Fixed_conf_dshape.onnx \
+  --minShapes=left_img:1x3x640x640,right_img:1x3x640x640 \
+  --optShapes=left_img:1x3x640x640,right_img:1x3x640x640 \
+  --maxShapes=left_img:1x3x640x640,right_img:1x3x640x640 \
+  --saveEngine=src/LSM_depth_infer/LSM_conf_640_fp16.engine
+
+# YOLOE object detection model
+trtexec --onnx=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.onnx \
+  --saveEngine=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.engine
 ```
 
 ### 2. Run the Demos

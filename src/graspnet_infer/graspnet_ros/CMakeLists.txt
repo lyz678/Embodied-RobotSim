@@ -38,7 +38,7 @@ if(NOT NVINFER_LIB)
 endif()
 
 # CUDA
-set(CUDA_ROOT /usr/local/cuda-13.1)
+set(CUDA_ROOT /usr/local/cuda)
 find_library(CUDA_LIBRARIES cudart HINTS ${CUDA_ROOT}/lib64)
 
 include_directories(

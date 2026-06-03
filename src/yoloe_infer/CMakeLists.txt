@@ -30,11 +30,9 @@ find_package(CUDAToolkit REQUIRED)
 
 # Try to find TensorRT in common locations
 set(TENSORRT_FOUND FALSE)
-set(TENSORRT_ROOT "/usr/local/TensorRT-10.14.1.48.Linux.x86_64-gnu.cuda-13.0/TensorRT-10.14.1.48" CACHE PATH "TensorRT installation root directory")
 
 # Common TensorRT installation paths
 set(TENSORRT_SEARCH_PATHS
-  ${TENSORRT_ROOT}
   /usr/local/TensorRT
   /opt/TensorRT
   /usr
@@ -51,6 +49,17 @@ foreach(path ${TENSORRT_SEARCH_PATHS})
     endif()
   endif()
 endforeach()
+
+# Fallback: check multiarch system path (apt-installed TensorRT)
+if(NOT TENSORRT_FOUND)
+  if(EXISTS "/usr/include/x86_64-linux-gnu/NvInfer.h")
+    set(TENSORRT_INCLUDE_DIR "/usr/include/x86_64-linux-gnu")
+    find_library(TENSORRT_LIBRARY_INFER nvinfer PATHS /usr/lib/x86_64-linux-gnu)
+    if(TENSORRT_LIBRARY_INFER)
+      set(TENSORRT_FOUND TRUE)
+    endif()
+  endif()
+endif()
 
 if(NOT TENSORRT_FOUND)
   message(WARNING "TensorRT not found. The TensorRT-based inference node will not be built. Please install TensorRT and set TENSORRT_ROOT if needed.")

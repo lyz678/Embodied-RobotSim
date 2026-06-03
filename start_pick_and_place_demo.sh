@@ -32,9 +32,9 @@ sleep 5
 echo "🗺️  启动 Cartographer SLAM 建图..."
 gnome-terminal --title="Cartographer SLAM" -- bash -c "ros2 launch x_bot cartographer.launch.py; exec bash"
 
-# echo "👁️  启动立体匹配..."
-# gnome-terminal --title="Stereo Matching" -- bash -c "ros2 launch stereo_matching stereo_matching.launch.py; exec bash"
-# sleep 2
+echo "👁️  启动立体匹配..."
+gnome-terminal --title="Stereo Matching" -- bash -c "ros2 launch stereo_matching stereo_matching.launch.py; exec bash"
+sleep 2
 
 echo "🤖 启动 MoveIt 运动规划..."
 gnome-terminal --title="MoveIt" -- bash -c "ros2 launch x_bot move_group.launch.py use_sim_time:=true use_rviz:=true; exec bash"
@@ -53,8 +53,8 @@ echo "🦾 启动机械臂控制器..."
 gnome-terminal --title="Arm Ctrl" -- bash -c "ros2 run x_bot robot_actions --ros-args -p use_sim_time:=true; exec bash"
 sleep 1
 
-# echo "🧠 启动业务逻辑节点（循环抓取 coke, book, cup）..."
-# gnome-terminal --title="Logic Node" -- bash -c "python3 src/x_bot/scripts/pick_and_place_demo.py --ros-args -p use_sim_time:=true -p prompts:=\"['coke', 'book', 'cup']\"; exec bash"
+echo "🧠 启动业务逻辑节点（循环抓取 coke, book, cup）..."
+gnome-terminal --title="Logic Node" -- bash -c "python3 src/x_bot/scripts/pick_and_place_demo.py --ros-args -p use_sim_time:=true -p prompts:=\"['coke', 'book', 'cup']\"; exec bash"
 
 echo ""
 echo "=========================================="

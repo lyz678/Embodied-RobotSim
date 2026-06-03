@@ -119,7 +119,7 @@ fi
 # ─── 启动前端 HTTP 服务器 ─────────────────────────────
 WEB_PORT=8888
 info "启动前端 HTTP 服务器 (http://localhost:${WEB_PORT})..."
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR/web_ui"
 python3 -m http.server $WEB_PORT \
   > /tmp/webui_http.log 2>&1 &
 PID_HTTP=$!

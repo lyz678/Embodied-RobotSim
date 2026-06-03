@@ -86,7 +86,15 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 
 > **重要**：在开始编译之前，请确保你已经按照上面的表格完成了 **ROS 2**、**Gazebo**、**CUDA** 和 **TensorRT** 的安装。
 
-### 1. 编译工作空间
+### 1. 安装额外系统依赖
+
+`rosdep` 无法覆盖所有依赖，以下包需要手动安装：
+
+```bash
+sudo apt install ros-jazzy-gz-ros2-control
+```
+
+### 2. 编译工作空间
 
 ```bash
 cd ~/robotSim
@@ -94,11 +102,29 @@ cd ~/robotSim
 bash src/graspnet_infer/tensorrt_plugins/build.sh
 
 # 2. 安装依赖扩展包 (rosdep)
+rosdep update
 rosdep install --from-paths src --ignore-src -r -y
 
 # 3. 构建所有功能包
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
+```
+
+### 3. 生成 TensorRT Engine 文件
+
+TensorRT engine 文件与 GPU 型号和 TensorRT 版本绑定，不可跨设备使用，需在本机重新生成：
+
+```bash
+# 立体匹配模型 (LSM)
+trtexec --onnx=src/LSM_depth_infer/Fixed_conf_dshape.onnx \
+  --minShapes=left_img:1x3x640x640,right_img:1x3x640x640 \
+  --optShapes=left_img:1x3x640x640,right_img:1x3x640x640 \
+  --maxShapes=left_img:1x3x640x640,right_img:1x3x640x640 \
+  --saveEngine=src/LSM_depth_infer/LSM_conf_640_fp16.engine
+
+# YOLOE 目标检测模型
+trtexec --onnx=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.onnx \
+  --saveEngine=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.engine
 ```
 
 ### 2. 运行演示案例

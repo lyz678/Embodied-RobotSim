@@ -31,17 +31,27 @@ elseif(EXISTS "/usr/local/TensorRT")
     endif()
 endif()
 
-# If TensorRT_ROOT is set, use it
-if(TensorRT_ROOT)
+# If TensorRT_ROOT is set and valid, use it
+if(TensorRT_ROOT AND EXISTS "${TensorRT_ROOT}/include" AND EXISTS "${TensorRT_ROOT}/lib")
     set(TENSORRT_INCLUDE_DIR "${TensorRT_ROOT}/include")
     set(TENSORRT_LIB_DIR "${TensorRT_ROOT}/lib")
     message(STATUS "Using TensorRT from: ${TensorRT_ROOT}")
 else()
-    # Try to find TensorRT using find_package
-    find_package(TensorRT QUIET)
-    if(NOT TensorRT_FOUND)
+    # Try to find TensorRT in system paths (apt-installed)
+    find_path(TENSORRT_INCLUDE_DIR NvInfer.h
+        PATHS /usr/include/x86_64-linux-gnu /usr/include
+    )
+    find_library(TENSORRT_NVINFER_LIB nvinfer
+        PATHS /usr/lib/x86_64-linux-gnu /usr/lib
+    )
+    find_library(TENSORRT_NVINFER_PLUGIN_LIB nvinfer_plugin
+        PATHS /usr/lib/x86_64-linux-gnu /usr/lib
+    )
+    if(NOT TENSORRT_INCLUDE_DIR OR NOT TENSORRT_NVINFER_LIB)
         message(FATAL_ERROR "TensorRT not found. Please set TENSORRT_ROOT environment variable or install TensorRT.")
     endif()
+    get_filename_component(TENSORRT_LIB_DIR ${TENSORRT_NVINFER_LIB} DIRECTORY)
+    message(STATUS "Using system TensorRT: ${TENSORRT_INCLUDE_DIR}")
 endif()
 
 # Include directories
@@ -58,7 +68,7 @@ set(CPP_SOURCES
     fps_plugin.cpp
 )
 
-set(CMAKE_CUDA_ARCHITECTURES 89)
+set(CMAKE_CUDA_ARCHITECTURES 120)
 
 # Create library
 add_library(fps_plugin SHARED ${CUDA_SOURCES} ${CPP_SOURCES})
@@ -92,9 +102,9 @@ else()
     set(CUDA_LIB_PATHS
         ${CUDAToolkit_LIBRARY_DIR}
         ${CUDA_LIBRARY_DIRS}
-        /usr/local/cuda-13.1/targets/x86_64-linux/lib
-        /usr/local/cuda-13.1/lib64
-        /usr/local/cuda-13.1/lib
+        /usr/local/cuda/targets/x86_64-linux/lib
+        /usr/local/cuda/lib64
+        /usr/local/cuda/lib
         /usr/local/cuda/lib64
         /usr/local/cuda/lib
         /usr/lib/x86_64-linux-gnu
@@ -111,13 +121,13 @@ else()
     else()
         message(WARNING "cudart not found via find_library, trying direct path")
         # Try direct path
-        if(EXISTS "/usr/local/cuda-13.1/targets/x86_64-linux/lib/libcudart.so")
-            target_link_libraries(fps_plugin /usr/local/cuda-13.1/targets/x86_64-linux/lib/libcudart.so)
-        elseif(EXISTS "/usr/local/cuda-13.1/lib64/libcudart.so")
-            target_link_libraries(fps_plugin /usr/local/cuda-13.1/lib64/libcudart.so)
+        if(EXISTS "/usr/local/cuda/targets/x86_64-linux/lib/libcudart.so")
+            target_link_libraries(fps_plugin /usr/local/cuda/targets/x86_64-linux/lib/libcudart.so)
+        elseif(EXISTS "/usr/local/cuda/lib64/libcudart.so")
+            target_link_libraries(fps_plugin /usr/local/cuda/lib64/libcudart.so)
         else()
             # Last resort: add library directory and link
-            link_directories(/usr/local/cuda-13.1/targets/x86_64-linux/lib)
+            link_directories(/usr/local/cuda/targets/x86_64-linux/lib)
             target_link_libraries(fps_plugin cudart)
         endif()
     endif()

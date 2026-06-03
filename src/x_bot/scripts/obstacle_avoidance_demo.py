@@ -19,6 +19,9 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from moveit_msgs.msg import CollisionObject, PlanningScene
 from shape_msgs.msg import SolidPrimitive
+from sensor_msgs.msg import PointCloud2, PointField
+import struct
+import numpy as np
 import time
 import threading
 import sys
@@ -33,7 +36,9 @@ class ObstacleAvoidanceDemo(Node):
 
         self.pub_arm = self.create_publisher(PoseStamped, '/arm_command/pose', 10)
         self.pub_planning_scene = self.create_publisher(PlanningScene, '/planning_scene', 10)
+        self.pub_cloud = self.create_publisher(PointCloud2, '/yoloe_multi_text_prompt/pointcloud_colored', 10)
         self.create_subscription(String, '/arm_command/status', self.status_callback, 10)
+        self.create_timer(0.1, self._publish_wall_cloud)  # 10Hz
 
         self.go_home_client = self.create_client(Trigger, '/robot_actions/go_home')
 
@@ -65,6 +70,44 @@ class ObstacleAvoidanceDemo(Node):
 
     def status_callback(self, msg):
         self.last_motion_status = msg.data
+
+    def _publish_wall_cloud(self):
+        """发布墙体点云到 /yoloe_multi_text_prompt/pointcloud_colored，供 OctoMap/MoveIt 使用"""
+        # 在墙体表面均匀采样点
+        xs = np.full(400, self.WALL_CENTER_X)
+        ys = np.linspace(
+            self.WALL_CENTER_Y - self.WALL_LENGTH / 2,
+            self.WALL_CENTER_Y + self.WALL_LENGTH / 2, 20
+        )
+        zs = np.linspace(0.0, self.WALL_HEIGHT, 20)
+        yy, zz = np.meshgrid(ys, zs)
+        points = np.column_stack([
+            xs, yy.ravel(), zz.ravel(),
+            np.zeros(400, dtype=np.float32),  # r
+            np.zeros(400, dtype=np.float32),  # g
+            np.ones(400, dtype=np.float32),   # b
+        ]).astype(np.float32)
+
+        fields = [
+            PointField(name='x', offset=0,  datatype=PointField.FLOAT32, count=1),
+            PointField(name='y', offset=4,  datatype=PointField.FLOAT32, count=1),
+            PointField(name='z', offset=8,  datatype=PointField.FLOAT32, count=1),
+            PointField(name='r', offset=12, datatype=PointField.FLOAT32, count=1),
+            PointField(name='g', offset=16, datatype=PointField.FLOAT32, count=1),
+            PointField(name='b', offset=20, datatype=PointField.FLOAT32, count=1),
+        ]
+        msg = PointCloud2()
+        msg.header.frame_id = 'odom'
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.height = 1
+        msg.width = len(points)
+        msg.fields = fields
+        msg.is_bigendian = False
+        msg.point_step = 24
+        msg.row_step = msg.point_step * msg.width
+        msg.data = points.tobytes()
+        msg.is_dense = True
+        self.pub_cloud.publish(msg)
 
     def add_wall_to_planning_scene(self):
         """通过 PlanningScene 消息直接添加墙体碰撞物体"""
