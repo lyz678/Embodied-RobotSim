@@ -40,8 +40,8 @@ sleep 5
 echo "🗺️  启动 Cartographer SLAM 建图..."
 gnome-terminal --title="Cartographer SLAM" -- bash -c "ros2 launch x_bot cartographer.launch.py; exec bash"
 
-echo "👁️  启动立体匹配..."
-gnome-terminal --title="Stereo Matching" -- bash -c "ros2 launch stereo_matching stereo_matching.launch.py; exec bash"
+# echo "👁️  启动立体匹配..."
+# gnome-terminal --title="Stereo Matching" -- bash -c "ros2 launch stereo_matching stereo_matching.launch.py; exec bash"
 
 sleep 3
 echo "🧭 启动 Nav2 导航 (Cartographer 模式)..."

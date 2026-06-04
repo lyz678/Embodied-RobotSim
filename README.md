@@ -77,33 +77,26 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 
 | 文件名 | 存放路径 (相对于项目根目录) |
 | :--- | :--- |
-| `yoloe-v8l-text-prompt-multi_nc10_fp16.engine` | `src/yoloe_infer/models/` |
 | `yoloe-v8l-text-prompt-multi_nc10_fp16.onnx` | `src/yoloe_infer/models/` |
-| `graspnet.trt` | `src/graspnet_infer/` |
 | `graspnet.onnx` | `src/graspnet_infer/` |
+
+> **注意**：`.trt` 和 `.engine` 文件不再提供，需根据下方说明在本机从 ONNX 文件自行生成。
 
 ## 🚀 快速启动指南
 
 > **重要**：在开始编译之前，请确保你已经按照上面的表格完成了 **ROS 2**、**Gazebo**、**CUDA** 和 **TensorRT** 的安装。
 
-### 1. 安装额外系统依赖
-
-`rosdep` 无法覆盖所有依赖，以下包需要手动安装：
-
-```bash
-sudo apt install ros-jazzy-gz-ros2-control
-```
-
-### 2. 编译工作空间
+### 1. 编译工作空间
 
 ```bash
 cd ~/robotSim
 # 1. 编译 TensorRT 插件 (GraspNet 依赖)
 bash src/graspnet_infer/tensorrt_plugins/build.sh
 
-# 2. 安装依赖扩展包 (rosdep)
+# 2. 安装依赖扩展包 (rosdep 及额外系统包)
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y
+sudo apt install ros-jazzy-gz-ros2-control ros-jazzy-moveit-ros-perception
 
 # 3. 构建所有功能包
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
@@ -115,16 +108,14 @@ source install/setup.bash
 TensorRT engine 文件与 GPU 型号和 TensorRT 版本绑定，不可跨设备使用，需在本机重新生成：
 
 ```bash
-# 立体匹配模型 (LSM)
-trtexec --onnx=src/LSM_depth_infer/Fixed_conf_dshape.onnx \
-  --minShapes=left_img:1x3x640x640,right_img:1x3x640x640 \
-  --optShapes=left_img:1x3x640x640,right_img:1x3x640x640 \
-  --maxShapes=left_img:1x3x640x640,right_img:1x3x640x640 \
-  --saveEngine=src/LSM_depth_infer/LSM_conf_640_fp16.engine
-
 # YOLOE 目标检测模型
 trtexec --onnx=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.onnx \
   --saveEngine=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.engine
+
+# GraspNet 抓取模型（依赖 FPS 插件，需先完成步骤 2 中的插件编译）
+trtexec --onnx=src/graspnet_infer/graspnet.onnx \
+  --saveEngine=src/graspnet_infer/graspnet.trt \
+  --staticPlugins=src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so
 ```
 
 ### 2. 运行演示案例
@@ -134,7 +125,7 @@ trtexec --onnx=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.onnx
 #### 模式 1: 自主探索建图 (Explore & Mapping)
 使用 `explore_lite` 在完全未知的 Gazebo 房间中进行自主探索，同步运行 Cartographer 生成高精度地图与 YOLOE / OctoMap 语义网格。
 ```bash
-./start_explore_mapping.sh
+./start_explore_and_mapping.sh
 ```
 
 #### 模式 2: 静态导航 (Static Navigation)

@@ -28,7 +28,9 @@
       "Bash(ffmpeg -y -i \"避障_截取.mp4\" -vf \"fps=15,scale=720:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse\" \"避障_截取.gif\")",
       "Bash(lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT,MODEL)",
       "Bash(findmnt \"/media/lyz/Ubuntu 26.04 amd64\")",
-      "Bash(mount)"
+      "Bash(mount)",
+      "Bash(xargs ls -t)",
+      "Bash(sudo apt install -y ros-jazzy-moveit-ros-perception)"
     ]
   }
 }

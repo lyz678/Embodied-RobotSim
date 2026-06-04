@@ -31,11 +31,14 @@ if [ -z "$TENSORRT_ROOT" ]; then
         fi
     fi
     
-    # Method 2: Try to find from trtexec path
+    # Method 2: deb package installation (/usr/lib/x86_64-linux-gnu)
+    if [ -z "$TENSORRT_ROOT" ] && [ -f "/usr/lib/x86_64-linux-gnu/libnvinfer.so" ]; then
+        export TENSORRT_ROOT="/usr/lib/x86_64-linux-gnu"
+        echo "Auto-detected TensorRT (deb): ${TENSORRT_ROOT}"
+    fi
+    # Method 3: Try to find from trtexec path (non-deb installations)
     if [ -z "$TENSORRT_ROOT" ] && command -v trtexec &> /dev/null; then
         TRTEXEC_PATH=$(which trtexec)
-        # Extract TensorRT root from trtexec path
-        # e.g., /usr/local/TensorRT-10.14.1.48.Linux.x86_64-gnu.cuda-13.0/TensorRT-10.14.1.48/bin/trtexec
         TRT_BIN_DIR=$(dirname "$TRTEXEC_PATH")
         TRT_ROOT_CANDIDATE=$(dirname "$TRT_BIN_DIR")
         if [ -d "$TRT_ROOT_CANDIDATE/include" ] && [ -d "$TRT_ROOT_CANDIDATE/lib" ]; then

@@ -58,7 +58,6 @@ install(DIRECTORY
   maps
   meshes
   models
-  photos
   rviz
   scripts
   urdf

@@ -4,8 +4,8 @@
 graspnet_node:
   ros__parameters:
     # TensorRT Engine Configuration
-    engine_path: "/home/lyz/graspnet-baseline/graspnet.trt"  # Path to TensorRT engine file
-    plugin_path: "/home/lyz/graspnet-baseline/tensorrt_plugins/build/libfps_plugin.so"  # Path to TensorRT plugin library
+    engine_path: "src/graspnet_infer/graspnet.trt"  # Path to TensorRT engine file (overridden by launch script)
+    plugin_path: "src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so"  # Path to TensorRT plugin library (overridden by launch script)
     
     # Point Cloud Processing
     num_point: 20000  # Number of points to sample from input cloud

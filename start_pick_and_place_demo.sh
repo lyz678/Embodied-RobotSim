@@ -32,9 +32,9 @@ sleep 5
 echo "🗺️  启动 Cartographer SLAM 建图..."
 gnome-terminal --title="Cartographer SLAM" -- bash -c "ros2 launch x_bot cartographer.launch.py; exec bash"
 
-echo "👁️  启动立体匹配..."
-gnome-terminal --title="Stereo Matching" -- bash -c "ros2 launch stereo_matching stereo_matching.launch.py; exec bash"
-sleep 2
+# echo "👁️  启动立体匹配..."
+# gnome-terminal --title="Stereo Matching" -- bash -c "ros2 launch stereo_matching stereo_matching.launch.py; exec bash"
+# sleep 2
 
 echo "🤖 启动 MoveIt 运动规划..."
 gnome-terminal --title="MoveIt" -- bash -c "ros2 launch x_bot move_group.launch.py use_sim_time:=true use_rviz:=true; exec bash"
@@ -46,7 +46,9 @@ sleep 2
 
 echo "👁️  启动 GraspNet..."
 gnome-terminal --title="GraspNet" -- bash -c "ros2 run graspnet_ros graspnet_node --ros-args \
-    --params-file $(pwd)/src/graspnet_infer/graspnet_ros/config/config.yaml & \
+    --params-file $(pwd)/src/graspnet_infer/graspnet_ros/config/config.yaml \
+    -p engine_path:=$(pwd)/src/graspnet_infer/graspnet.trt \
+    -p plugin_path:=$(pwd)/src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so & \
     rviz2 -d $(pwd)/src/graspnet_infer/graspnet.rviz; exec bash"
 
 echo "🦾 启动机械臂控制器..."

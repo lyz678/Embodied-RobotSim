@@ -69,32 +69,32 @@
       <self_collide>false</self_collide>
     </model>
     <include>
-      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_KitchenTable_01</uri>
+      <uri>model://aws_robomaker_residential_KitchenTable_01</uri>
       <name>kitchen_table</name>
       <pose>0.80099999913421072 -1.9101334627884561e-06 -2.4500677200766195e-06 3.1185218403136033e-06 -7.124527503649615e-10 -6.8777985939350177e-05</pose>
     </include>
     <include>
-      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/simple_house/Coke</uri>
+      <uri>model://Coke</uri>
       <name>coke_can</name>
       <pose>0.7104652429592917 -0.22386705207148347 0.7999938009058144 -3.2109303966905192e-06 -7.3676413248259966e-07 2.7714900178903883</pose>
     </include>
     <include>
-      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_Trash_01</uri>
+      <uri>model://aws_robomaker_residential_Trash_01</uri>
       <name>trash_bin</name>
       <pose>0.0022253538481891181 -0.80899393558502186 0.00090369599722313516 -2.6573641194778322e-11 2.6239444488241425e-11 0.000999232651501619</pose>
     </include>
     <include>
-      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_Carpet_01</uri>
+      <uri>model://aws_robomaker_residential_Carpet_01</uri>
       <name>carpet</name>
       <pose>0 0 0.001 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/simple_house/ACE_Coffee_Mug_Kristen_16_oz_cup</uri>
+      <uri>model://ACE_Coffee_Mug_Kristen_16_oz_cup</uri>
       <name>coffee_mug</name>
       <pose>0.65361203360971909 0.037913016200427634 0.7993453801573166 -0.0035606491860642998 0.013767693537215372 -1.0175086775693065</pose>
     </include>
     <include>
-      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/simple_house/Eat_to_Live_The_Amazing_NutrientRich_Program_for_Fast_and_Sustained_Weight_Loss_Revised_Edition_Book</uri>
+      <uri>model://Eat_to_Live_The_Amazing_NutrientRich_Program_for_Fast_and_Sustained_Weight_Loss_Revised_Edition_Book</uri>
       <name>book</name>
       <pose>0.64062776230035046 0.30366273421741746 0.79944935768957848 0.00024507310136731434 -0.0077588136382490229 -0.10201647261222341</pose>
     </include>
@@ -109,32 +109,32 @@
       <pose>-0.20512398478423557 0.75470275806592746 -6.3233450429837481e-05 -0.0030437998427116503 -0.0010999764991083574 -0.54373957546303897</pose>
     </include>
     <include>
-      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_FoldingDoor_01</uri>
+      <uri>model://aws_robomaker_residential_FoldingDoor_01</uri>
       <name>wall_north_1</name>
       <pose>-0.63117146492004395 2.5000050067901611 0 0 0 1.5708000357176291</pose>
     </include>
     <include>
-      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_FoldingDoor_01</uri>
+      <uri>model://aws_robomaker_residential_FoldingDoor_01</uri>
       <name>wall_north_2</name>
       <pose>1.9166383743286133 2.4999997615814209 0 0 0 1.5708000357176291</pose>
     </include>
     <include>
-      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_FoldingDoor_01</uri>
+      <uri>model://aws_robomaker_residential_FoldingDoor_01</uri>
       <name>wall_south_1</name>
       <pose>-0.57947838306427002 -2.6104195117950439 0 0 0 1.5708000357176291</pose>
     </include>
     <include>
-      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_FoldingDoor_01</uri>
+      <uri>model://aws_robomaker_residential_FoldingDoor_01</uri>
       <name>wall_south_2</name>
       <pose>1.9357520341873169 -2.5684797763824463 0 0 0 1.5708000357176291</pose>
     </include>
     <include>
-      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_FoldingDoor_01</uri>
+      <uri>model://aws_robomaker_residential_FoldingDoor_01</uri>
       <name>wall_east_1</name>
       <pose>3.2442901134490967 -1.2967008352279663 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_FoldingDoor_01</uri>
+      <uri>model://aws_robomaker_residential_FoldingDoor_01</uri>
       <name>wall_east_2</name>
       <pose>3.234489917755127 1.2163598537445068 0 0 0 0</pose>
     </include>

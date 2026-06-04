@@ -69,7 +69,7 @@
       <self_collide>false</self_collide>
     </model>
     <include>
-      <uri>file:///home/lyz/robotSim/install/x_bot/share/x_bot/models/small_house/aws_robomaker_residential_FoldingDoor_01</uri>
+      <uri>model://aws_robomaker_residential_FoldingDoor_01</uri>
       <name>obstacle_wall</name>
       <pose>1.6319806575775146 4.1983935261669103e-06 0 0 0 1.5708000357176291</pose>
     </include>

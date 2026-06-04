@@ -20,8 +20,8 @@ colcon build --base-paths graspnet_ros
 2. Run the node:
    ```bash
    ros2 run graspnet_ros graspnet_node --ros-args \
-       -p engine_path:=/home/lyz/graspnet-baseline/graspnet.trt \
-       -p plugin_path:=/home/lyz/graspnet-baseline/tensorrt_plugins/build/libfps_plugin.so \
+       -p engine_path:=$(pwd)/src/graspnet_infer/graspnet.trt \
+       -p plugin_path:=$(pwd)/src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so \
        -p num_point:=20000 \
        -p frame_id:=camera_color_optical_frame
    ```

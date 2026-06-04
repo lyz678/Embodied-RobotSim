@@ -77,33 +77,26 @@ Since the model files are quite large, please download the pre-trained weights f
 
 | File Name | Placement Path (Relative to Project Root) |
 | :--- | :--- |
-| `yoloe-v8l-text-prompt-multi_nc10_fp16.engine` | `src/yoloe_infer/models/` |
 | `yoloe-v8l-text-prompt-multi_nc10_fp16.onnx` | `src/yoloe_infer/models/` |
-| `graspnet.trt` | `src/graspnet_infer/` |
 | `graspnet.onnx` | `src/graspnet_infer/` |
+
+> **Note**: `.trt` and `.engine` files are no longer provided. Generate them locally from the ONNX files using the instructions below.
 
 ## 🚀 Quick Start Instructions
 
 > **IMPORTANT**: Before starting the build process, please ensure you have completed the installation of **ROS 2**, **Gazebo**, **CUDA**, and **TensorRT** as specified in the table above.
 
-### 1. Install Additional System Dependencies
-
-Some dependencies are not covered by `rosdep` and must be installed manually:
-
-```bash
-sudo apt install ros-jazzy-gz-ros2-control
-```
-
-### 2. Build the Workspace
+### 1. Build the Workspace
 
 ```bash
 cd ~/robotSim
 # 1. Build TensorRT Plugins (required for GraspNet)
 bash src/graspnet_infer/tensorrt_plugins/build.sh
 
-# 2. Install dependencies (rosdep)
+# 2. Install dependencies (rosdep + additional system packages)
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y
+sudo apt install ros-jazzy-gz-ros2-control ros-jazzy-moveit-ros-perception
 
 # 3. Build all ROS 2 packages
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
@@ -115,16 +108,14 @@ source install/setup.bash
 TensorRT engine files are tied to your specific GPU and TensorRT version. They cannot be shared across devices and must be regenerated locally:
 
 ```bash
-# Stereo matching model (LSM)
-trtexec --onnx=src/LSM_depth_infer/Fixed_conf_dshape.onnx \
-  --minShapes=left_img:1x3x640x640,right_img:1x3x640x640 \
-  --optShapes=left_img:1x3x640x640,right_img:1x3x640x640 \
-  --maxShapes=left_img:1x3x640x640,right_img:1x3x640x640 \
-  --saveEngine=src/LSM_depth_infer/LSM_conf_640_fp16.engine
-
 # YOLOE object detection model
 trtexec --onnx=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.onnx \
   --saveEngine=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.engine
+
+# GraspNet grasping model (requires FPS plugin built in step 2)
+trtexec --onnx=src/graspnet_infer/graspnet.onnx \
+  --saveEngine=src/graspnet_infer/graspnet.trt \
+  --staticPlugins=src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so
 ```
 
 ### 2. Run the Demos
@@ -134,7 +125,7 @@ We provide three pre-configured one-click bash scripts in the root directory for
 #### Mode 1: Autonomous Exploration & Mapping
 Automatically explore unknown environments using `explore_lite`, Cartographer and generated YOLOE/OctoMap:
 ```bash
-./start_explore_mapping.sh
+./start_explore_and_mapping.sh
 ```
 
 #### Mode 2: Static Navigation

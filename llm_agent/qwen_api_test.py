@@ -14,7 +14,7 @@ client = OpenAI(
     base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
 )
 
-image_path = "/home/lyz/robotSim/assets/Pick&Place.gif"
+image_path = os.path.join(os.path.dirname(__file__), "../assets/Pick&Place.gif")
 base64_image = encode_image(image_path)
 
 completion = client.chat.completions.create(
