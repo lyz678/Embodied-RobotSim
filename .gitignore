@@ -17,6 +17,7 @@ venv/
 # Editor/IDE
 .vscode/
 .idea/
+.claude/
 *.swp
 *~
 
@@ -33,9 +34,8 @@ venv/
 *.caffemodel
 
 # Datasets & Large Files
-# *.jpg
-# *.png
-
+*.jpg
+*.png
 *.mp4
 *.bag
 *.mcap
@@ -53,4 +53,3 @@ venv/
 /src/graspnet_infer/tensorrt_plugins/build/
 cmd
 /src/LSM_depth_infer/
-.claude/
