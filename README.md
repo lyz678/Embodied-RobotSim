@@ -18,14 +18,15 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 
 *基于 YOLOE 与 GraspNet 的自主抓取*
 
-### 3. 仿真环境 (Gazebo Sim)
+### 3. 仿真环境 (Gazebo / Isaac Sim)
 ![GazeboSim](assets/GazeboSim.gif)
 
-*室内场景仿真：包含 Nav2 自主导航与 OctoMap 3D 占据栅格建图*
+*室内场景仿真：Gazebo Harmonic 与 Isaac Sim 6.1 共用 Nav2、MoveIt 2 和感知栈*
 
 ## 🌟 主要特性
 
-* **移动抓取操作 (Mobile Manipulation):** 为 Franka FR3 机械臂提供 MoveIt 2 集成，同时支持稳定的差速移动底盘控制。
+* **双仿真后端:** 同一套 Xacro、ROS 2 话题和控制器接口可运行于 Gazebo Harmonic 或 Isaac Sim 6.1。
+* **移动抓取操作 (Mobile Manipulation):** 为 Franka FR3 机械臂提供 MoveIt 2 集成，同时支持稳定的四轮差速移动底盘控制。
 * **自主探索与建图:** 采用 Cartographer (原生支持 2D LiDAR 和 IMU 融合) 实现高精度 SLAM，集成 `m-explore-ros2` 包进行基于前沿的 (Frontier-based) 未知环境自主探索。
 * **先进感知系统 (视觉):** 
   * **YOLOE 感知推理:** 支持输入文本提示词 (Text Prompt) 的实时多目标检测 (`yoloe_infer`)。
@@ -43,7 +44,7 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 
 | 功能包 | 用途 |
 |---------|---------|
-| `x_bot` | 核心机器人包：包含 URDF、Gazebo 世界文件、启动脚本 (Launch)、导航配置以及 MoveIt 机械臂控制节点 (`robot_actions`)。 |
+| `x_bot` | 核心机器人包：包含 URDF、Gazebo/Isaac Sim 后端、场景、启动脚本、导航配置以及 MoveIt 机械臂控制节点 (`robot_actions`)。 |
 | `yoloe_infer` | 基于 TensorRT 加速的 YOLOE 文本提示目标检测。 |
 | `graspnet_infer` | 基于 TensorRT 的 GraspNet 推理封装，支持直接从杂乱点云场景中计算物体的 6-DoF 抓取位姿。 |
 | `m-explore-ros2` | 适配 ROS 2 的 `explore_lite` 包，为建图过程提供完全自主的探索与地图边界拓展能力。 |
@@ -86,12 +87,12 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 
 ## 🚀 快速启动指南
 
-> **重要**：在开始编译之前，请确保你已经按照上面的表格完成了 **ROS 2**、**Gazebo**、**CUDA** 和 **TensorRT** 的安装。
+> **重要**：ROS 2 Jazzy 是公共依赖。仿真器可在 Gazebo Harmonic 与 Isaac Sim 6.1 中二选一；运行完整视觉抓取功能时仍需 CUDA、TensorRT 和对应模型。
 
 ### 1. 编译工作空间
 
 ```bash
-cd ~/robotSim
+cd /path/to/Embodied-RobotSim
 # 1. 编译 TensorRT 插件 (GraspNet 依赖)
 bash src/graspnet_infer/tensorrt_plugins/build.sh
 
@@ -105,43 +106,127 @@ colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ```
 
-### Isaac Sim 6.1 后端
+### 2. Isaac Sim 6.1 后端
 
-Isaac 后端与 Gazebo 并存，不改变原有无参数启动方式。它在运行时展开并导入同一套 `x_bot.xacro`，通过 OmniGraph 提供四轮差速控制、`/clock`、里程计、IMU、RGB-D、点云和 RTX 2D LiDAR，并由 Isaac Sim 内置的 `ros2_control` 管理器承载现有 FR3 控制器。
+Isaac 后端与 Gazebo 并存，不改变原有无参数启动方式。运行时会展开并导入同一套 `x_bot.xacro`，无需预先维护一份独立机器人 USD。
 
-当前提供两个轻量级程序化 USD 场景：
+> **当前状态：** Isaac Sim 代码以 **6.1 + ROS 2 Jazzy** API 为目标完成；开发机未安装 Isaac Sim/ROS 2，因此尚未进行目标机运行验证。首次部署请按下方清单逐项检查。
 
-* `simple_room`：探索、静态导航、导航抓取和 LLM Agent；
-* `manipulation_test`：桌面循环抓取。
+#### 后端能力对照
 
-目标机需要 Ubuntu 24.04、ROS 2 Jazzy 和 Isaac Sim 6.1。安装 Isaac Sim 后设置其根目录，再重新构建工作空间：
+| 能力 | Gazebo Harmonic | Isaac Sim 6.1 |
+|---|---|---|
+| 机器人描述 | Xacro → SDF | Xacro → URDF → 运行时 USD |
+| 移动底盘 | Gz 四轮差速插件 | 两组 OmniGraph 差速控制器同步驱动四轮 |
+| FR3 控制 | `gz_ros2_control` | Isaac 内置 `ROS2ControlManager` |
+| 2D LiDAR | GPU LiDAR | RTX LiDAR |
+| RGB-D | Gz RGB-D Sensor | Render Product + ROS 2 Camera Helper |
+| 场景 | 原有 SDF 世界 | 程序化轻量 USD 场景 |
+| ROS 接口 | `ros_gz_bridge` | Isaac ROS 2 Bridge |
+
+Isaac 后端当前支持：
+
+* `simple_room`：探索建图、静态导航、导航抓取和 LLM Agent；
+* `manipulation_test`：桌面循环抓取；
+* `coke`、`cup`、`book` 等操作物体由 USD 几何体直接生成，不依赖大型 Gazebo 模型目录。
+
+#### 安装与环境变量
+
+目标机需安装 Ubuntu 24.04、ROS 2 Jazzy 和 Isaac Sim 6.1，并确保 Isaac Sim 包含 ROS 2 Bridge、URDF Importer、RTX Sensor 和 ros2_control 扩展。
 
 ```bash
-export ISAAC_SIM_PATH=/path/to/isaac-sim
+cd /path/to/Embodied-RobotSim
+source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
+
+# 标准独立安装：目录内应包含 python.sh
+export ISAAC_SIM_PATH=/path/to/isaac-sim
+
+# 或直接指定 Isaac Sim Python 启动器
+# export ISAAC_SIM_PYTHON=/path/to/isaac-sim/python.sh
 ```
 
-低层单独启动（可用于接口调试）：
+默认使用 `rmw_fastrtps_cpp`。如目标环境使用其他 RMW，可在启动前覆盖 `RMW_IMPLEMENTATION`。
+
+#### 启动方式
+
+完整演示只需在原脚本后增加 `--sim isaac`：
+
+| 演示 | 命令 | Isaac 场景 | `odom → base_footprint` 来源 |
+|---|---|---|---|
+| 探索建图 | `./start_explore_and_mapping.sh --sim isaac` | `simple_room` | Cartographer |
+| 静态导航 | `./start_navigation.sh --sim isaac` | `simple_room` | Isaac Sim |
+| 桌面抓取 | `./start_pick_and_place_demo.sh --sim isaac` | `manipulation_test` | Cartographer |
+| 导航抓取 | `./start_navigation_and_pick_demo.sh --sim isaac` | `simple_room` | Isaac Sim |
+| LLM Agent | `./start_llm_agent.sh --sim isaac` | `simple_room` | Isaac Sim |
+
+也可以用环境变量选择后端：
 
 ```bash
+SIM_BACKEND=isaac ./start_navigation.sh
+```
+
+只启动仿真与控制器，便于接口调试：
+
+```bash
+# 终端 1
 ./start_isaac_sim.sh --world simple_room --publish-odom-tf
-# 无显示器时增加 --headless
+
+# 终端 2
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch x_bot isaac_controllers.launch.py
 ```
 
-现有演示脚本增加 `--sim isaac` 即可切换后端：
+`start_isaac_sim.sh` 支持以下参数：
+
+| 参数 | 说明 |
+|---|---|
+| `--world simple_room\|manipulation_test` | 选择程序化场景 |
+| `--x`、`--y`、`--yaw` | 设置机器人初始位姿，偏航角单位为弧度 |
+| `--publish-odom-tf` | 发布 `odom → base_footprint`；使用 Cartographer 时不要开启 |
+| `--headless` | 无窗口运行 Isaac Sim |
+
+#### ROS 2 接口
+
+| 类型 | 名称 |
+|---|---|
+| 底盘命令 | `/x_bot/cmd_vel` |
+| 仿真时钟 | `/clock` |
+| 里程计 / IMU / 雷达 | `/x_bot/odom`、`/x_bot/imu`、`/x_bot/scan` |
+| 左相机 | `/x_bot/camera_left/image_raw`、`/x_bot/camera_left/depth/image_raw`、`/x_bot/camera_left/camera_info`、`/x_bot/camera_left/points` |
+| 右相机 | `/x_bot/camera_right/image_raw`、`/x_bot/camera_right/camera_info` |
+| 关节状态 | `/joint_states`、`/x_bot/joint_states` |
+| 机械臂控制 | `/fr3_arm_controller/follow_joint_trajectory` |
+| 夹爪控制 | `/fr3_gripper_controller/gripper_cmd` |
+
+对应控制器为 `joint_state_broadcaster`、`fr3_arm_controller` 和 `fr3_gripper_controller`，配置位于 `src/x_bot/config/isaac_controllers.yaml`。
+
+#### 关键文件
+
+```text
+start_isaac_sim.sh                     # Isaac Sim 低层入口
+start_isaac_demo.sh                    # 五种完整演示的统一编排
+src/x_bot/isaac_sim/run_sim.py         # SimulationApp 生命周期
+src/x_bot/isaac_sim/robot_importer.py  # Xacro/URDF 导入和关节驱动
+src/x_bot/isaac_sim/scene_builder.py   # 程序化 USD 场景
+src/x_bot/isaac_sim/ros_bridge.py      # OmniGraph、相机和 RTX LiDAR
+```
+
+#### 首次目标机验证
 
 ```bash
-./start_explore_and_mapping.sh --sim isaac
-./start_navigation.sh --sim isaac
-./start_pick_and_place_demo.sh --sim isaac
-./start_navigation_and_pick_demo.sh --sim isaac
-./start_llm_agent.sh --sim isaac
+ros2 topic echo /clock --once
+ros2 topic hz /x_bot/scan
+ros2 topic hz /x_bot/camera_left/image_raw
+ros2 topic echo /x_bot/odom --once
+ros2 control list_controllers
 ```
 
-也可统一使用环境变量，例如 `SIM_BACKEND=isaac ./start_navigation.sh`。首次在目标机运行时，建议依次确认 `/clock`、`/x_bot/scan`、`/x_bot/odom`、相机话题，以及三个 controller 的 active 状态。Isaac Sim 的 Python 环境也可通过 `ISAAC_SIM_PYTHON=/path/to/python.sh` 单独指定。
+期望三个 controller 均为 `active`。若 Isaac Sim 已启动但 ROS 话题不可见，优先检查是否在启动 Isaac Sim 前 source 了 Jazzy 环境、`ROS_DISTRO=jazzy`、RMW 实现是否一致，以及 `isaacsim.ros2.bridge` 扩展是否成功加载。
 
-### 2. 生成 TensorRT Engine 文件
+### 3. 生成 TensorRT Engine 文件
 
 TensorRT engine 文件与 GPU 型号和 TensorRT 版本绑定，不可跨设备使用，需在本机重新生成：
 
@@ -150,15 +235,15 @@ TensorRT engine 文件与 GPU 型号和 TensorRT 版本绑定，不可跨设备�
 trtexec --onnx=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.onnx \
   --saveEngine=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.engine
 
-# GraspNet 抓取模型（依赖 FPS 插件，需先完成步骤 2 中的插件编译）
+# GraspNet 抓取模型（依赖 FPS 插件，需先完成工作空间编译部分的插件构建）
 trtexec --onnx=src/graspnet_infer/graspnet.onnx \
   --saveEngine=src/graspnet_infer/graspnet.trt \
   --staticPlugins=src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so
 ```
 
-### 3. 运行演示案例
+### 4. 运行演示案例
 
-在项目根目录下提供了 3 个非常方便的 "一键启动" 脚本，涵盖系统的几大核心场景。
+项目根目录提供了 5 个“一键启动”脚本。以下命令默认使用 Gazebo；增加 `--sim isaac` 即可切换到 Isaac Sim。
 
 #### 模式 1: 自主探索建图 (Explore & Mapping)
 使用 `explore_lite` 在完全未知的 Gazebo 房间中进行自主探索，同步运行 Cartographer 生成高精度地图与 YOLOE / OctoMap 语义网格。
@@ -178,7 +263,15 @@ trtexec --onnx=src/graspnet_infer/graspnet.onnx \
 ./start_pick_and_place_demo.sh
 ```
 
-#### 模式 4: 大语言模型具身智能闭环 (LLM Embodied Agent + Web UI)
+#### 模式 4: 导航 + 抓取 (Navigation and Pick)
+
+在 `simple_room` 中启动 Nav2、MoveIt 2 与完整视觉抓取栈，自动执行“导航到厨房 → 检测并抓取 → 返回”的移动操作流程：
+
+```bash
+./start_navigation_and_pick_demo.sh
+```
+
+#### 模式 5: 大语言模型具身智能闭环 (LLM Embodied Agent + Web UI)
 > ⚠️ **运行前准备**：本模式依赖阿里云百炼平台提供的 Qwen 大语言模型服务。
 > 1. 请先前往 [阿里云百炼平台](https://www.aliyun.com/product/bailian) 注册/登录，并在“API-KEY管理”页面创建获取您的 **API Key**。
 > 2. 在运行启动脚本之前，需要在**当前终端**中导出该 API Key 环境变量：
@@ -203,7 +296,7 @@ trtexec --onnx=src/graspnet_infer/graspnet.onnx \
 
 ## 🤝 自定义与贡献建议
 
-* **仿真世界构建:** 你可以直接在 `src/x_bot/worlds/` 下修改或创建新的 Gazebo 场景模型与物料配置。
+* **仿真世界构建:** Gazebo SDF 位于 `src/x_bot/worlds/`；Isaac 程序化 USD 场景位于 `src/x_bot/isaac_sim/scene_builder.py`。
 * **导航调优:** Nav2 和 Cartographer 的核心配置文件存放在 `src/x_bot/config/`，可根据使用环境调整。
 ## 👏 致谢 (Acknowledgements)
 

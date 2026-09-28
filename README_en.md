@@ -18,14 +18,15 @@ Embodied-RobotSim is a comprehensive ROS 2 (Jazzy) simulation workspace for a di
 
 *Autonomous Grasping via YOLOE & GraspNet*
 
-### 3. Simulation Environment (Gazebo Sim)
+### 3. Simulation Environments (Gazebo / Isaac Sim)
 ![GazeboSim](assets/GazeboSim.gif)
 
-*Indoor Scene Simulation with Nav2 Autonomous Navigation and OctoMap 3D Mapping*
+*Indoor simulation with shared Nav2, MoveIt 2, and perception stacks across Gazebo Harmonic and Isaac Sim 6.1*
 
 ## 🌟 Key Features
 
-* **Mobile Manipulation:** Integration of MoveIt 2 for the Franka FR3 arm with a differential-drive mobile base controller.
+* **Dual Simulation Backends:** The same Xacro, ROS 2 topics, and controller interfaces run with Gazebo Harmonic or Isaac Sim 6.1.
+* **Mobile Manipulation:** Integration of MoveIt 2 for the Franka FR3 arm with a four-wheel differential-drive mobile base controller.
 * **Autonomous Exploration & Mapping:** High-precision SLAM with Cartographer (native 2D LiDAR + IMU fusion) and frontier-based autonomous exploration using `m-explore-ros2`.
 * **Advanced Perception (Vision):**
   * **YOLOE Inference:** Real-time object detection with text prompts (`yoloe_infer`).
@@ -43,7 +44,7 @@ Embodied-RobotSim is a comprehensive ROS 2 (Jazzy) simulation workspace for a di
 
 | Package | Purpose |
 |---------|---------|
-| `x_bot` | Main robot package: URDF, Gazebo worlds, launch files, nav configs, and the `robot_actions` MoveIt arm controller. |
+| `x_bot` | Main robot package: URDF, Gazebo/Isaac Sim backends, scenes, launch files, navigation configs, and the `robot_actions` MoveIt arm controller. |
 | `yoloe_infer` | TensorRT-based YOLOE object detection with text prompts. |
 | `graspnet_infer` | TensorRT-based GraspNet integration for 6-DoF grasp pose generation from point clouds. |
 | `m-explore-ros2` | `explore_lite` package adapted for ROS 2 to perform autonomous frontier-based exploration. |
@@ -86,12 +87,12 @@ Since the model files are quite large, please download the pre-trained weights f
 
 ## 🚀 Quick Start Instructions
 
-> **IMPORTANT**: Before starting the build process, please ensure you have completed the installation of **ROS 2**, **Gazebo**, **CUDA**, and **TensorRT** as specified in the table above.
+> **IMPORTANT**: ROS 2 Jazzy is a common dependency. Choose either Gazebo Harmonic or Isaac Sim 6.1 as the simulator. CUDA, TensorRT, and model files are still required for the complete perception and grasping pipeline.
 
 ### 1. Build the Workspace
 
 ```bash
-cd ~/robotSim
+cd /path/to/Embodied-RobotSim
 # 1. Build TensorRT Plugins (required for GraspNet)
 bash src/graspnet_infer/tensorrt_plugins/build.sh
 
@@ -105,43 +106,127 @@ colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ```
 
-### Isaac Sim 6.1 Backend
+### 2. Isaac Sim 6.1 Backend
 
-The Isaac backend coexists with Gazebo and does not change the original no-argument launch path. At runtime it expands and imports the same `x_bot.xacro`. OmniGraph provides four-wheel differential drive, `/clock`, odometry, IMU, RGB-D images, point clouds, and an RTX 2-D lidar, while Isaac Sim's in-process `ros2_control` manager hosts the existing FR3 controllers.
+The Isaac backend coexists with Gazebo and does not change the original no-argument launch path. It expands and imports the same `x_bot.xacro` at runtime, so there is no separately maintained robot USD.
 
-Two lightweight procedural USD scenes are provided:
+> **Current status:** The backend targets the **Isaac Sim 6.1 + ROS 2 Jazzy** APIs. The development machine does not have Isaac Sim or ROS 2 installed, so target-machine runtime validation is still pending. Follow the first-run checklist below when deploying it.
+
+#### Backend capability matrix
+
+| Capability | Gazebo Harmonic | Isaac Sim 6.1 |
+|---|---|---|
+| Robot description | Xacro → SDF | Xacro → URDF → runtime USD |
+| Mobile base | Gz four-wheel differential plugin | Two synchronized OmniGraph differential controllers driving four wheels |
+| FR3 control | `gz_ros2_control` | Isaac in-process `ROS2ControlManager` |
+| 2-D LiDAR | GPU LiDAR | RTX LiDAR |
+| RGB-D | Gz RGB-D Sensor | Render Product + ROS 2 Camera Helper |
+| Scenes | Existing SDF worlds | Lightweight procedural USD scenes |
+| ROS interface | `ros_gz_bridge` | Isaac ROS 2 Bridge |
+
+The Isaac backend currently supports:
 
 * `simple_room` for exploration, static navigation, navigation-and-pick, and the LLM agent;
-* `manipulation_test` for the tabletop pick-and-place loop.
+* `manipulation_test` for the tabletop pick-and-place loop;
+* procedurally generated `coke`, `cup`, and `book` objects without depending on the large Gazebo model directories.
 
-On the target machine, install Ubuntu 24.04, ROS 2 Jazzy, and Isaac Sim 6.1, set the Isaac Sim root, and rebuild the workspace:
+#### Installation and environment
+
+The target machine needs Ubuntu 24.04, ROS 2 Jazzy, and Isaac Sim 6.1 with the ROS 2 Bridge, URDF Importer, RTX Sensor, and ros2_control extensions.
 
 ```bash
-export ISAAC_SIM_PATH=/path/to/isaac-sim
+cd /path/to/Embodied-RobotSim
+source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
+
+# Standard standalone installation; this directory should contain python.sh.
+export ISAAC_SIM_PATH=/path/to/isaac-sim
+
+# Or specify the Isaac Sim Python launcher directly.
+# export ISAAC_SIM_PYTHON=/path/to/isaac-sim/python.sh
 ```
 
-Start only the simulator for interface-level debugging:
+The launcher defaults to `rmw_fastrtps_cpp`. Override `RMW_IMPLEMENTATION` before startup if the target environment uses a different RMW.
+
+#### Launching
+
+Append `--sim isaac` to any complete demo entry point:
+
+| Demo | Command | Isaac scene | `odom → base_footprint` source |
+|---|---|---|---|
+| Exploration | `./start_explore_and_mapping.sh --sim isaac` | `simple_room` | Cartographer |
+| Static navigation | `./start_navigation.sh --sim isaac` | `simple_room` | Isaac Sim |
+| Tabletop pick-and-place | `./start_pick_and_place_demo.sh --sim isaac` | `manipulation_test` | Cartographer |
+| Navigation and pick | `./start_navigation_and_pick_demo.sh --sim isaac` | `simple_room` | Isaac Sim |
+| LLM agent | `./start_llm_agent.sh --sim isaac` | `simple_room` | Isaac Sim |
+
+The backend can also be selected through an environment variable:
 
 ```bash
+SIM_BACKEND=isaac ./start_navigation.sh
+```
+
+Start only the simulator and controllers for interface-level debugging:
+
+```bash
+# Terminal 1
 ./start_isaac_sim.sh --world simple_room --publish-odom-tf
-# Add --headless when no display is available.
+
+# Terminal 2
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch x_bot isaac_controllers.launch.py
 ```
 
-Append `--sim isaac` to any existing demo entry point:
+`start_isaac_sim.sh` accepts the following options:
+
+| Option | Description |
+|---|---|
+| `--world simple_room\|manipulation_test` | Select the procedural scene |
+| `--x`, `--y`, `--yaw` | Set the initial robot pose; yaw is in radians |
+| `--publish-odom-tf` | Publish `odom → base_footprint`; leave it disabled with Cartographer |
+| `--headless` | Run Isaac Sim without a window |
+
+#### ROS 2 interfaces
+
+| Type | Name |
+|---|---|
+| Base command | `/x_bot/cmd_vel` |
+| Simulation clock | `/clock` |
+| Odometry / IMU / lidar | `/x_bot/odom`, `/x_bot/imu`, `/x_bot/scan` |
+| Left camera | `/x_bot/camera_left/image_raw`, `/x_bot/camera_left/depth/image_raw`, `/x_bot/camera_left/camera_info`, `/x_bot/camera_left/points` |
+| Right camera | `/x_bot/camera_right/image_raw`, `/x_bot/camera_right/camera_info` |
+| Joint states | `/joint_states`, `/x_bot/joint_states` |
+| Arm control | `/fr3_arm_controller/follow_joint_trajectory` |
+| Gripper control | `/fr3_gripper_controller/gripper_cmd` |
+
+The corresponding controllers are `joint_state_broadcaster`, `fr3_arm_controller`, and `fr3_gripper_controller`. Their configuration is in `src/x_bot/config/isaac_controllers.yaml`.
+
+#### Key files
+
+```text
+start_isaac_sim.sh                     # Low-level Isaac Sim entry point
+start_isaac_demo.sh                    # Orchestration for all five demos
+src/x_bot/isaac_sim/run_sim.py         # SimulationApp lifecycle
+src/x_bot/isaac_sim/robot_importer.py  # Xacro/URDF import and joint drives
+src/x_bot/isaac_sim/scene_builder.py   # Procedural USD scenes
+src/x_bot/isaac_sim/ros_bridge.py      # OmniGraph, cameras, and RTX lidar
+```
+
+#### First target-machine validation
 
 ```bash
-./start_explore_and_mapping.sh --sim isaac
-./start_navigation.sh --sim isaac
-./start_pick_and_place_demo.sh --sim isaac
-./start_navigation_and_pick_demo.sh --sim isaac
-./start_llm_agent.sh --sim isaac
+ros2 topic echo /clock --once
+ros2 topic hz /x_bot/scan
+ros2 topic hz /x_bot/camera_left/image_raw
+ros2 topic echo /x_bot/odom --once
+ros2 control list_controllers
 ```
 
-Alternatively, use `SIM_BACKEND=isaac ./start_navigation.sh`. On the first target-machine run, verify `/clock`, `/x_bot/scan`, `/x_bot/odom`, the camera topics, and that all three controllers are active. `ISAAC_SIM_PYTHON=/path/to/python.sh` can be used when the Isaac Python launcher is outside the installation root.
+All three controllers should report `active`. If Isaac Sim is running but ROS topics are not visible, first check that the Jazzy environment was sourced before starting Isaac Sim, `ROS_DISTRO=jazzy`, both processes use the same RMW, and the `isaacsim.ros2.bridge` extension loaded successfully.
 
-### 2. Generate TensorRT Engine Files
+### 3. Generate TensorRT Engine Files
 
 TensorRT engine files are tied to your specific GPU and TensorRT version. They cannot be shared across devices and must be regenerated locally:
 
@@ -150,15 +235,15 @@ TensorRT engine files are tied to your specific GPU and TensorRT version. They c
 trtexec --onnx=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.onnx \
   --saveEngine=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.engine
 
-# GraspNet grasping model (requires FPS plugin built in step 2)
+# GraspNet grasping model (requires the FPS plugin built in the workspace-build section)
 trtexec --onnx=src/graspnet_infer/graspnet.onnx \
   --saveEngine=src/graspnet_infer/graspnet.trt \
   --staticPlugins=src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so
 ```
 
-### 3. Run the Demos
+### 4. Run the Demos
 
-We provide three pre-configured one-click bash scripts in the root directory for different workflow modes.
+The repository root provides five one-click scripts. The following commands use Gazebo by default; append `--sim isaac` to switch to Isaac Sim.
 
 #### Mode 1: Autonomous Exploration & Mapping
 Automatically explore unknown environments using `explore_lite`, Cartographer and generated YOLOE/OctoMap:
@@ -178,7 +263,15 @@ Spawn the robot in the `manipulation_test` world, start perception pipelines (YO
 ./start_pick_and_place_demo.sh
 ```
 
-#### Mode 4: Large Language Model Embodied Closed-Loop (LLM Agent + Web UI)
+#### Mode 4: Navigation and Pick
+
+Run Nav2, MoveIt 2, and the complete perception/grasping stack in `simple_room` to execute the mobile workflow “navigate to the kitchen → detect and grasp → return”:
+
+```bash
+./start_navigation_and_pick_demo.sh
+```
+
+#### Mode 5: Large Language Model Embodied Closed-Loop (LLM Agent + Web UI)
 > ⚠️ **Preparation before running**: This mode depends on the Qwen Large Language Model service provided by the Alibaba Cloud Bailian platform.
 > 1. Please go to the [Alibaba Cloud Bailian Platform](https://www.aliyun.com/product/bailian) to register/login, and create your **API Key** on the "API-KEY Management" page.
 > 2. Before running the startup script, you must export this API Key as an environment variable in your **current terminal**:
@@ -203,7 +296,7 @@ This mode launches the full suite of low-level control and perception nodes, mou
 
 ## 🤝 Contribution and Customization
 
-* **World Environments:** Modify or add Gazebo worlds inside `src/x_bot/worlds/` (includes `simple_room.sdf`, `ware_house.sdf`, etc.).
+* **World Environments:** Gazebo SDF worlds are in `src/x_bot/worlds/`; Isaac procedural USD scenes are authored in `src/x_bot/isaac_sim/scene_builder.py`.
 * **Navigation Config:** Tune Nav2 and Cartographer parameters in `src/x_bot/config/`.
 ## 👏 Acknowledgements
 
