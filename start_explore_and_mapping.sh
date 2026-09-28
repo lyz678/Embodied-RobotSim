@@ -1,5 +1,16 @@
 #!/bin/bash
 
+previous=""
+for arg in "$@"; do
+    if [[ "$arg" == "--sim=isaac" || "$previous" == "--sim" && "$arg" == "isaac" ]]; then
+        exec bash "$(dirname "$0")/start_isaac_demo.sh" explore "$@"
+    fi
+    previous="$arg"
+done
+if [[ "${SIM_BACKEND:-}" == "isaac" ]]; then
+    exec bash "$(dirname "$0")/start_isaac_demo.sh" explore "$@"
+fi
+
 # ========================================
 # 机器人自动探索建图模式启动脚本 (Cartographer 版本)
 # ========================================

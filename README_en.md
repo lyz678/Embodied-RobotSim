@@ -1,6 +1,7 @@
 # Embodied-RobotSim: LLM-Driven Embodied Intelligence & Mobile Manipulation Simulation
 
 [![ROS2](https://img.shields.io/badge/ROS2-Jazzy-brightgreen.svg)](https://docs.ros.org/en/jazzy/index.html)
+[![Isaac Sim](https://img.shields.io/badge/Isaac%20Sim-6.1-76B900.svg)](https://docs.isaacsim.omniverse.nvidia.com/6.1.0/)
 [![中文](https://img.shields.io/badge/🌍_Language-中文-blue.svg)](README.md)
 
 Embodied-RobotSim is a comprehensive ROS 2 (Jazzy) simulation workspace for a differential-drive mobile robot equipped with a **Franka FR3 robotic arm**, a 2D LiDAR, a stereo RGB-D camera, and a rich, advanced sensor suite. The system is deeply optimized for **low hardware requirements** and high efficiency, integrating leading-edge algorithms for mapping, navigation, advanced visual perception, mobile manipulation, and a **Qwen3 LLM-driven embodied intelligence closed-loop**, enabling complex robotic interactions via natural language instructions and a Web UI dashboard.
@@ -58,6 +59,7 @@ To ensure the simulation system runs correctly, please deploy in the following e
 | **Operating System** | [Ubuntu 24.04 (Noble)](https://ubuntu.com/download/desktop) |
 | **ROS 2** | [Jazzy Jalisco](https://docs.ros.org/en/jazzy/installation.html) ([One-click Install](https://fishros.org.cn/forum/topic/20)) |
 | **Gazebo** | [Harmonic (Gz Sim 8)](https://gazebosim.org/docs/harmonic/install) |
+| **Isaac Sim (optional backend)** | 6.1 with ROS 2 Bridge, URDF Importer, RTX Sensor, and ros2_control extensions |
 | **CUDA** | [13.1](https://developer.nvidia.com/cuda-toolkit) |
 | **TensorRT** | [10.14.1.48](https://developer.nvidia.com/tensorrt) |
 | **Python** | 3.12+ |
@@ -103,7 +105,43 @@ colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ```
 
-### 3. Generate TensorRT Engine Files
+### Isaac Sim 6.1 Backend
+
+The Isaac backend coexists with Gazebo and does not change the original no-argument launch path. At runtime it expands and imports the same `x_bot.xacro`. OmniGraph provides four-wheel differential drive, `/clock`, odometry, IMU, RGB-D images, point clouds, and an RTX 2-D lidar, while Isaac Sim's in-process `ros2_control` manager hosts the existing FR3 controllers.
+
+Two lightweight procedural USD scenes are provided:
+
+* `simple_room` for exploration, static navigation, navigation-and-pick, and the LLM agent;
+* `manipulation_test` for the tabletop pick-and-place loop.
+
+On the target machine, install Ubuntu 24.04, ROS 2 Jazzy, and Isaac Sim 6.1, set the Isaac Sim root, and rebuild the workspace:
+
+```bash
+export ISAAC_SIM_PATH=/path/to/isaac-sim
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+source install/setup.bash
+```
+
+Start only the simulator for interface-level debugging:
+
+```bash
+./start_isaac_sim.sh --world simple_room --publish-odom-tf
+# Add --headless when no display is available.
+```
+
+Append `--sim isaac` to any existing demo entry point:
+
+```bash
+./start_explore_and_mapping.sh --sim isaac
+./start_navigation.sh --sim isaac
+./start_pick_and_place_demo.sh --sim isaac
+./start_navigation_and_pick_demo.sh --sim isaac
+./start_llm_agent.sh --sim isaac
+```
+
+Alternatively, use `SIM_BACKEND=isaac ./start_navigation.sh`. On the first target-machine run, verify `/clock`, `/x_bot/scan`, `/x_bot/odom`, the camera topics, and that all three controllers are active. `ISAAC_SIM_PYTHON=/path/to/python.sh` can be used when the Isaac Python launcher is outside the installation root.
+
+### 2. Generate TensorRT Engine Files
 
 TensorRT engine files are tied to your specific GPU and TensorRT version. They cannot be shared across devices and must be regenerated locally:
 
@@ -118,7 +156,7 @@ trtexec --onnx=src/graspnet_infer/graspnet.onnx \
   --staticPlugins=src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so
 ```
 
-### 2. Run the Demos
+### 3. Run the Demos
 
 We provide three pre-configured one-click bash scripts in the root directory for different workflow modes.
 

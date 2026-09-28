@@ -45,6 +45,7 @@
     <xacro:arg name="sim_gazebo" default="false" />
     <xacro:arg name="sim_ign" default="false" />
     <xacro:arg name="sim_gz" default="false" />
+    <xacro:arg name="sim_isaac" default="false" />
     <xacro:arg name="odometry_source" default="world" />
 
     <xacro:property name="odometry_source" value="$(arg odometry_source)"/>
@@ -316,37 +317,61 @@
     </joint>
 
     <xacro:include filename="$(find franka_description)/robots/common/franka_robot.xacro"/>
-    <xacro:include filename="$(find x_bot)/urdf/fr3_ros2_control.xacro"/>
+    <xacro:unless value="$(arg sim_isaac)">
+        <xacro:include filename="$(find x_bot)/urdf/fr3_ros2_control.xacro"/>
+    </xacro:unless>
 
     <!-- Instantiate FR3 Arm -->
     <!-- Using robot_type='fr3', connected to 'fr3_mount_link' -->
     <!-- Setting ros2_control=false to suppress default franka_ros2 control loading -->
     <!-- Setting gazebo=true to enabling gazebo mechanics (mass/inertia) -->
-    <xacro:franka_robot 
-        robot_type="fr3"
-        parent="fr3_mount_link"
-        xyz="0 0 0" 
-        rpy="0 0 0"
-        rpy_ee="0 0 ${-pi/4}"
-        hand="true"
-        ee_id="franka_hand"
-        gazebo="true"
-        ros2_control="false"
-        with_sc="false"
-        joint_limits="${xacro.load_yaml('$(find franka_description)/robots/fr3/joint_limits.yaml')}"
-        inertials="${xacro.load_yaml('$(find franka_description)/robots/fr3/inertials.yaml')}"
-        kinematics="${xacro.load_yaml('$(find franka_description)/robots/fr3/kinematics.yaml')}"
-        dynamics="${xacro.load_yaml('$(find franka_description)/robots/fr3/dynamics.yaml')}"
-    />
+    <xacro:if value="$(arg sim_isaac)">
+        <xacro:franka_robot
+            robot_type="fr3"
+            parent="fr3_mount_link"
+            xyz="0 0 0"
+            rpy="0 0 0"
+            rpy_ee="0 0 ${-pi/4}"
+            hand="true"
+            ee_id="franka_hand"
+            gazebo="false"
+            ros2_control="false"
+            with_sc="false"
+            joint_limits="${xacro.load_yaml('$(find franka_description)/robots/fr3/joint_limits.yaml')}"
+            inertials="${xacro.load_yaml('$(find franka_description)/robots/fr3/inertials.yaml')}"
+            kinematics="${xacro.load_yaml('$(find franka_description)/robots/fr3/kinematics.yaml')}"
+            dynamics="${xacro.load_yaml('$(find franka_description)/robots/fr3/dynamics.yaml')}"
+        />
+    </xacro:if>
+    <xacro:unless value="$(arg sim_isaac)">
+        <xacro:franka_robot
+            robot_type="fr3"
+            parent="fr3_mount_link"
+            xyz="0 0 0"
+            rpy="0 0 0"
+            rpy_ee="0 0 ${-pi/4}"
+            hand="true"
+            ee_id="franka_hand"
+            gazebo="true"
+            ros2_control="false"
+            with_sc="false"
+            joint_limits="${xacro.load_yaml('$(find franka_description)/robots/fr3/joint_limits.yaml')}"
+            inertials="${xacro.load_yaml('$(find franka_description)/robots/fr3/inertials.yaml')}"
+            kinematics="${xacro.load_yaml('$(find franka_description)/robots/fr3/kinematics.yaml')}"
+            dynamics="${xacro.load_yaml('$(find franka_description)/robots/fr3/dynamics.yaml')}"
+        />
+    </xacro:unless>
 
     <!-- Load Custom FR3 ROS2 Control Plugin for Gazebo -->
-    <xacro:fr3_ros2_control arm_id="fr3"/>
+    <xacro:unless value="$(arg sim_isaac)">
+        <xacro:fr3_ros2_control arm_id="fr3"/>
+    </xacro:unless>
 
     <!-- ........................... CAMERA (On Arm) .................................. -->
     <!-- Optional: Add camera to arm flange if needed. FR3 flange link is 'fr3_link8' or 'fr3_hand' -->
     <xacro:if value="$(arg camera_enabled)">
          <xacro:include filename="$(find x_bot)/urdf/intel_rgbd_cam_d435.urdf.xacro"/>
-         <xacro:intel_rgbd_cam_d435 parent="fr3_hand">
+         <xacro:intel_rgbd_cam_d435 parent="fr3_hand" sim_isaac="$(arg sim_isaac)">
              <origin xyz="0.03 0 0.06" rpy="${pi} ${-pi/2} 0"/>
          </xacro:intel_rgbd_cam_d435>
     </xacro:if>

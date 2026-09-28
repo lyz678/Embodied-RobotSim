@@ -1,5 +1,16 @@
 #!/bin/bash
 
+previous=""
+for arg in "$@"; do
+    if [[ "$arg" == "--sim=isaac" || "$previous" == "--sim" && "$arg" == "isaac" ]]; then
+        exec bash "$(dirname "$0")/start_isaac_demo.sh" navigation_pick "$@"
+    fi
+    previous="$arg"
+done
+if [[ "${SIM_BACKEND:-}" == "isaac" ]]; then
+    exec bash "$(dirname "$0")/start_isaac_demo.sh" navigation_pick "$@"
+fi
+
 # ========================================
 # 机器人导航 + 夹取可乐启动脚本
 # ========================================

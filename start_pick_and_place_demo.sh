@@ -1,5 +1,16 @@
 #!/bin/bash
 
+previous=""
+for arg in "$@"; do
+    if [[ "$arg" == "--sim=isaac" || "$previous" == "--sim" && "$arg" == "isaac" ]]; then
+        exec bash "$(dirname "$0")/start_isaac_demo.sh" pick "$@"
+    fi
+    previous="$arg"
+done
+if [[ "${SIM_BACKEND:-}" == "isaac" ]]; then
+    exec bash "$(dirname "$0")/start_isaac_demo.sh" pick "$@"
+fi
+
 # ========================================
 # 机器人抓取演示启动脚本
 # ========================================
@@ -62,4 +73,3 @@ echo ""
 echo "=========================================="
 echo "  ✅ 所有服务已启动！"
 echo "=========================================="
-

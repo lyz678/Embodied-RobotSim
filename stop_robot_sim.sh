@@ -52,6 +52,10 @@ patterns=(
     "x_bot"
     "fps_plugin"
     "stereo_matching"
+    # Isaac Sim backend
+    "src/x_bot/isaac_sim/run_sim.py"
+    "isaac-sim"
+    "isaacsim"
 )
 
 for pattern in "${patterns[@]}"; do

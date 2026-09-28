@@ -62,6 +62,7 @@ install(DIRECTORY
   scripts
   urdf
   worlds
+  isaac_sim
   DESTINATION share/${PROJECT_NAME}
 )
 

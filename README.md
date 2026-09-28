@@ -1,6 +1,7 @@
 # Embodied-RobotSim: 基于大模型的具身智能移动抓取仿真系统
 
 [![ROS2](https://img.shields.io/badge/ROS2-Jazzy-brightgreen.svg)](https://docs.ros.org/en/jazzy/index.html)
+[![Isaac Sim](https://img.shields.io/badge/Isaac%20Sim-6.1-76B900.svg)](https://docs.isaacsim.omniverse.nvidia.com/6.1.0/)
 [![English](https://img.shields.io/badge/🌍_Language-English-blue.svg)](README_en.md)
 
 Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空间。它提供了一套完整的差速驱动移动平台方案，搭载 **Franka FR3 骨干机械臂**、2D 激光雷达 (LiDAR) 以及立体 RGB-D 深度传感器。本系统经过深度优化，旨在**低硬件门槛**下实现高性能仿真，无缝集成建图、导航、先进视觉感知、移动抓取操作以及 **Qwen3 大语言模型驱动的具身智能闭环**，支持通过自然语言指令和 Web UI 控制台完成复杂的机器人环境交互任务。
@@ -58,6 +59,7 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 | **操作系统** | [Ubuntu 24.04 (Noble)](https://ubuntu.com/download/desktop) |
 | **ROS 2** | [Jazzy Jalisco](https://docs.ros.org/en/jazzy/installation.html) ([一键安装](https://fishros.org.cn/forum/topic/20)) |
 | **Gazebo** | [Harmonic (Gz Sim 8)](https://gazebosim.org/docs/harmonic/install) |
+| **Isaac Sim（可选后端）** | 6.1，启用 ROS 2 Bridge、URDF Importer、RTX Sensor 与 ros2_control 扩展 |
 | **CUDA** | [13.1](https://developer.nvidia.com/cuda-toolkit) |
 | **TensorRT** | [10.14.1.48](https://developer.nvidia.com/tensorrt) |
 | **Python** | 3.12+ |
@@ -103,7 +105,43 @@ colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ```
 
-### 3. 生成 TensorRT Engine 文件
+### Isaac Sim 6.1 后端
+
+Isaac 后端与 Gazebo 并存，不改变原有无参数启动方式。它在运行时展开并导入同一套 `x_bot.xacro`，通过 OmniGraph 提供四轮差速控制、`/clock`、里程计、IMU、RGB-D、点云和 RTX 2D LiDAR，并由 Isaac Sim 内置的 `ros2_control` 管理器承载现有 FR3 控制器。
+
+当前提供两个轻量级程序化 USD 场景：
+
+* `simple_room`：探索、静态导航、导航抓取和 LLM Agent；
+* `manipulation_test`：桌面循环抓取。
+
+目标机需要 Ubuntu 24.04、ROS 2 Jazzy 和 Isaac Sim 6.1。安装 Isaac Sim 后设置其根目录，再重新构建工作空间：
+
+```bash
+export ISAAC_SIM_PATH=/path/to/isaac-sim
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+source install/setup.bash
+```
+
+低层单独启动（可用于接口调试）：
+
+```bash
+./start_isaac_sim.sh --world simple_room --publish-odom-tf
+# 无显示器时增加 --headless
+```
+
+现有演示脚本增加 `--sim isaac` 即可切换后端：
+
+```bash
+./start_explore_and_mapping.sh --sim isaac
+./start_navigation.sh --sim isaac
+./start_pick_and_place_demo.sh --sim isaac
+./start_navigation_and_pick_demo.sh --sim isaac
+./start_llm_agent.sh --sim isaac
+```
+
+也可统一使用环境变量，例如 `SIM_BACKEND=isaac ./start_navigation.sh`。首次在目标机运行时，建议依次确认 `/clock`、`/x_bot/scan`、`/x_bot/odom`、相机话题，以及三个 controller 的 active 状态。Isaac Sim 的 Python 环境也可通过 `ISAAC_SIM_PYTHON=/path/to/python.sh` 单独指定。
+
+### 2. 生成 TensorRT Engine 文件
 
 TensorRT engine 文件与 GPU 型号和 TensorRT 版本绑定，不可跨设备使用，需在本机重新生成：
 
@@ -118,7 +156,7 @@ trtexec --onnx=src/graspnet_infer/graspnet.onnx \
   --staticPlugins=src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so
 ```
 
-### 2. 运行演示案例
+### 3. 运行演示案例
 
 在项目根目录下提供了 3 个非常方便的 "一键启动" 脚本，涵盖系统的几大核心场景。
 
