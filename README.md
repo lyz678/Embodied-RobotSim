@@ -4,7 +4,7 @@
 [![Isaac Sim](https://img.shields.io/badge/Isaac%20Sim-6.1-76B900.svg)](https://docs.isaacsim.omniverse.nvidia.com/6.1.0/)
 [![English](https://img.shields.io/badge/🌍_Language-English-blue.svg)](README_en.md)
 
-Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空间。它提供了一套完整的差速驱动移动平台方案，搭载 **Franka FR3 骨干机械臂**、2D 激光雷达 (LiDAR) 以及立体 RGB-D 深度传感器。本系统经过深度优化，旨在**低硬件门槛**下实现高性能仿真，无缝集成建图、导航、先进视觉感知、移动抓取操作以及 **Qwen3 大语言模型驱动的具身智能闭环**，支持通过自然语言指令和 Web UI 控制台完成复杂的机器人环境交互任务。
+Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空间。差速移动平台搭载 **Franka FR3 机械臂**、激光雷达及 RGB-D 深度传感器：Gazebo 使用 2D LiDAR，Isaac Sim 使用顶部 MID-360 近似仿真和 FAST-LIO 定位链路。项目集成建图、导航、视觉感知、移动抓取以及 **Qwen3 大语言模型驱动的具身智能闭环**，支持自然语言指令和 Web UI 控制。
 
 ## 🎬 演示 (Demos)
 
@@ -27,7 +27,7 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 
 * **双仿真后端:** 同一套 Xacro、ROS 2 话题和控制器接口可运行于 Gazebo Harmonic 或 Isaac Sim 6.1。
 * **移动抓取操作 (Mobile Manipulation):** 为 Franka FR3 机械臂提供 MoveIt 2 集成，同时支持稳定的四轮差速移动底盘控制。
-* **自主探索与建图:** 采用 Cartographer (原生支持 2D LiDAR 和 IMU 融合) 实现高精度 SLAM，集成 `m-explore-ros2` 包进行基于前沿的 (Frontier-based) 未知环境自主探索。
+* **自主探索与建图:** Gazebo 使用 Cartographer；Isaac 使用 MID-360 + FAST-LIO 建图、已知地图 ICP 定位，配合 `m-explore-ros2` 进行前沿探索。
 * **先进感知系统 (视觉):** 
   * **YOLOE 感知推理:** 支持输入文本提示词 (Text Prompt) 的实时多目标检测 (`yoloe_infer`)。
 * **语义占据栅格与任意物体抓取:** 
@@ -60,7 +60,7 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 | **操作系统** | [Ubuntu 24.04 (Noble)](https://ubuntu.com/download/desktop) |
 | **ROS 2** | [Jazzy Jalisco](https://docs.ros.org/en/jazzy/installation.html) ([一键安装](https://fishros.org.cn/forum/topic/20)) |
 | **Gazebo** | [Harmonic (Gz Sim 8)](https://gazebosim.org/docs/harmonic/install) |
-| **Isaac Sim（可选后端）** | 6.1，启用 ROS 2 Bridge、URDF Importer、RTX Sensor 与 ros2_control 扩展 |
+| **Isaac Sim（可选后端）** | 6.1，启用 ROS 2 Bridge、URDF Importer、experimental physics sensors 与 ros2_control 扩展 |
 | **CUDA** | [13.1](https://developer.nvidia.com/cuda-toolkit) |
 | **TensorRT** | [10.14.1.48](https://developer.nvidia.com/tensorrt) |
 | **Python** | 3.12+ |
@@ -106,125 +106,111 @@ colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ```
 
-### 2. Isaac Sim 6.1 后端
+### 2. Isaac Sim 6.1：顶部 MID-360 + FAST-LIO
 
-Isaac 后端与 Gazebo 并存，不改变原有无参数启动方式。运行时会展开并导入同一套 `x_bot.xacro`，无需预先维护一份独立机器人 USD。
+> **验证范围：** 当前完成代码与离线测试；开发机没有 ROS 2 Jazzy、Isaac Sim 或 PCL，尚未完成 ROS/C++ 编译和目标机联调。不要把下面的启动入口理解为已实测通过的运行结果。
 
-> **当前状态：** Isaac Sim 代码以 **6.1 + ROS 2 Jazzy** API 为目标完成；开发机未安装 Isaac Sim/ROS 2，因此尚未进行目标机运行验证。首次部署请按下方清单逐项检查。
+只替换 **Isaac 后端**：Gazebo 保留原来的二维雷达、Cartographer/AMCL 和无参数启动方式。Isaac 仍通过共享 Xacro 导入机器人，保留 FR3、RGB-D、Nav2、MoveIt 和五种演示入口。
 
-#### 后端能力对照
+#### 传感器与定位设计
 
-| 能力 | Gazebo Harmonic | Isaac Sim 6.1 |
-|---|---|---|
-| 机器人描述 | Xacro → SDF | Xacro → URDF → 运行时 USD |
-| 移动底盘 | Gz 四轮差速插件 | 两组 OmniGraph 差速控制器同步驱动四轮 |
-| FR3 控制 | `gz_ros2_control` | Isaac 内置 `ROS2ControlManager` |
-| 2D LiDAR | GPU LiDAR | RTX LiDAR |
-| RGB-D | Gz RGB-D Sensor | Render Product + ROS 2 Camera Helper |
-| 场景 | 原有 SDF 世界 | 程序化轻量 USD 场景 |
-| ROS 接口 | `ros_gz_bridge` | Isaac ROS 2 Bridge |
+* MID-360 外形为 65 × 65 × 60 mm、质量 0.265 kg，固定在底盘顶板前部，默认相对 `roof_link` 为 `xyz=[0.25, 0, 0.0875]`、`rpy=[0,0,0]`，避开中央 FR3 底座。模拟 IMU 与雷达光心共点，FAST-LIO 外参为单位变换，不使用真实设备的内部标定值。
+* 使用 **PhysX 碰撞几何射线**近似非重复扫描：水平 360°、垂直 -7°～52°、0.1～40 m、200,000 条射线/仿真秒、10 Hz 点云。不是官方 Livox 光学模型，也不是 RTX 材质回波模型；强度为常量，遮挡由碰撞几何决定，自身命中丢弃。40 m 为当前仿真截断距离。
+* 每个 200 Hz 物理步真实采集 1,000 条射线，每 100 ms 组帧。点的 `offset_time` 是实际物理采样时刻，**5 ms 分辨率**，不是给瞬时点云伪造逐点时间。Python 射线查询可能显著低于实时，目标机必须检查实时系数。
+* IMU 200 Hz，发布含重力反作用的比力（静止时约 +9.81 m/s²），不将世界真值姿态送给 FAST-LIO。控制器更新率也设为 200 Hz。
+* FAST-LIO 提供局部激光惯性里程计；**已知三维地图定位另外通过多分辨率 ICP 完成**，需要配置初始位姿或 RViz「2D Pose Estimate」，不支持无先验全局搜索。建图没有回环优化，长程漂移仍可能存在。
 
-Isaac 后端当前支持：
+| 输出 / TF | 来源 |
+|---|---|
+| `/x_bot/mid360/points` | Isaac 标准 PointCloud2：xyz、intensity、offset_time(ns)、line、tag |
+| `/livox/lidar` / `/livox/imu` | 外部转换节点的 Livox CustomMsg / Isaac 物理 IMU |
+| `/odom`、`/x_bot/odom`、`odom → base_footprint` | FAST-LIO 适配器，包含 IMU 到底盘的外参变换 |
+| `map → odom` | 建图时为配置原点；定位时仅 ICP 配准节点发布 |
+| `/map` / `/x_bot/scan` | 5 cm 射线清空占据栅格 / 去畸变三维点云派生二维扫描 |
+| `/localization/ready` / `/localization/status` | 可运行状态 / 配准质量与失败原因 |
+| `/debug/ground_truth/odom` | 仅调试真值，无导航 TF，不参与定位 |
 
-* `simple_room`：探索建图、静态导航、导航抓取和 LLM Agent；
-* `manipulation_test`：桌面循环抓取；
-* `coke`、`cup`、`book` 等操作物体由 USD 几何体直接生成，不依赖大型 Gazebo 模型目录。
+FAST-LIO 的原生 `camera_init/body` TF 被重映射到私有话题，避免重复 TF 发布者。机器人内部 TF 由 robot_state_publisher 发布。底盘命令保持 `/x_bot/cmd_vel`，通过健康门控变为 `/x_bot/cmd_vel_safe`；定位无效、数据过期或时钟回退时停止底盘，仿真端还有命令超时保护。速度限制为前进 0.5 m/s、后退 0.2 m/s、转向 1 rad/s。门控不接管已执行中的机械臂轨迹。
 
-#### 安装与环境变量
+#### 目标机安装
 
-目标机需安装 Ubuntu 24.04、ROS 2 Jazzy 和 Isaac Sim 6.1，并确保 Isaac Sim 包含 ROS 2 Bridge、URDF Importer、RTX Sensor 和 ros2_control 扩展。
+**Isaac 底盘稳定性：** 四个车轮使用固定的左右映射，由一个关节控制节点统一写入；命令按仿真时间做联动斜坡，线加速度上限 0.5 m/s²、角加速度上限 1 rad/s²，饱和时保持目标曲率。零命令、失效和超时停车绕过斜坡立即归零，正常原地调头仍可使用。这是针对突变和多写入路径的预防性优化，尚未在目标机复现/确认转圈根因。若仍转圈，请同时记录 `/x_bot/cmd_vel`、`/x_bot/cmd_vel_safe`、`/odom` 和轮关节速度，区分导航主动转向与底盘执行偏差；Gazebo 控制配置不受此改动影响。
+
+需要 Ubuntu 24.04、ROS 2 Jazzy、Isaac Sim 6.1 的 ROS 2 Bridge、URDF Importer、experimental physics sensors 和 ros2_control 扩展。无需本地安装 Livox 硬件 SDK。
 
 ```bash
-cd /path/to/Embodied-RobotSim
 source /opt/ros/jazzy/setup.bash
+# 先安装 python3-vcstool、rosdep，以及项目原有依赖
+bash scripts/setup_isaac_dependencies.sh
+rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
-
-# 标准独立安装：目录内应包含 python.sh
 export ISAAC_SIM_PATH=/path/to/isaac-sim
-
-# 或直接指定 Isaac Sim Python 启动器
-# export ISAAC_SIM_PYTHON=/path/to/isaac-sim/python.sh
+# 或 export ISAAC_SIM_PYTHON=/path/to/isaac-sim/python.sh
 ```
 
-默认使用 `rmw_fastrtps_cpp`。如目标环境使用其他 RMW，可在启动前覆盖 `RMW_IMPLEMENTATION`。
+[依赖清单](dependencies/isaac.repos)固定 FAST_LIO_ROS2 提交并递归初始化子模块；[消息子集](src/isaac_livox_interfaces/README.md)固定 Livox Driver2 消息定义，仅提供接口、没有硬件驱动。不要同时在工作空间放入另一份同名 `livox_ros_driver2` 包。Isaac 内嵌 Python 只加载标准 ROS 消息，自定义消息由系统 ROS Python 转换。
 
-#### 启动方式
-
-完整演示只需在原脚本后增加 `--sim isaac`：
-
-| 演示 | 命令 | Isaac 场景 | `odom → base_footprint` 来源 |
-|---|---|---|---|
-| 探索建图 | `./start_explore_and_mapping.sh --sim isaac` | `simple_room` | Cartographer |
-| 静态导航 | `./start_navigation.sh --sim isaac` | `simple_room` | Isaac Sim |
-| 桌面抓取 | `./start_pick_and_place_demo.sh --sim isaac` | `manipulation_test` | Cartographer |
-| 导航抓取 | `./start_navigation_and_pick_demo.sh --sim isaac` | `simple_room` | Isaac Sim |
-| LLM Agent | `./start_llm_agent.sh --sim isaac` | `simple_room` | Isaac Sim |
-
-也可以用环境变量选择后端：
+#### 先建图，再定位
 
 ```bash
-SIM_BACKEND=isaac ./start_navigation.sh
-```
+# 建图；目录必须尚不存在，保存时不会覆盖已有地图
+./start_explore_and_mapping.sh --sim isaac --bundle maps/room_a
 
-只启动仿真与控制器，便于接口调试：
-
-```bash
-# 终端 1
-./start_isaac_sim.sh --world simple_room --publish-odom-tf
-
-# 终端 2
-source /opt/ros/jazzy/setup.bash
+# 另一终端，待走过所需区域后保存配套地图
 source install/setup.bash
-ros2 launch x_bot isaac_controllers.launch.py
+ros2 service call /localization/save_map std_srvs/srv/Trigger '{}'
+
+# 停止本次运行后，使用刚保存的三维地图定位
+./start_navigation.sh --sim isaac --bundle maps/room_a \
+  --initial-x 0.0 --initial-y 0.0 --initial-yaw 0.0
 ```
 
-`start_isaac_sim.sh` 支持以下参数：
+地图目录包含 `map.pcd`、`map.pgm`、`map.yaml`、`bundle.json`。栅格保留未观测区域为 unknown，利用传感器原点到障碍物的射线清空自由区，不把所有空白区域标成可通行。PCD 与二维地图共享配置的 `map` 原点。旧的 Gazebo 地图或 `isaac_simple_room.yaml` **不能单独用于这条定位链路**；仓库不提供伪造的「已验证」PCD。
 
-| 参数 | 说明 |
+`--initial-x/y/yaw` 表示 **base_footprint 在 map 中的先验位姿**（yaw 为弧度），不是 IMU 位姿或真值订阅。探索默认 yaw=1.5708、导航默认 yaw=0，和各自示例的初始朝向一致。改变仿真出生点或换地图时必须相应提供先验；不确定时在已启动的 RViz 中重新设定。
+
+| 入口 | 模式 / 场景 |
 |---|---|
-| `--world simple_room\|manipulation_test` | 选择程序化场景 |
-| `--x`、`--y`、`--yaw` | 设置机器人初始位姿，偏航角单位为弧度 |
-| `--publish-odom-tf` | 发布 `odom → base_footprint`；使用 Cartographer 时不要开启 |
-| `--headless` | 无窗口运行 Isaac Sim |
+| `start_explore_and_mapping.sh --sim isaac --bundle DIR` | 建图 / simple_room |
+| `start_pick_and_place_demo.sh --sim isaac --bundle DIR` | 建图定位 / manipulation_test |
+| `start_navigation.sh --sim isaac --bundle DIR` | 已知地图定位 / simple_room |
+| `start_navigation_and_pick_demo.sh --sim isaac --bundle DIR` | 已知地图定位 + 抓取 / simple_room |
+| `start_llm_agent.sh --sim isaac --bundle DIR` | 已知地图定位 + LLM / simple_room |
 
-#### ROS 2 接口
+支持 `--headless`、`--build` 和 `SIM_BACKEND=isaac`。导航与任务入口等待 ready，180 秒内未就绪则不启动；ICP 连续失败 5 次后需要重新给初始位姿。定位丢失会停止底盘。暂停时停止运动；重置仿真时钟后必须重启 FAST-LIO、适配器和导航链路，不能沿用旧估计器状态。启动脚本不再自动杀掉已有仿真，请先结束上一轮会话。原 `stop_robot_sim.sh` 是全局清理脚本，可能影响其他 ROS 会话并删除日志，谨慎使用。
 
-| 类型 | 名称 |
-|---|---|
-| 底盘命令 | `/x_bot/cmd_vel` |
-| 仿真时钟 | `/clock` |
-| 里程计 / IMU / 雷达 | `/x_bot/odom`、`/x_bot/imu`、`/x_bot/scan` |
-| 左相机 | `/x_bot/camera_left/image_raw`、`/x_bot/camera_left/depth/image_raw`、`/x_bot/camera_left/camera_info`、`/x_bot/camera_left/points` |
-| 右相机 | `/x_bot/camera_right/image_raw`、`/x_bot/camera_right/camera_info` |
-| 关节状态 | `/joint_states`、`/x_bot/joint_states` |
-| 机械臂控制 | `/fr3_arm_controller/follow_joint_trajectory` |
-| 夹爪控制 | `/fr3_gripper_controller/gripper_cmd` |
+导航抓取/LLM 的既有任务包含硬编码地图坐标，换地图或原点后必须检查/修改目标点；定位 ready 不代表目标点在新地图中有效。
 
-对应控制器为 `joint_state_broadcaster`、`fr3_arm_controller` 和 `fr3_gripper_controller`，配置位于 `src/x_bot/config/isaac_controllers.yaml`。
-
-#### 关键文件
-
-```text
-start_isaac_sim.sh                     # Isaac Sim 低层入口
-start_isaac_demo.sh                    # 五种完整演示的统一编排
-src/x_bot/isaac_sim/run_sim.py         # SimulationApp 生命周期
-src/x_bot/isaac_sim/robot_importer.py  # Xacro/URDF 导入和关节驱动
-src/x_bot/isaac_sim/scene_builder.py   # 程序化 USD 场景
-src/x_bot/isaac_sim/ros_bridge.py      # OmniGraph、相机和 RTX LiDAR
-```
-
-#### 首次目标机验证
-
+低层调试：
 ```bash
-ros2 topic echo /clock --once
-ros2 topic hz /x_bot/scan
-ros2 topic hz /x_bot/camera_left/image_raw
-ros2 topic echo /x_bot/odom --once
+./start_isaac_sim.sh --world simple_room --headless
+ros2 launch x_bot isaac_controllers.launch.py
+ros2 launch x_bot_localization localization.launch.py mode:=mapping bundle:=/absolute/path/new_map
+```
+这三个命令分别在独立终端执行。`--publish-odom-tf` 已移除；不再用仿真真值补足导航 TF。更改安装位置时，仿真 `--mid360-xyz/--mid360-rpy` 与控制器 launch 的 `mid360_xyz/mid360_rpy` 必须一致；FAST-LIO 的共点 IMU 外参仍为单位变换。
+
+#### 验证
+
+本机可运行：
+```bash
+python3 -m unittest discover -s tests -v
+```
+覆盖点云布局/端序、真实采样偏移、回退清缓存、外参/四元数、栅格清空与 unknown、健康状态、Xacro 双后端展开、配置与语法。测试需要 NumPy、PyYAML；Xacro 展开测试在未安装 xacro 时跳过。PCL 合成配准测试位于 `src/x_bot_localization/test`，需目标机编译后运行：
+```bash
+colcon test --packages-select x_bot_localization
+colcon test-result --verbose
+ros2 topic hz /livox/imu
+ros2 topic hz /livox/lidar
+ros2 topic echo /localization/ready
+ros2 topic echo /localization/status
+ros2 run tf2_ros tf2_echo map base_footprint
 ros2 control list_controllers
 ```
 
-期望三个 controller 均为 `active`。若 Isaac Sim 已启动但 ROS 话题不可见，优先检查是否在启动 Isaac Sim 前 source 了 Jazzy 环境、`ROS_DISTRO=jazzy`、RMW 实现是否一致，以及 `isaacsim.ros2.bridge` 扩展是否成功加载。
+目标机验收还需：静止重力方向、IMU/点云共同时间基准、实际 200/10 Hz（按仿真时间）、转弯去畸变、雷达/机械臂遮挡、唯一 TF、地图保存与重新加载、错误初值拒绝、定位丢失/停流停车，以及 Nav2/抓取回归。相机与机械臂话题沿用原接口。
+
+实现参考：[FAST-LIO ROS2](https://github.com/Ericsii/FAST_LIO_ROS2)、[Livox 消息定义](https://github.com/Livox-SDK/livox_ros_driver2/tree/21445540f0d100dc86a7e6df312dd70bbdb4afdf/msg)、[NVIDIA PhysX scene queries](https://docs.omniverse.nvidia.com/kit/docs/omni_physics/108.1/extensions/runtime/source/omni.physx/docs/dev_guide/scene_queries.html)。
 
 ### 3. 生成 TensorRT Engine 文件
 

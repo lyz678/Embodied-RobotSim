@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Wall-clock bounded startup barrier. Exit nonzero; shell && prevents task start."""
+import time
+import rclpy
+from std_msgs.msg import Bool
+rclpy.init()
+node = rclpy.create_node('wait_localization_ready')
+started = time.monotonic()
+state = {'since': None, 'last': started}
+def receive(msg):
+    now = time.monotonic()
+    state['last'] = now
+    state['since'] = (state['since'] or now) if msg.data else None
+sub = node.create_subscription(Bool, '/localization/ready', receive, 10)
+code = 1
+while rclpy.ok() and time.monotonic()-started < 180:
+    rclpy.spin_once(node, timeout_sec=.1)
+    if time.monotonic()-state['last'] > .5:
+        state['since'] = None
+    if state['since'] and time.monotonic()-state['since'] >= 1:
+        code = 0
+        break
+if code:
+    node.get_logger().error('Localization not ready after 180 seconds; task NOT started')
+node.destroy_node()
+rclpy.shutdown()
+raise SystemExit(code)

@@ -21,7 +21,7 @@ GRIPPER_JOINTS = ["fr3_finger_joint1", "fr3_finger_joint2"]
 INITIAL_JOINT_POSITIONS = [0.0, -1.5, 0.0, -2.3561, 0.0, 2.0, 0.7853, 0.04, 0.04]
 
 
-def generate_urdf(package_share: Path) -> tuple[Path, Path]:
+def generate_urdf(package_share: Path, mid360_xyz: str = '0.25 0 0.0875', mid360_rpy: str = '0 0 0') -> tuple[Path, Path]:
     """Expand x_bot.xacro into a temporary URDF.
 
     Returns the URDF and its owning temporary directory.  The caller keeps the
@@ -39,7 +39,9 @@ def generate_urdf(package_share: Path) -> tuple[Path, Path]:
         "sim_gazebo:=false",
         "sim_ign:=false",
         "sim_isaac:=true",
-        "two_d_lidar_enabled:=true",
+        f"mid360_xyz:={mid360_xyz}",
+        f"mid360_rpy:={mid360_rpy}",
+        "two_d_lidar_enabled:=false",
         "camera_enabled:=true",
         "stereo_camera_enabled:=false",
         "odometry_source:=world",

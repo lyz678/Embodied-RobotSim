@@ -2,7 +2,7 @@ controller_manager:
   ros__parameters:
     # Isaac Sim advances ros2_control on the physics tick, so the effective
     # update rate is capped by the 120 Hz simulation frequency.
-    update_rate: 120
+    update_rate: 200
 
     fr3_arm_controller:
       type: joint_trajectory_controller/JointTrajectoryController

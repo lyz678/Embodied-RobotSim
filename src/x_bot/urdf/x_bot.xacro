@@ -46,6 +46,8 @@
     <xacro:arg name="sim_ign" default="false" />
     <xacro:arg name="sim_gz" default="false" />
     <xacro:arg name="sim_isaac" default="false" />
+    <xacro:arg name="mid360_xyz" default="0.25 0 0.0875" />
+    <xacro:arg name="mid360_rpy" default="0 0 0" />
     <xacro:arg name="odometry_source" default="world" />
 
     <xacro:property name="odometry_source" value="$(arg odometry_source)"/>
@@ -119,6 +121,7 @@
 
     <!-- ............................. 2D LIDAR ........................................ -->
 
+    <xacro:unless value="$(arg sim_isaac)">
     <xacro:if value="$(arg two_d_lidar_enabled)">
 
         <link name="two_d_lidar">
@@ -156,8 +159,33 @@
 
     </xacro:if>
 
-    <!-- ............................. IMU ........................................ -->
+    </xacro:unless>
 
+    <!-- Isaac-only roof sensor. IMU and optical origin are colocated in simulation. -->
+    <xacro:if value="$(arg sim_isaac)">
+        <link name="mid360_link">
+            <visual><geometry><box size="0.065 0.065 0.060"/></geometry><material name="black"/></visual>
+            <collision><geometry><box size="0.065 0.065 0.060"/></geometry></collision>
+            <!-- 50 mm standoff below the sensor housing. -->
+            <visual><origin xyz="0 0 -0.055"/><geometry><box size="0.020 0.020 0.050"/></geometry><material name="black"/></visual>
+            <collision><origin xyz="0 0 -0.055"/><geometry><box size="0.020 0.020 0.050"/></geometry></collision>
+            <inertial>
+                <mass value="0.265"/>
+                <inertia ixx="0.00017280" ixy="0" ixz="0" iyy="0.00017280" iyz="0" izz="0.00018660"/>
+            </inertial>
+        </link>
+        <joint name="mid360_joint" type="fixed">
+            <parent link="roof_link"/><child link="mid360_link"/>
+            <origin xyz="$(arg mid360_xyz)" rpy="$(arg mid360_rpy)"/>
+        </joint>
+        <link name="mid360_imu_link"/>
+        <joint name="mid360_imu_joint" type="fixed">
+            <parent link="mid360_link"/><child link="mid360_imu_link"/>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+        </joint>
+    </xacro:if>
+
+    <!-- Legacy Gazebo IMU frame is retained for backend compatibility. -->
     <link name="imu_frame"/>
 
     <joint name="imu_joint" type="fixed">

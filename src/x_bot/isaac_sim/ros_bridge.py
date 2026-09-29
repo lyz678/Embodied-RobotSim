@@ -11,6 +11,7 @@ import usdrt.Sdf
 from pxr import Gf, Sdf, Usd, UsdGeom
 
 from robot_importer import find_prim
+from base_motion import WHEEL_NAMES
 
 
 def _target(path: str | Usd.Prim) -> list[usdrt.Sdf.Path]:
@@ -22,90 +23,47 @@ def create_control_graph(
     stage: Usd.Stage,
     articulation_path: str,
     controller_config: Path,
-    publish_odom_tf: bool,
 ) -> Any:
-    """Create clock, base control, odometry, IMU, joint-state and arm-control nodes."""
+    """Create clock, base control, debug odometry, joint-state and arm-control nodes."""
     keys = og.Controller.Keys
     chassis_path = str(find_prim(stage, "chassis_link").GetPath())
 
     nodes = [
-        ("OnPlaybackTick", "omni.graph.action.OnPlaybackTick"),
+        ("BaseWheels", "isaacsim.core.nodes.IsaacArticulationController"),
+        ("OnPhysicsStep", "isaacsim.core.nodes.OnPhysicsStep"),
         ("ReadSimTime", "isaacsim.core.nodes.IsaacReadSimulationTime"),
         ("PublishClock", "isaacsim.ros2.bridge.ROS2PublishClock"),
-        ("SubscribeTwist", "isaacsim.ros2.bridge.ROS2SubscribeTwist"),
-        ("BreakLinear", "omni.graph.nodes.BreakVector3"),
-        ("BreakAngular", "omni.graph.nodes.BreakVector3"),
-        ("FrontDifferential", "isaacsim.robot.wheeled_robots.DifferentialController"),
-        ("RearDifferential", "isaacsim.robot.wheeled_robots.DifferentialController"),
-        ("FrontWheels", "isaacsim.core.nodes.IsaacArticulationController"),
-        ("RearWheels", "isaacsim.core.nodes.IsaacArticulationController"),
         ("ComputeOdometry", "isaacsim.core.nodes.IsaacComputeOdometry"),
         ("PublishOdometry", "isaacsim.ros2.bridge.ROS2PublishOdometry"),
-        ("PublishImu", "isaacsim.ros2.bridge.ROS2PublishImu"),
         ("PublishNamespacedJointState", "isaacsim.ros2.bridge.ROS2PublishJointState"),
         ("ROS2ControlManager", "isaacsim.ros2.control.ROS2ControlManager"),
     ]
-    if publish_odom_tf:
-        nodes.append(("PublishOdomTF", "isaacsim.ros2.bridge.ROS2PublishRawTransformTree"))
 
     connections = [
-        ("OnPlaybackTick.outputs:tick", "PublishClock.inputs:execIn"),
+        ("OnPhysicsStep.outputs:step", "BaseWheels.inputs:execIn"),
+        ("OnPhysicsStep.outputs:step", "PublishClock.inputs:execIn"),
         ("ReadSimTime.outputs:simulationTime", "PublishClock.inputs:timeStamp"),
-        ("OnPlaybackTick.outputs:tick", "SubscribeTwist.inputs:execIn"),
-        ("SubscribeTwist.outputs:linearVelocity", "BreakLinear.inputs:tuple"),
-        ("SubscribeTwist.outputs:angularVelocity", "BreakAngular.inputs:tuple"),
-        ("SubscribeTwist.outputs:execOut", "FrontDifferential.inputs:execIn"),
-        ("SubscribeTwist.outputs:execOut", "RearDifferential.inputs:execIn"),
-        ("BreakLinear.outputs:x", "FrontDifferential.inputs:linearVelocity"),
-        ("BreakLinear.outputs:x", "RearDifferential.inputs:linearVelocity"),
-        ("BreakAngular.outputs:z", "FrontDifferential.inputs:angularVelocity"),
-        ("BreakAngular.outputs:z", "RearDifferential.inputs:angularVelocity"),
-        ("OnPlaybackTick.outputs:tick", "FrontWheels.inputs:execIn"),
-        ("OnPlaybackTick.outputs:tick", "RearWheels.inputs:execIn"),
-        ("FrontDifferential.outputs:velocityCommand", "FrontWheels.inputs:velocityCommand"),
-        ("RearDifferential.outputs:velocityCommand", "RearWheels.inputs:velocityCommand"),
-        ("OnPlaybackTick.outputs:tick", "ComputeOdometry.inputs:execIn"),
+        ("OnPhysicsStep.outputs:step", "ComputeOdometry.inputs:execIn"),
         ("ComputeOdometry.outputs:execOut", "PublishOdometry.inputs:execIn"),
-        ("ComputeOdometry.outputs:execOut", "PublishImu.inputs:execIn"),
         ("ReadSimTime.outputs:simulationTime", "PublishOdometry.inputs:timeStamp"),
-        ("ReadSimTime.outputs:simulationTime", "PublishImu.inputs:timeStamp"),
         ("ComputeOdometry.outputs:position", "PublishOdometry.inputs:position"),
         ("ComputeOdometry.outputs:orientation", "PublishOdometry.inputs:orientation"),
         ("ComputeOdometry.outputs:linearVelocity", "PublishOdometry.inputs:linearVelocity"),
         ("ComputeOdometry.outputs:angularVelocity", "PublishOdometry.inputs:angularVelocity"),
-        ("ComputeOdometry.outputs:orientation", "PublishImu.inputs:orientation"),
-        ("ComputeOdometry.outputs:linearAcceleration", "PublishImu.inputs:linearAcceleration"),
-        ("ComputeOdometry.outputs:angularVelocity", "PublishImu.inputs:angularVelocity"),
-        ("OnPlaybackTick.outputs:tick", "PublishNamespacedJointState.inputs:execIn"),
+        ("OnPhysicsStep.outputs:step", "PublishNamespacedJointState.inputs:execIn"),
         ("ReadSimTime.outputs:simulationTime", "PublishNamespacedJointState.inputs:timeStamp"),
-        ("OnPlaybackTick.outputs:tick", "ROS2ControlManager.inputs:execIn"),
+        ("OnPhysicsStep.outputs:step", "ROS2ControlManager.inputs:execIn"),
     ]
-    if publish_odom_tf:
-        connections.extend(
-            [
-                ("OnPlaybackTick.outputs:tick", "PublishOdomTF.inputs:execIn"),
-                ("ReadSimTime.outputs:simulationTime", "PublishOdomTF.inputs:timeStamp"),
-                ("ComputeOdometry.outputs:position", "PublishOdomTF.inputs:translation"),
-                ("ComputeOdometry.outputs:orientation", "PublishOdomTF.inputs:rotation"),
-            ]
-        )
 
     values = [
-        ("SubscribeTwist.inputs:topicName", "/x_bot/cmd_vel"),
-        ("FrontDifferential.inputs:wheelRadius", 0.06),
-        ("FrontDifferential.inputs:wheelDistance", 0.45),
-        ("RearDifferential.inputs:wheelRadius", 0.06),
-        ("RearDifferential.inputs:wheelDistance", 0.45),
-        ("FrontWheels.inputs:jointNames", ["front_left_wheel_joint", "front_right_wheel_joint"]),
-        ("RearWheels.inputs:jointNames", ["back_left_wheel_joint", "back_right_wheel_joint"]),
-        ("FrontWheels.inputs:targetPrim", _target(articulation_path)),
-        ("RearWheels.inputs:targetPrim", _target(articulation_path)),
+        ("BaseWheels.inputs:jointNames", list(WHEEL_NAMES)),
+        ("BaseWheels.inputs:targetPrim", _target(articulation_path)),
+        ("BaseWheels.inputs:velocityCommand", [0.0] * 4),
+        ("ReadSimTime.inputs:resetOnStop", True),
         ("ComputeOdometry.inputs:chassisPrim", _target(chassis_path)),
-        ("PublishOdometry.inputs:topicName", "/x_bot/odom"),
-        ("PublishOdometry.inputs:odomFrameId", "odom"),
-        ("PublishOdometry.inputs:chassisFrameId", "base_footprint"),
-        ("PublishImu.inputs:topicName", "/x_bot/imu"),
-        ("PublishImu.inputs:frameId", "imu_frame"),
+        ("PublishOdometry.inputs:topicName", "/debug/ground_truth/odom"),
+        ("PublishOdometry.inputs:odomFrameId", "sim_world"),
+        ("PublishOdometry.inputs:chassisFrameId", "chassis_link"),
         ("PublishNamespacedJointState.inputs:topicName", "/x_bot/joint_states"),
         ("PublishNamespacedJointState.inputs:targetPrim", _target(articulation_path)),
         ("ROS2ControlManager.inputs:targetPrim", _target(articulation_path)),
@@ -113,14 +71,6 @@ def create_control_graph(
         ("ROS2ControlManager.inputs:namespace", ""),
         ("ROS2ControlManager.inputs:publishRobotDescription", True),
     ]
-    if publish_odom_tf:
-        values.extend(
-            [
-                ("PublishOdomTF.inputs:topicName", "/tf"),
-                ("PublishOdomTF.inputs:parentFrameId", "odom"),
-                ("PublishOdomTF.inputs:childFrameId", "base_footprint"),
-            ]
-        )
 
     graph, _, _, _ = og.Controller.edit(
         {"graph_path": "/World/ROS2ControlGraph", "evaluator_name": "execution"},
@@ -220,43 +170,3 @@ def create_camera_graphs(stage: Usd.Stage) -> list[Any]:
         og.Controller.evaluate_sync(graph)
         graphs.append(graph)
     return graphs
-
-
-def _laser_scan_metadata(prim: Usd.Prim) -> dict[str, float | list[float]]:
-    rotation_rate = float(prim.GetAttribute("omni:sensor:Core:scanRateBaseHz").Get() or 0)
-    near_range = float(prim.GetAttribute("omni:sensor:Core:nearRangeM").Get() or 0)
-    far_range = float(prim.GetAttribute("omni:sensor:Core:farRangeM").Get() or 0)
-    firing_rate = int(prim.GetAttribute("omni:sensor:Core:patternFiringRateHz").Get() or 0)
-    if rotation_rate <= 0 or firing_rate <= 0:
-        raise RuntimeError("RTX lidar configuration has no positive scan/firing rate")
-    return {
-        "horizontalFov": 360.0,
-        "horizontalResolution": 360.0 * rotation_rate / firing_rate,
-        "depthRange": [near_range, far_range],
-        "rotationRate": rotation_rate,
-        "azimuthRange": [-180.0, 180.0],
-    }
-
-
-def create_lidar(stage: Usd.Stage) -> Any:
-    """Attach an RTX 2-D lidar and publish the existing /x_bot/scan interface."""
-    from isaacsim.sensors.experimental.rtx import Lidar, LidarSensor
-
-    parent = find_prim(stage, "two_d_lidar")
-    lidar = Lidar.create(
-        path=f"{parent.GetPath()}/isaac_rtx_lidar",
-        config="Example_Rotary_2D",
-        tick_rate=10.0,
-        translations=[[0.0, 0.0, 0.04]],
-    )
-    lidar_prim = stage.GetPrimAtPath(lidar.paths[0])
-    lidar_prim.GetAttribute("omni:sensor:Core:nearRangeM").Set(0.55)
-    lidar_prim.GetAttribute("omni:sensor:Core:farRangeM").Set(16.0)
-    sensor = LidarSensor(lidar, annotators=[])
-    sensor.attach_writer(
-        "RtxLidarROS2PublishLaserScan",
-        topicName="/x_bot/scan",
-        frameId="two_d_lidar",
-        **_laser_scan_metadata(lidar_prim),
-    )
-    return sensor

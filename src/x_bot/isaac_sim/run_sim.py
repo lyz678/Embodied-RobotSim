@@ -19,7 +19,8 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--x", type=float, default=0.0)
     parser.add_argument("--y", type=float, default=0.0)
     parser.add_argument("--yaw", type=float, default=0.0)
-    parser.add_argument("--publish-odom-tf", action="store_true")
+    parser.add_argument("--mid360-xyz", default='0.25 0 0.0875')
+    parser.add_argument("--mid360-rpy", default='0 0 0')
     parser.add_argument("--headless", action="store_true")
     args, _ = parser.parse_known_args()
     return args
@@ -54,10 +55,12 @@ def main() -> int:
         import_robot_asset,
         set_initial_joint_state,
     )
-    from ros_bridge import create_camera_graphs, create_control_graph, create_lidar
+    from ros_bridge import create_camera_graphs, create_control_graph
     from scene_builder import build_scene
 
     temp_dir = None
+    lidar_sensor = None
+    return_code = 0
     try:
         for extension in (
             "isaacsim.asset.importer.urdf",
@@ -67,7 +70,7 @@ def main() -> int:
             "isaacsim.ros2.bridge",
             "isaacsim.ros2.control",
             "isaacsim.robot.wheeled_robots.nodes",
-            "isaacsim.sensors.experimental.rtx",
+            "isaacsim.sensors.experimental.physics",
         ):
             app_utils.enable_extension(extension)
         simulation_app.update()
@@ -75,7 +78,7 @@ def main() -> int:
         stage = stage_utils.create_new_stage()
         build_scene(stage, args.world, args.package_share.resolve())
 
-        urdf_path, temp_dir = generate_urdf(args.package_share.resolve())
+        urdf_path, temp_dir = generate_urdf(args.package_share.resolve(), args.mid360_xyz, args.mid360_rpy)
         robot_usd = import_robot_asset(
             urdf_path,
             temp_dir,
@@ -92,13 +95,11 @@ def main() -> int:
         articulation = find_articulation_root(stage)
         articulation_path = str(articulation.GetPath())
         configure_joint_drives(stage)
-        create_control_graph(stage, articulation_path, args.controller_config.resolve(), args.publish_odom_tf)
+        create_control_graph(stage, articulation_path, args.controller_config.resolve())
         create_camera_graphs(stage)
-        lidar_sensor = create_lidar(stage)
-        # Keep the sensor wrapper referenced for the lifetime of its render product.
-        _ = lidar_sensor
-
-        SimulationManager.setup_simulation(dt=1.0 / 120.0, device="cpu")
+        SimulationManager.setup_simulation(dt=1.0 / 200.0, device="cpu")
+        from mid360 import Mid360
+        lidar_sensor = Mid360(stage)
         if not args.headless:
             ViewportManager.set_camera_view(
                 "/OmniverseKit_Persp", eye=[3.5, 3.5, 2.8], target=[0.0, 0.0, 0.8]
@@ -113,7 +114,10 @@ def main() -> int:
             "cmd_vel=/x_bot/cmd_vel"
         )
         while simulation_app.is_running():
+            lidar_sensor.update()
             simulation_app.update()
+            if lidar_sensor.error:
+                raise lidar_sensor.error
     except KeyboardInterrupt:
         pass
     except Exception as error:
@@ -122,6 +126,8 @@ def main() -> int:
     else:
         return_code = 0
     finally:
+        if lidar_sensor is not None:
+            lidar_sensor.close()
         try:
             app_utils.stop()
         except Exception:

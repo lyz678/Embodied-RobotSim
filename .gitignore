@@ -53,3 +53,5 @@ venv/
 /src/graspnet_infer/tensorrt_plugins/build/
 cmd
 /src/LSM_depth_infer/
+/src/isaac_vendor/
+/maps/
