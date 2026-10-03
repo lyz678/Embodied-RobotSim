@@ -89,7 +89,7 @@ Since the model files are quite large, please download the pre-trained weights f
 ### 1. Build the Workspace
 
 ```bash
-cd ~/robotSim
+cd ~/Embodied-RobotSim
 # 1. Build TensorRT Plugins (required for GraspNet)
 bash src/graspnet_infer/tensorrt_plugins/build.sh
 

@@ -89,7 +89,7 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 ### 1. 编译工作空间
 
 ```bash
-cd ~/robotSim
+cd ~/Embodied-RobotSim
 # 1. 编译 TensorRT 插件 (GraspNet 依赖)
 bash src/graspnet_infer/tensorrt_plugins/build.sh
 

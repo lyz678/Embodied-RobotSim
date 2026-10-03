@@ -32,6 +32,17 @@ fi
 echo "✅ 构建成功！"
 echo ""
 
+# Load the freshly built workspace for every child terminal.
+source /opt/ros/jazzy/setup.bash || exit 1
+source install/setup.bash || exit 1
+
+# An IDE terminal may inherit references to a GNOME window that has closed.
+# Let gnome-terminal choose its current server and create a new window.
+unset GNOME_TERMINAL_SCREEN GNOME_TERMINAL_SERVICE
+
+# Stop if a terminal cannot be created instead of reporting startup success.
+set -e
+
 # 启动所有服务在多个终端标签页中
 echo "📡 启动 Gazebo 仿真环境..."
 gnome-terminal --title="Gazebo" -- bash -c "source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 launch x_bot gz.launch.py world_name:=simple_room orientation_yaw:=1.5708; exec bash"
