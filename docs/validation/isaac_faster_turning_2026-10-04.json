@@ -1,0 +1,50 @@
+{
+  "state": {
+    "ready": true,
+    "safe": 0.0,
+    "linear": 0.0,
+    "sim": 12.975,
+    "yaw": -0.1577987797837441,
+    "xy": [
+      -0.08529772285218024,
+      -0.06061349189450231
+    ],
+    "gyro": 0.0002664292696863413,
+    "odom_rate": -0.003347289030617641,
+    "nearest": 2.111560106277466,
+    "raw": 0.0,
+    "smoothed": 0.0
+  },
+  "turns": [
+    {
+      "offset_rad": 1.5707963267948966,
+      "action_status": 4,
+      "sim_seconds": 5.95,
+      "wall_seconds": 5.0007301250007,
+      "peak_actual_gyro": 0.6541209816932678,
+      "peak_safe_cmd": 0.65,
+      "command_reversals": 0
+    },
+    {
+      "offset_rad": -1.5707963267948966,
+      "action_status": 4,
+      "sim_seconds": 3.5250000010000004,
+      "wall_seconds": 5.550160183993285,
+      "peak_actual_gyro": 0.7270511984825134,
+      "peak_safe_cmd": 0.65,
+      "command_reversals": 0
+    }
+  ],
+  "settings": {
+    "rotate_to_heading_angular_vel": 0.65,
+    "max_angular_speed": 0.8,
+    "angular_acceleration": 1.0,
+    "angular_deceleration": 1.5,
+    "linear_speed_limit": 2.0
+  },
+  "notes": [
+    "In-place NavigateToPose goals at +90 and -90 degrees in simple_room after clean restart.",
+    "Sim and wall timings depend on startup, simulation real-time factor and starting pose; not a controlled timing comparison.",
+    "Steering integral clearing and rotation hysteresis retained; moving turns not retested in this run."
+  ]
+}

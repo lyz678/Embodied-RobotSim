@@ -77,13 +77,13 @@ controller_server:
       transform_tolerance: 0.5
       use_rotate_to_heading: false # RotationShim owns path/goal alignment.
       rotate_to_heading_min_angle: 0.5
-      rotate_to_heading_angular_vel: 0.45
-      max_angular_accel: 0.8
+      rotate_to_heading_angular_vel: 1.0
+      max_angular_accel: 1.5
       allow_reversing: false
       use_collision_detection: true
       max_allowed_time_to_collision_up_to_carrot: 1.5
       use_regulated_linear_velocity_scaling: true
-      regulated_linear_scaling_min_radius: 3.5 # Keep curved-path yaw below 0.6 rad/s at 2 m/s.
+      regulated_linear_scaling_min_radius: 2.5 # Regulate tight-curve yaw to about 0.8 rad/s at 2 m/s.
       regulated_linear_scaling_min_speed: 0.08
       use_cost_regulated_linear_velocity_scaling: true
       cost_scaling_dist: 1.0
@@ -245,9 +245,9 @@ behavior_server:
     robot_base_frame: base_link
     transform_tolerance: 0.5
     simulate_ahead_time: 2.0
-    max_rotational_vel: 0.6
+    max_rotational_vel: 1.2
     min_rotational_vel: 0.15
-    rotational_acc_lim: 0.8
+    rotational_acc_lim: 1.5
 
 waypoint_follower:
   ros__parameters:
@@ -267,10 +267,10 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [2.0, 0.0, 0.6]
-    min_velocity: [-0.2, 0.0, -0.6]
-    max_accel: [1.0, 0.0, 0.8]
-    max_decel: [-2.0, 0.0, -1.2]
+    max_velocity: [2.0, 0.0, 1.2]
+    min_velocity: [-0.2, 0.0, -1.2]
+    max_accel: [1.0, 0.0, 1.5]
+    max_decel: [-2.0, 0.0, -2.0]
     odom_topic: "/odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]

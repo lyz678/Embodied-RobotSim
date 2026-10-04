@@ -18,7 +18,7 @@ class Gate(Node):
         self.arbiter = VelocityArbiter()
         self.last_state = None
         self.max_forward = self.declare_parameter('max_forward_speed', 2.0).value
-        self.max_angular = self.declare_parameter('max_angular_speed', .6).value
+        self.max_angular = self.declare_parameter('max_angular_speed', 1.2).value
         self.pub = self.create_publisher(Twist, '/x_bot/cmd_vel_safe', 10)
         self.ready_pub = self.create_publisher(Bool, '/localization/ready', 10)
         self.state_pub = self.create_publisher(String, '/x_bot/control_state', 10)
