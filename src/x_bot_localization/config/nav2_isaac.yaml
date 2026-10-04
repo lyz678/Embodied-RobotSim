@@ -96,7 +96,10 @@ local_costmap:
       height: 10                              # 代价地图高度（米）
       resolution: 0.06                        # 代价地图分辨率（米/像素）
       robot_radius: 0.45
-      plugins: ["static_layer", "voxel_layer", "inflation_layer"]
+      # /x_bot/scan is already height-filtered and projected into 2D.
+      # VoxelLayer rejects a scan origin slightly below z=0 after LIO drift,
+      # leaving stale lethal cells that make RPP stop indefinitely.
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: true   # FAST-LIO 使用 transient local QoS
@@ -105,18 +108,16 @@ local_costmap:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
         inflation_radius: 1.2
-      voxel_layer:
-        plugin: "nav2_costmap_2d::VoxelLayer"
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
-        publish_voxel_map: true
-        origin_z: 0.0
-        z_resolution: 0.05
-        z_voxels: 16
+        footprint_clearing_enabled: true
+        min_obstacle_height: -0.2
         max_obstacle_height: 2.0
-        mark_threshold: 0
         observation_sources: scan
         scan:
           topic: /x_bot/scan
+          min_obstacle_height: -0.2
           max_obstacle_height: 2.0
           clearing: true
           marking: true
@@ -157,13 +158,14 @@ global_costmap:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
         footprint_clearing_enabled: true
+        min_obstacle_height: -0.2
         max_obstacle_height: 2.0
         observation_sources: scan
         scan:
           topic: /x_bot/scan
           sensor_frame: base_footprint
           max_obstacle_height: 2.0
-          min_obstacle_height: 0.0
+          min_obstacle_height: -0.2
           clearing: true
           marking: true
           data_type: "LaserScan"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODE="${1:-explore}"
 if (($#)); then shift; fi
 
@@ -16,14 +16,11 @@ esac
 HEADLESS=false
 BUILD=false
 AUTO_EXPLORE=true
-BUNDLE="$ROOT_DIR/maps/room_a"
-WORLD=legacy_room
-if [[ "$MODE" == explore ]]; then
-    WORLD=office
-    BUNDLE="$ROOT_DIR/maps/office"
-elif [[ "$MODE" == pick ]]; then
-    WORLD=simple_room
-    BUNDLE="$ROOT_DIR/maps/simple_room_pick"
+BUNDLE="$ROOT_DIR/maps/gazebo_simple_room"
+WORLD=simple_room
+if [[ "$MODE" == pick ]]; then
+    WORLD=manipulation_test
+    BUNDLE="$ROOT_DIR/maps/manipulation_test"
 fi
 INITIAL_X=0.0
 INITIAL_Y=0.0
@@ -96,14 +93,15 @@ if [[ "$MODE" == explore && "$AUTO_EXPLORE" == true ]]; then
         ros2 pkg prefix "$package" >/dev/null 2>&1 || { echo "错误：缺少自动探索依赖 $package" >&2; exit 1; }
     done
 fi
-# 固定默认策略：探索/抓取实时建图；导航类优先使用地图，没有地图也能启动。
+# 与 main 的启动流程一致：探索/抓取建图，导航类要求已有地图。
 LOCALIZATION_MODE=mapping
 if [[ "$MODE" == navigation || "$MODE" == navigation_pick || "$MODE" == llm ]]; then
     if [[ -f "$BUNDLE/bundle.json" && -f "$BUNDLE/map.pcd" && -f "$BUNDLE/map.yaml" && -f "$BUNDLE/map.pgm" ]]; then
         LOCALIZATION_MODE=localization
         echo "使用默认地图定位：$BUNDLE"
     else
-        echo "默认地图尚未保存，自动使用 FAST-LIO 实时建图：$BUNDLE"
+        echo "错误：缺少完整地图：$BUNDLE（需要 bundle.json、map.pcd、map.yaml、map.pgm）。请先在同一场景建图并保存地图。" >&2
+        exit 1
     fi
 fi
 
@@ -140,16 +138,25 @@ elif [[ "$MODE" == "llm" ]]; then
 fi
 INITIAL_YAW="${INITIAL_YAW:-$YAW}"
 case "$WORLD" in
-    office|simple_room|legacy_room|manipulation_test) ;;
+    office|simple_room|isaac_simple_room|legacy_room|gazebo_simple_room|manipulation_test|small_house|ware_house|obstacle_avoidance_test|empty) ;;
     *) echo "不支持的 Isaac 场景：$WORLD" >&2; exit 2 ;;
 esac
 ASSETS_PATH="${ISAAC_ASSETS_PATH:-$HOME/isaacsim_assets/6.1}"
-if [[ "$WORLD" == office || "$WORLD" == simple_room ]]; then
+if [[ "$WORLD" == office || "$WORLD" == isaac_simple_room ]]; then
     ASSET_FILE="$ASSETS_PATH/Office/office.usd"
-    [[ "$WORLD" == simple_room ]] && ASSET_FILE="$ASSETS_PATH/Simple_Room/simple_room.usd"
+    [[ "$WORLD" == isaac_simple_room ]] && ASSET_FILE="$ASSETS_PATH/Simple_Room/simple_room.usd"
     if [[ ! -f "$ASSET_FILE" ]]; then
         echo "缺少本地场景资产：$ASSET_FILE；请用 Isaac python.sh 执行 scripts/download_isaac_environments.py。" >&2
         exit 1
+    fi
+fi
+if [[ "$WORLD" != office && "$WORLD" != isaac_simple_room ]]; then
+    SOURCE_WORLD="$WORLD"
+    [[ "$SOURCE_WORLD" == legacy_room || "$SOURCE_WORLD" == gazebo_simple_room ]] && SOURCE_WORLD=simple_room
+    if [[ ! -f "$ASSETS_PATH/GazeboMain/$SOURCE_WORLD.usd" || ! -f "$ASSETS_PATH/GazeboMain/$SOURCE_WORLD.json" ]]; then
+        MIGRATION_PYTHON="${ISAAC_SIM_PYTHON:-${ISAAC_SIM_PATH:-$HOME/isaacsim}/python.sh}"
+        echo "首次启动，迁移 main 原始场景和贴图：$SOURCE_WORLD"
+        "$MIGRATION_PYTHON" "$ROOT_DIR/scripts/migrate_gazebo_scenes.py" --worlds "$SOURCE_WORLD"
     fi
 fi
 for coordinate in "$INITIAL_X" "$INITIAL_Y" "$INITIAL_YAW"; do
@@ -162,7 +169,7 @@ SIM_ARGS="--world $WORLD --x $INITIAL_X --y $INITIAL_Y --yaw $INITIAL_YAW"
 [[ "$HEADLESS" == true ]] && SIM_ARGS="$SIM_ARGS --headless"
 
 echo "启动 Isaac Sim 6.1：mode=$MODE world=$WORLD localization=$LOCALIZATION_MODE map=$BUNDLE"
-launch_window "Isaac Sim" "cd '$ROOT_DIR' && ISAAC_SIM_CLEANUP_DONE=1 bash '$ROOT_DIR/start_isaac_sim.sh' $SIM_ARGS"
+launch_window "Isaac Sim" "cd '$ROOT_DIR' && ISAAC_SIM_CLEANUP_DONE=1 bash '$ROOT_DIR/scripts/isaac_runtime.sh' $SIM_ARGS"
 sleep 8
 launch_window "Isaac Controllers" "$ROS_ENV && ros2 launch x_bot isaac_controllers.launch.py"
 launch_window "FAST-LIO Localization" "$ROS_ENV && ros2 launch x_bot_localization localization.launch.py mode:=$LOCALIZATION_MODE bundle:='$BUNDLE' initial_x:=$INITIAL_X initial_y:=$INITIAL_Y initial_yaw:=$INITIAL_YAW"
@@ -179,8 +186,11 @@ launch_manipulation_stack() {
     launch_window "MoveIt" "$ROS_ENV && ros2 launch x_bot move_group.launch.py use_sim_time:=true use_rviz:=true"
     launch_yoloe
     sleep 2
-    launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py use_sim_time:=true use_rviz:=true"
-    launch_window "GraspNet" "$ROS_ENV && ros2 run graspnet_ros graspnet_node --ros-args -p use_sim_time:=true --params-file '$ROOT_DIR/src/graspnet_infer/graspnet_ros/config/config.yaml' -p engine_path:='$ROOT_DIR/src/graspnet_infer/graspnet.trt' -p plugin_path:='$ROOT_DIR/src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so'"
+    if [[ "$MODE" != pick ]]; then
+        launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py use_sim_time:=true use_rviz:=true"
+        sleep 2
+    fi
+    launch_window "GraspNet" "$ROS_ENV && { ros2 run graspnet_ros graspnet_node --ros-args -p use_sim_time:=true --params-file '$ROOT_DIR/src/graspnet_infer/graspnet_ros/config/config.yaml' -p engine_path:='$ROOT_DIR/src/graspnet_infer/graspnet.trt' -p plugin_path:='$ROOT_DIR/src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so' & grasp_pid=\$!; rviz2 -d '$ROOT_DIR/src/graspnet_infer/graspnet.rviz'; wait \$grasp_pid; }"
     launch_window "Arm Ctrl" "$ROS_ENV && ros2 run x_bot robot_actions --ros-args -p use_sim_time:=true"
 }
 
@@ -218,6 +228,10 @@ case "$MODE" in
         sleep 3
         launch_window "Qwen3 LLM Agent" "$ROS_ENV && $READY --nav2 && unset ALL_PROXY all_proxy HTTP_PROXY HTTPS_PROXY http_proxy https_proxy && python3 '$ROOT_DIR/llm_agent/agent_server.py'"
         launch_window "Web UI" "cd '$ROOT_DIR' && $ROS_ENV && bash '$ROOT_DIR/start_web_ui.sh'"
+        if command -v xdg-open >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
+            sleep 3
+            xdg-open http://localhost:8888 >/dev/null 2>&1 &
+        fi
         ;;
 esac
 

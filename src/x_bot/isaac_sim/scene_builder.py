@@ -1,15 +1,10 @@
-"""Procedural USD scenes used by the Isaac Sim backend.
-
-Only the two scenarios used by the end-to-end demos are authored here.  The
-large Gazebo model library is intentionally not required by this backend.
-"""
+"""Downloaded and procedural USD scenes used by the Isaac Sim backend."""
 
 from __future__ import annotations
 
 import math
 import os
 import re
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Sequence
 
@@ -90,124 +85,36 @@ def add_cylinder(
     return prim
 
 
-def _add_ground_and_lights(stage: Usd.Stage, extent: float) -> None:
-    add_box(stage, "/World/Scene/ground", (extent, extent, 0.10), (0.0, 0.0, -0.05), (0.72, 0.69, 0.62))
-    dome = UsdLux.DomeLight.Define(stage, "/World/Lights/Dome")
-    dome.CreateIntensityAttr(450.0)
-    dome.CreateColorAttr(Gf.Vec3f(0.92, 0.95, 1.0))
-    sun = UsdLux.DistantLight.Define(stage, "/World/Lights/Sun")
-    sun.CreateIntensityAttr(1800.0)
-    sun.CreateAngleAttr(0.6)
-    _set_transform(sun.GetPrim(), (0.0, 0.0, 8.0), (-0.8, 0.4, 0.3))
-
-
-def _pose(text: str | None) -> list[float]:
-    values = [float(v) for v in (text or "0 0 0 0 0 0").split()]
-    return (values + [0.0] * 6)[:6]
-
-
-def _add_sdf_boxes(stage: Usd.Stage, sdf_path: Path) -> None:
-    """Import the static box geometry from an SDF without a Gazebo dependency."""
-    root = ET.parse(sdf_path).getroot()
-    world = root.find("world")
-    if world is None:
-        return
-    for model in world.findall("model"):
-        box = model.find("./link/collision/geometry/box/size")
-        if box is None:
-            box = model.find("./link/visual/geometry/box/size")
-        if box is None or not box.text:
-            continue
-        size = [float(value) for value in box.text.split()]
-        model_pose = _pose(model.findtext("pose"))
-        link_pose = _pose(model.findtext("./link/pose"))
-        position = [model_pose[index] + link_pose[index] for index in range(3)]
-        rpy = [model_pose[index] + link_pose[index] for index in range(3, 6)]
-        name = _safe_name(model.get("name", "sdf_box"))
-        add_box(stage, f"/World/Scene/structure/{name}", size, position, (0.91, 0.90, 0.84), rpy)
-
-
-def _add_table(stage: Usd.Stage, path: str, center: Sequence[float], size: Sequence[float]) -> None:
-    x, y, z = center
-    sx, sy, sz = size
-    add_box(stage, f"{path}/top", (sx, sy, 0.08), (x, y, z), (0.42, 0.24, 0.11), semantic_class="table")
-    for index, (dx, dy) in enumerate(((-1, -1), (-1, 1), (1, -1), (1, 1))):
-        add_box(
-            stage,
-            f"{path}/leg_{index}",
-            (0.07, 0.07, sz),
-            (x + dx * (sx / 2 - 0.08), y + dy * (sy / 2 - 0.08), z / 2),
-            (0.30, 0.16, 0.07),
-        )
-
-
-def _add_grasp_objects(stage: Usd.Stage, root: str, positions: dict[str, Sequence[float]]) -> None:
-    coke = positions["coke"]
-    add_cylinder(stage, f"{root}/coke", 0.033, 0.122, coke, (0.86, 0.03, 0.03), dynamic=True, mass=0.34, semantic_class="coke")
-    # A white band makes the procedural can visually distinguishable from other cylinders.
-    band = UsdGeom.Cylinder.Define(stage, f"{root}/coke/label")
-    band.CreateAxisAttr("Z")
-    band.CreateRadiusAttr(0.034)
-    band.CreateHeightAttr(0.025)
-    band.CreateDisplayColorAttr([Gf.Vec3f(0.95, 0.95, 0.95)])
-    _set_transform(band.GetPrim(), (0.0, 0.0, 0.0))
-
-    cup = positions["cup"]
-    add_cylinder(stage, f"{root}/cup", 0.045, 0.095, cup, (0.12, 0.28, 0.82), dynamic=True, mass=0.25, semantic_class="cup")
-
-    book = positions["book"]
-    add_box(stage, f"{root}/book", (0.22, 0.16, 0.035), book, (0.95, 0.74, 0.10), dynamic=True, mass=0.45, semantic_class="book")
-
-
-def build_simple_room(stage: Usd.Stage, package_share: Path) -> None:
-    _add_ground_and_lights(stage, 32.0)
-    _add_sdf_boxes(stage, package_share / "worlds" / "simple_room.sdf")
-
-    # Lightweight stand-ins for the missing Gazebo model collection.  Their
-    # poses preserve the navigation and LLM coordinates used by this project.
-    add_box(stage, "/World/Scene/furniture/bed", (2.0, 1.5, 0.55), (-4.5, 4.0, 0.275), (0.35, 0.55, 0.82), semantic_class="bed")
-    add_box(stage, "/World/Scene/furniture/wardrobe", (0.65, 1.7, 2.0), (-6.45, -0.38, 1.0), (0.40, 0.22, 0.12))
-    _add_table(stage, "/World/Scene/furniture/reading_desk", (-6.45, 1.62, 0.72), (1.25, 0.60, 0.72))
-    add_box(stage, "/World/Scene/furniture/sofa", (2.0, 0.85, 0.78), (1.59, 4.49, 0.39), (0.22, 0.52, 0.30), semantic_class="sofa")
-    add_box(stage, "/World/Scene/furniture/tv_cabinet", (1.6, 0.45, 0.65), (-1.31, 3.84, 0.325), (0.20, 0.14, 0.10))
-    add_box(stage, "/World/Scene/furniture/tv", (1.1, 0.08, 0.68), (-1.23, 3.68, 1.0), (0.03, 0.04, 0.05), semantic_class="TV")
-    add_box(stage, "/World/Scene/furniture/fridge", (0.8, 0.78, 1.9), (6.45, -0.06, 0.95), (0.82, 0.84, 0.86))
-    add_box(stage, "/World/Scene/furniture/kitchen_cabinet", (0.65, 2.2, 0.95), (5.25, 4.63, 0.475), (0.70, 0.66, 0.56))
-    _add_table(stage, "/World/Scene/furniture/kitchen_table", (4.73, 2.65, 0.76), (1.55, 0.95, 0.76))
-    add_box(stage, "/World/Scene/furniture/kitchen_chair", (0.50, 0.50, 0.85), (5.92, 2.52, 0.425), (0.54, 0.32, 0.16), semantic_class="chair")
-    add_box(stage, "/World/Scene/furniture/shoe_rack", (1.2, 0.35, 0.8), (2.0, -5.64, 0.4), (0.44, 0.30, 0.18))
-    _add_grasp_objects(
-        stage,
-        "/World/Scene/objects",
-        {
-            "coke": (4.448, 2.325, 0.861),
-            "cup": (4.588, 2.919, 0.848),
-            "book": (-6.45, 1.62, 0.78),
-        },
-    )
-
-
-def build_manipulation_test(stage: Usd.Stage, _package_share: Path) -> None:
-    _add_ground_and_lights(stage, 12.0)
-    _add_table(stage, "/World/Scene/furniture/kitchen_table", (0.801, 0.0, 0.76), (1.45, 0.82, 0.76))
-    wall_color = (0.86, 0.85, 0.79)
-    add_box(stage, "/World/Scene/structure/north", (5.8, 0.12, 2.4), (1.3, 2.5, 1.2), wall_color)
-    add_box(stage, "/World/Scene/structure/south", (5.8, 0.12, 2.4), (1.3, -2.58, 1.2), wall_color)
-    add_box(stage, "/World/Scene/structure/east", (0.12, 5.2, 2.4), (3.24, 0.0, 1.2), wall_color)
-    _add_grasp_objects(
-        stage,
-        "/World/Scene/objects",
-        {
-            "coke": (0.710, -0.224, 0.861),
-            "cup": (0.654, 0.038, 0.848),
-            "book": (0.641, 0.304, 0.818),
-        },
-    )
-    add_cylinder(stage, "/World/Scene/furniture/trash_bin", 0.22, 0.55, (0.0, -0.81, 0.275), (0.12, 0.12, 0.12), semantic_class="trash bin")
-
-
 def _assets_root() -> Path:
     return Path(os.environ.get("ISAAC_ASSETS_PATH", str(Path.home() / "isaacsim_assets/6.1")))
+
+
+def spawn_floor_height(stage: Usd.Stage, x: float, y: float) -> float:
+    """Start wheel contacts on a thin floor covering, without a drop.
+
+    Only broad, low, static colliders supporting the whole base qualify;
+    furniture and loose objects cannot change the robot's spawn height.
+    """
+    bounds = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ['default', 'guide'])
+    height = 0.0
+    for prim in stage.Traverse():
+        if not prim.HasAPI(UsdPhysics.CollisionAPI) or not prim.IsA(UsdGeom.Gprim):
+            continue
+        parent = prim
+        dynamic = False
+        while parent and not parent.IsPseudoRoot():
+            if parent.HasAPI(UsdPhysics.RigidBodyAPI):
+                dynamic = True
+                break
+            parent = parent.GetParent()
+        if dynamic:
+            continue
+        box = bounds.ComputeWorldBound(prim).ComputeAlignedRange()
+        low, high = box.GetMin(), box.GetMax()
+        if (low[0] <= x-.25 and high[0] >= x+.25 and low[1] <= y-.25 and high[1] >= y+.25
+                and high[2]-low[2] <= .12 and -.05 <= high[2] <= .10):
+            height = max(height, float(high[2]))
+    return height
 
 
 def _reference_environment(stage: Usd.Stage, folder: str, filename: str) -> Usd.Prim:
@@ -238,6 +145,23 @@ def _main_grasp_object(stage: Usd.Stage, name: str, xy: tuple[float, float], flo
 
 def build_office(stage: Usd.Stage) -> None:
     _reference_environment(stage, "Office", "office.usd")
+    # The enclosed roof blocks skylight. Shadow-free ambient fill keeps the
+    # interior and robot camera readable, with a few broad ceiling panels.
+    ambient = UsdLux.DomeLight.Define(stage, "/World/Lights/OfficeAmbient")
+    ambient.CreateIntensityAttr(1200.0)
+    ambient.CreateColorAttr(Gf.Vec3f(0.95, 0.97, 1.0))
+    UsdLux.ShadowAPI.Apply(ambient.GetPrim()).CreateShadowEnableAttr(False)
+    positions = [(0.0, 0.0), (-7.0, 0.0), (-7.0, -16.0), (-20.0, 8.0),
+                 (0.0, 10.0), (-3.0, 30.0), (-14.0, 32.0), (-14.0, 52.0)]
+    for index, (x, y) in enumerate(positions):
+        panel = UsdLux.RectLight.Define(stage, f"/World/Lights/OfficeCeiling_{index}")
+        panel.CreateWidthAttr(3.0)
+        panel.CreateHeightAttr(3.0)
+        panel.CreateIntensityAttr(2500.0)
+        panel.CreateColorAttr(Gf.Vec3f(1.0, 0.97, 0.92))
+        # RectLight emits along local -Z, towards the floor.
+        _set_transform(panel.GetPrim(), (x, y, 2.75))
+        UsdLux.ShadowAPI.Apply(panel.GetPrim()).CreateShadowEnableAttr(False)
 
 
 def build_official_simple_room(stage: Usd.Stage) -> None:
@@ -276,14 +200,18 @@ def build_scene(stage: Usd.Stage, world_name: str, package_share: Path) -> None:
     UsdGeom.Xform.Define(stage, "/World/Lights")
     if world_name == "office":
         build_office(stage)
-    elif world_name == "simple_room":
+    elif world_name == "isaac_simple_room":
         build_official_simple_room(stage)
-    elif world_name == "legacy_room":
-        build_simple_room(stage, package_share)
-    elif world_name == "manipulation_test":
-        build_manipulation_test(stage, package_share)
+    elif world_name in ("simple_room", "legacy_room", "gazebo_simple_room", "manipulation_test", "small_house", "ware_house", "obstacle_avoidance_test", "empty"):
+        source_name = "simple_room" if world_name in ("legacy_room", "gazebo_simple_room") else world_name
+        asset = _assets_root() / "GazeboMain" / f"{source_name}.usd"
+        manifest = asset.with_suffix(".json")
+        if not asset.is_file() or not manifest.is_file():
+            raise FileNotFoundError(f"Missing migrated main-branch scene: {asset}; run scripts/migrate_gazebo_scenes.py with Isaac python.sh")
+        root = UsdGeom.Xform.Define(stage, "/World/Scene/Environment").GetPrim()
+        root.GetReferences().AddReference(str(asset))
     else:
         raise ValueError(
             f"Unsupported Isaac Sim world '{world_name}'. "
-            "Supported worlds: office, simple_room, legacy_room, manipulation_test"
+            "Supported worlds: office, simple_room, isaac_simple_room, legacy_room, gazebo_simple_room, manipulation_test, small_house, ware_house, obstacle_avoidance_test, empty"
         )

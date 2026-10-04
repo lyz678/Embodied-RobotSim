@@ -1,0 +1,17 @@
+{
+  "world": "simple_room",
+  "physics_hz": 200,
+  "settle_simulation_seconds": 4,
+  "measurements": {
+    "Coke_table_2": {
+      "visible_tabletop_z_m": 0.8013541341820978,
+      "settled_visual_bottom_z_m": 0.8000015780015647,
+      "gap_mm": -1.3525561805330932
+    },
+    "CoffeeCup_table_1": {
+      "visible_tabletop_z_m": 0.8013555278937262,
+      "settled_visual_bottom_z_m": 0.7996178398212972,
+      "gap_mm": -1.7376880724290222
+    }
+  }
+}

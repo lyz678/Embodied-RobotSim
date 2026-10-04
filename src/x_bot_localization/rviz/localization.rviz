@@ -67,6 +67,17 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
+    - Class: rviz_default_plugins/Polygon
+      Enabled: true
+      Name: Navigation Safety Footprint
+      Color: 0; 255; 0
+      Alpha: 1
+      Topic:
+        Value: /local_costmap/published_footprint
+        Depth: 5
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+        History Policy: Keep Last
     - Class: rviz_default_plugins/TF
       Enabled: true
       Filter (blacklist): ""

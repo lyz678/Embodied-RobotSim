@@ -17,7 +17,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT/'src/x_bot_localization'), str(ROOT/'src/x_bot/isaac_sim')]
-from mid360_sampling import Packet, POINT, directions, settled_at_rest
+from mid360_sampling import Packet, POINT, directions, direction_array, settled_at_rest
 from x_bot_localization.core import matrix, quaternion, transform, decode_cloud, Grid, ray_cells, Health, save_bundle
 
 
@@ -29,6 +29,21 @@ def cloud(data, endian=False):
 
 
 class Sampling(unittest.TestCase):
+    def test_vectorized_pattern_matches_reference(self):
+        for first in (0, 19999, 123456789):
+            actual = direction_array(first)
+            np.testing.assert_allclose(actual, list(directions(first)), atol=1e-12)
+            np.testing.assert_allclose(np.linalg.norm(actual, axis=1), 1, atol=1e-12)
+
+    def test_batch_packet_wire_format_and_rewind(self):
+        reference, batched = Packet(), Packet()
+        xyz = np.array([[1., 2., 3.], [math.nan, 0., 1.], [4., 5., 6.]])
+        lines = np.array([0, 1, 3])
+        rows = [(*point, 100., line) for point, line in zip(xyz, lines)]
+        for ns in (5_000_000, 10_000_000, 105_000_000, 5_000_000, 105_000_000):
+            self.assertEqual(reference.add(ns, rows), batched.add_arrays(ns, xyz, lines))
+            self.assertEqual(reference.data, batched.data)
+
     def test_layout(self):
         self.assertEqual(POINT.size,24)
         msg=cloud(POINT.pack(1,2,3,42,95_000_000,3,16))
@@ -211,25 +226,27 @@ class Contracts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             entry = Path(folder)/'start_explore_and_mapping.sh'
             entry.write_text((ROOT/'start_explore_and_mapping.sh').read_text())
-            (Path(folder)/'start_isaac_demo.sh').write_text('printf "%s\\n" "$@"\n')
+            (Path(folder)/'scripts').mkdir()
+            (Path(folder)/'scripts/robot_services.sh').write_text('printf "%s\\n" "$@"\n')
             environment = dict(os.environ)
             environment.pop('SIM_BACKEND', None)
             result = subprocess.run(['bash', str(entry)], env=environment,
                                     check=True, capture_output=True, text=True)
             self.assertEqual(result.stdout.splitlines(),
-                             ['explore', '--world', 'office', '--bundle', str(Path(folder)/'maps/office'),
+                             ['explore', '--world', 'simple_room', '--bundle', str(Path(folder)/'maps/gazebo_simple_room'),
                               '--initial-x', '0.0', '--initial-y', '0.0',
-                              '--initial-yaw', '1.5708'])
+                              '--initial-yaw', '1.5708', '--build'])
 
-    def test_pick_entrypoint_uses_downloaded_simple_room(self):
+    def test_pick_entrypoint_uses_main_manipulation_scene(self):
         with tempfile.TemporaryDirectory() as folder:
             entry = Path(folder)/'start_pick_and_place_demo.sh'
             entry.write_text((ROOT/'start_pick_and_place_demo.sh').read_text())
-            (Path(folder)/'start_isaac_demo.sh').write_text('printf "%s\\n" "$@"\n')
+            (Path(folder)/'scripts').mkdir()
+            (Path(folder)/'scripts/robot_services.sh').write_text('printf "%s\\n" "$@"\n')
             result = subprocess.run(['bash', str(entry)], check=True, capture_output=True, text=True)
             self.assertEqual(result.stdout.splitlines(),
-                             ['pick', '--world', 'simple_room', '--bundle', str(Path(folder)/'maps/simple_room_pick'),
-                              '--initial-x', '0.0', '--initial-y', '0.0', '--initial-yaw', '0.0'])
+                             ['pick', '--world', 'manipulation_test', '--bundle', str(Path(folder)/'maps/manipulation_test'),
+                              '--initial-x', '0.0', '--initial-y', '0.0', '--initial-yaw', '0.0', '--build'])
 
     def test_python_syntax(self):
         paths=list((ROOT/'src/x_bot/isaac_sim').glob('*.py'))+list((ROOT/'src/x_bot_localization').rglob('*.py'))
@@ -238,7 +255,7 @@ class Contracts(unittest.TestCase):
             ast.parse(path.read_text(),filename=str(path))
 
     def test_shell_syntax(self):
-        for path in [ROOT/'start_isaac_demo.sh',ROOT/'scripts/setup_isaac_dependencies.sh']:
+        for path in list(ROOT.glob('*.sh')) + list((ROOT/'scripts').glob('*.sh')):
             subprocess.run(['bash','-n',str(path)],check=True)
 
     def test_yaml_and_xml(self):
@@ -271,7 +288,7 @@ class Contracts(unittest.TestCase):
         self.assertIn('/debug/ground_truth/odom',bridge)
         launch=(ROOT/'src/x_bot_localization/launch/localization.launch.py').read_text()
         self.assertIn("('/tf','/fastlio/tf_internal')",launch)
-        start=(ROOT/'start_isaac_demo.sh').read_text()
+        start=(ROOT/'scripts/robot_services.sh').read_text()
         self.assertNotIn('cartographer.launch.py',start)
         self.assertNotIn('nav2.launch.py',start)
 

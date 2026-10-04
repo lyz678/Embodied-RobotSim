@@ -4,13 +4,13 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 默认配置：直接运行本脚本即可；需要调整时修改这里。
-WORLD=office
-MAP_BUNDLE="$ROOT_DIR/maps/office"
+WORLD=simple_room
+MAP_BUNDLE="$ROOT_DIR/maps/gazebo_simple_room"
 INITIAL_X=0.0
 INITIAL_Y=0.0
 INITIAL_YAW=1.5708
 HEADLESS=false
-BUILD=false
+BUILD=true
 AUTO_EXPLORE=true
 
 DEFAULT_ARGS=(--world "$WORLD" --bundle "$MAP_BUNDLE"
@@ -18,4 +18,4 @@ DEFAULT_ARGS=(--world "$WORLD" --bundle "$MAP_BUNDLE"
 [[ "$HEADLESS" == true ]] && DEFAULT_ARGS+=(--headless)
 [[ "$BUILD" == true ]] && DEFAULT_ARGS+=(--build)
 [[ "$AUTO_EXPLORE" == false ]] && DEFAULT_ARGS+=(--no-explore)
-exec bash "$ROOT_DIR/start_isaac_demo.sh" explore "${DEFAULT_ARGS[@]}" "$@"
+exec bash "$ROOT_DIR/scripts/robot_services.sh" explore "${DEFAULT_ARGS[@]}" "$@"

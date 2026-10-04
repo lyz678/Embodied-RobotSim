@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import time
 import sys
 import traceback
 from pathlib import Path
@@ -13,7 +15,7 @@ from isaacsim import SimulationApp
 
 def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--world", choices=("office", "simple_room", "legacy_room", "manipulation_test"), default="office")
+    parser.add_argument("--world", choices=("office", "simple_room", "isaac_simple_room", "legacy_room", "gazebo_simple_room", "manipulation_test", "small_house", "ware_house", "obstacle_avoidance_test", "empty"), default="simple_room")
     parser.add_argument("--package-share", type=Path, required=True)
     parser.add_argument("--franka-share", type=Path, required=True)
     parser.add_argument("--controller-config", type=Path, required=True)
@@ -23,7 +25,12 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--mid360-xyz", default='0.25 0 0.0875')
     parser.add_argument("--mid360-rpy", default='0 0 0')
     parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--render-hz", type=float, default=30.0)
+    parser.add_argument("--lidar-backend", choices=("native", "python"), default="native")
+    parser.add_argument("--profile-seconds", type=float, default=float(os.environ.get("ISAAC_PROFILE_SECONDS", "0")))
     args, _ = parser.parse_known_args()
+    if not 1 <= args.render_hz <= 200:
+        parser.error("--render-hz must be between 1 and 200")
     return args
 
 
@@ -32,6 +39,7 @@ def main() -> int:
     simulation_app = SimulationApp(
         {
             "headless": args.headless,
+            "disable_viewport_updates": args.headless,
             "renderer": "RayTracedLighting",
             "anti_aliasing": 2,
         }
@@ -41,7 +49,7 @@ def main() -> int:
     import isaacsim.core.experimental.utils.app as app_utils
     import isaacsim.core.experimental.utils.stage as stage_utils
     import omni.usd
-    from isaacsim.core.rendering_manager import ViewportManager
+    from isaacsim.core.rendering_manager import RenderingManager, ViewportManager
     from isaacsim.core.simulation_manager import SimulationManager
 
     module_dir = Path(__file__).resolve().parent
@@ -89,9 +97,12 @@ def main() -> int:
         # context. Build the simulation stage after conversion so rendering,
         # physics and the robot reference all use the same active stage.
         stage = stage_utils.create_new_stage()
+        RenderingManager.set_dt(1.0 / args.render_hz)
         build_scene(stage, args.world, args.package_share.resolve())
-        add_robot_reference(stage, robot_usd, args.x, args.y, args.yaw,
-                            z=0.01 if args.world == "office" else 0.0)
+        from scene_builder import spawn_floor_height
+        floor_height = max(0.01 if args.world == "office" else 0.0,
+                           spawn_floor_height(stage, args.x, args.y))
+        add_robot_reference(stage, robot_usd, args.x, args.y, args.yaw, z=floor_height)
         simulation_app.update()
         while omni.usd.get_context().get_stage_loading_status()[2] > 0:
             simulation_app.update()
@@ -103,7 +114,7 @@ def main() -> int:
         create_camera_graphs(stage)
         SimulationManager.setup_simulation(dt=1.0 / 200.0, device="cpu")
         from mid360 import Mid360
-        lidar_sensor = Mid360(stage)
+        lidar_sensor = Mid360(stage, backend=args.lidar_backend)
         # Initialize tensor views without advancing the timeline, so the arm
         # and base start at rest before the first published physics sample.
         SimulationManager.initialize_physics()
@@ -118,11 +129,24 @@ def main() -> int:
             f"Embodied-RobotSim Isaac backend ready: world={args.world}, robot={ROBOT_PRIM_PATH}, "
             "cmd_vel=/x_bot/cmd_vel"
         )
+        profiler = None
+        if args.profile_seconds > 0:
+            import cProfile
+            profiler = cProfile.Profile()
+            profiler.enable()
+            profile_end = time.monotonic() + args.profile_seconds
         while simulation_app.is_running():
-            lidar_sensor.update()
+            if not app_utils.is_playing():
+                lidar_sensor.update()
             simulation_app.update()
             if lidar_sensor.error:
                 raise lidar_sensor.error
+            if profiler is not None and time.monotonic() >= profile_end:
+                import pstats
+                profiler.disable()
+                with open('/tmp/isaac_performance_profile.txt', 'w') as output:
+                    pstats.Stats(profiler, stream=output).sort_stats('tottime').print_stats(40)
+                profiler = None
     except KeyboardInterrupt:
         pass
     except Exception as error:

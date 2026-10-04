@@ -57,7 +57,6 @@ install(DIRECTORY
   launch
   maps
   meshes
-  models
   rviz
   scripts
   urdf

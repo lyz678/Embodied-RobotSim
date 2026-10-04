@@ -1,0 +1,34 @@
+{
+  "date": "2026-10-04",
+  "geometry": {
+    "chassis_radius_m": 0.35,
+    "stowed_robot_collision_envelope_radius_m": 0.3686,
+    "nav2_radius_m": 0.45,
+    "chassis_mesh_segments": 96,
+    "chassis_mesh_vertices": 192,
+    "mesh_normal_interpolation": "faceVarying",
+    "visual_and_collision_models_checked": 4
+  },
+  "observed_failure": {
+    "scan_origin_z_m": -0.01,
+    "voxel_origin_z_m": 0,
+    "log_messages": [
+      "Sensor origin ... is out of map bounds ... The costmap cannot raytrace for it.",
+      "RegulatedPurePursuitController detected collision ahead!",
+      "Controller patience exceeded"
+    ]
+  },
+  "fix": "Height-filtered virtual LaserScan now uses 2D ObstacleLayer locally and tolerates +/-0.2 m vertical pose variation in height filtering; footprint radius kept at 0.45 m. Chassis/roof visual and collision rings use 96 segments; tire geometry unchanged.",
+  "post_fix": {
+    "sensor_origin_out_of_bounds_warnings": 0,
+    "collision_ahead_warnings": 29,
+    "successful_goal_logs": [
+      "[INFO] [1791091687.335299078] [explore_node]: [CALLBACK] Goal SUCCEEDED for (-0.38, -3.76)",
+      "[INFO] [1791091745.275744345] [explore_node]: [CALLBACK] Goal SUCCEEDED for (-2.76, 20.18)",
+      "[INFO] [1791091768.370020338] [explore_node]: [CALLBACK] Goal SUCCEEDED for (-1.05, 28.82)"
+    ]
+  },
+  "checks": "50 offline tests passed; imported USD chassis/roof visual/collision mesh radii and normal/index counts checked; stowed robot URDF forward-kinematic collision envelope checked.",
+  "limitations": "Observed multiple successful exploration goals; full Office coverage and all future stuck cases have not been verified.",
+  "source": "https://api.nav2.org/nav2-jazzy/html/voxel__layer_8cpp_source.html"
+}

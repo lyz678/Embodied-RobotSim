@@ -155,13 +155,14 @@ export ISAAC_SIM_PATH=/path/to/isaac-sim
 #### 先建图，再定位
 
 ```bash
-# 建图，默认输出 maps/room_a；保存时不会覆盖已有地图
+# main 的 simple_room 建图，默认输出 maps/gazebo_simple_room；保存时不会覆盖已有地图
 ./start_explore_and_mapping.sh
 
 # 另一终端，待走过所需区域后保存配套地图
 source install/setup.bash
 ros2 service call /localization/save_map std_srvs/srv/Trigger '{}'
 
+# 导航与建图使用相同的 main simple_room 场景及地图目录
 # 停止本次运行后，使用刚保存的三维地图定位
 ./start_navigation.sh
 ```
@@ -172,22 +173,58 @@ ros2 service call /localization/save_map std_srvs/srv/Trigger '{}'
 
 | 入口 | 模式 / 场景 |
 |---|---|
-| `start_explore_and_mapping.sh` | 建图 / simple_room |
-| `start_pick_and_place_demo.sh` | 建图定位 / manipulation_test |
-| `start_navigation.sh` | 已知地图定位 / simple_room |
-| `start_navigation_and_pick_demo.sh` | 已知地图定位 + 抓取 / simple_room |
-| `start_llm_agent.sh` | 已知地图定位 + LLM / simple_room |
+| `start_explore_and_mapping.sh` | 自动探索建图 / main simple_room |
+| `start_pick_and_place_demo.sh` | 建图定位 + 抓取 / main 的 manipulation_test |
+| `start_navigation.sh` | 已知地图定位 / simple_room（main 的房间布局） |
+| `start_navigation_and_pick_demo.sh` | 已知地图定位 + 抓取 / simple_room（main 的房间布局） |
+| `start_llm_agent.sh` | 已知地图定位 + LLM / simple_room（main 的房间布局） |
 
-直接执行脚本即可，无需命令行参数。默认配置写在各入口顶部：`MAP_BUNDLE`、`INITIAL_X/Y/YAW`、`HEADLESS`、`BUILD`，探索另有 `AUTO_EXPLORE`。默认地图为 `maps/room_a`，单独抓取为 `maps/manipulation_test`。导航类入口在缺少配套地图时自动切换实时建图；已有地图时使用 ICP 定位。导航与任务入口等待 ready，180 秒内未就绪则不启动；ICP 连续失败 5 次后需要重新给初始位姿。定位丢失会停止底盘。暂停时停止运动；重置仿真时钟后必须重启 FAST-LIO、适配器和导航链路，不能沿用旧估计器状态。启动脚本先执行 `stop_robot_sim.sh`，清理上一轮进程并关闭带项目标记的服务终端。该脚本会清理所有 ROS 会话并删除日志。
+直接执行脚本即可，无需命令行参数。默认配置写在各入口顶部：`WORLD`、`MAP_BUNDLE`、`INITIAL_X/Y/YAW`、`HEADLESS`、`BUILD`，探索另有 `AUTO_EXPLORE`。探索地图为 `maps/gazebo_simple_room`，单独抓取为 `maps/manipulation_test`，导航类为 `maps/gazebo_simple_room`。与 main 一致，导航类要求已有地图，缺地图会报错退出；探索、导航和抓取入口默认构建，LLM 按需构建。已有地图时使用 ICP 定位。导航与任务入口等待 ready，180 秒内未就绪则不启动；ICP 连续失败 5 次后需要重新给初始位姿。定位丢失会停止底盘。暂停时停止运动；重置仿真时钟后必须重启 FAST-LIO、适配器和导航链路，不能沿用旧估计器状态。启动脚本先执行 `stop_robot_sim.sh`，清理上一轮进程并关闭带项目标记的服务终端。该脚本会清理所有 ROS 会话并删除日志。
 
 Isaac 导航的直行目标速度为 **2 m/s（按仿真时间）**，Nav2 平滑器、定位安全节点和底盘驱动采用相同前进上限；线加速度为 1 m/s²、减速度为 2 m/s²。弯道、障碍附近和接近目标时仍会减速。实际观看速度还取决于仿真实时倍率，2 m/s 的配置不会自动让仿真达到实时运行。
 
 
+本机 Office 实测：原 Python 逐射线版本实时倍率约 0.20，原生 C++ 批量雷达约 0.51（约 2.5 倍）。物理、轮控制和 IMU 仍为 200 Hz，雷达仍为每步 1000 条射线、10 Hz 点云，采样时间偏移为 0–95 ms。渲染目标频率为 30 Hz；GPU 物理与当前 ros2_control 的 CPU 张量接口不兼容，因此保留 CPU 物理。倍率会随视野、探索路径和其他进程负载变化，未达到实时运行。更快的无界面运行可将入口顶部 `HEADLESS=true`，相机与 ROS 感知仍运行，停用额外的观察视口。
+
+测量当前运行性能（系统 ROS Python）：
+```bash
+source /opt/ros/jazzy/setup.bash
+python3 scripts/measure_isaac_performance.py --seconds 30 --output /tmp/isaac_performance.json
+```
+输出仿真实时倍率、按仿真时间计的 IMU/雷达/相机消息频率、指令速度和真实位移速度。`ISAAC_PROFILE_SECONDS=20 ./start_explore_and_mapping.sh` 可生成 `/tmp/isaac_performance_profile.txt`；性能采样本身会增加开销，比较速度时应关闭采样。内部运行脚本支持 `--lidar-backend python` 对比参考算法。优化依据：[NVIDIA 性能手册](https://docs.isaacsim.omniverse.nvidia.com/latest/reference_material/sim_performance_optimization_handbook.html)。
+
+底盘和顶板的 Isaac 视觉/碰撞轮廓统一为 96 段圆形，底盘半径 0.35 m，收拢机械臂后的碰撞包络约 0.369 m；Nav2 保留 0.45 m 安全半径。RViz 的 `Navigation Safety Footprint` 以绿色显示真实规划足迹。`/x_bot/scan` 是已做高度筛选的二维虚拟激光，因此局部地图使用 ObstacleLayer，避免 FAST-LIO 的小幅负 z 漂移使 VoxelLayer 无法清除旧障碍。
+
 导航抓取/LLM 的既有任务包含硬编码地图坐标，换地图或原点后必须检查/修改目标点；定位 ready 不代表目标点在新地图中有效。
+
+根目录仅保留 main 的启动入口，共用流程位于 `scripts/robot_services.sh`，Isaac 运行环境位于 `scripts/isaac_runtime.sh`。Office 使用环境补光和八盏面光源，照亮封闭室内。首次下载场景及 main 的抓取物体：
+```bash
+/home/lyz/isaacsim/python.sh scripts/download_isaac_environments.py
+```
+
+main 分支的原始 Gazebo 场景转换到本机 `~/isaacsim_assets/6.1/GazeboMain`，保留源模型和许可证。首次启动自动转换，也可提前执行：
+```bash
+/home/lyz/isaacsim/python.sh scripts/migrate_gazebo_scenes.py
+```
+支持原始 `simple_room`（兼容旧名称 `legacy_room` 或 `gazebo_simple_room`）、`manipulation_test`、`small_house`、`ware_house`、`obstacle_avoidance_test`、`empty`。`WORLD=simple_room` 表示 main 的房间；NVIDIA 官方 Simple Room 的名称为 `isaac_simple_room`。迁移保留原始网格、UV/贴图、DAE 单位和节点矩阵、SDF 层级位姿和缩放；视觉和碰撞模型分别导入。PhysX 动态网格使用凸分解，灯光按 USD 强度调整，接触和光照效果不能保证与 Gazebo 完全一致。
+
+抓取入口默认使用 main 的原始桌面测试场景。原始房间的导航入口使用 `maps/gazebo_simple_room`；需要重新建图。探索默认已设置 `WORLD=simple_room`、`MAP_BUNDLE="$ROOT_DIR/maps/gazebo_simple_room"`，直接启动并保存地图后再导航。Office 仍可通过修改脚本顶部的场景和地图目录使用。
+
+资源与位姿验证、参考渲染（输出到 `docs/validation/gazebo_scene_migration`）：
+```bash
+/home/lyz/isaacsim/python.sh scripts/validate_gazebo_scene_assets.py
+```
+
+动态网格的 PhysX 凸分解开启 shrink-wrap 并降低误差，避免桌面碰撞体膨胀、物体悬空。以下测试运行真实物理 4 秒，再比较物体底部和可见桌面的间距：
+```bash
+/home/lyz/isaacsim/python.sh scripts/validate_gazebo_scene_contacts.py
+/home/lyz/isaacsim/python.sh scripts/validate_gazebo_scene_contacts.py --world simple_room
+```
+资产默认存于 `~/isaacsim_assets/6.1`，可用 `ISAAC_ASSETS_PATH` 修改。
 
 低层调试：
 ```bash
-./start_isaac_sim.sh
+bash scripts/isaac_runtime.sh
 ros2 launch x_bot isaac_controllers.launch.py
 ros2 launch x_bot_localization localization.launch.py mode:=mapping bundle:=/absolute/path/new_map
 ```
@@ -232,7 +269,7 @@ trtexec --onnx=src/graspnet_infer/graspnet.onnx \
 
 ### 4. 运行演示案例
 
-项目根目录提供了 5 个“一键启动”脚本，全部无参数直接使用 Isaac Sim。探索默认开启自动探索；导航、移动抓取和 LLM 默认读取 `maps/room_a`，没有配套地图时自动使用实时建图。
+项目根目录提供了 5 个“一键启动”脚本，全部无参数直接使用 Isaac Sim。探索默认开启自动探索；导航、移动抓取和 LLM 默认读取 `maps/gazebo_simple_room`，缺少配套地图时提示先建图并退出。
 
 #### 模式 1: 自主探索建图 (Explore & Mapping)
 无参数启动 Isaac Sim、FAST-LIO、Nav2 和 `explore_lite`。自动探索等待定位就绪和 Nav2 导航服务器激活，随后自行选择前沿目标并持续建图。Isaac 的 Nav2 使用 Regulated Pure Pursuit，先对齐路径方向再前进；进度检测同时考虑平移和转向。底盘用模拟 IMU 角速度闭环补偿四轮滑移，保留速度和加速度限制。每次启动先执行 `stop_robot_sim.sh` 并关闭上次服务窗口。
@@ -247,14 +284,14 @@ trtexec --onnx=src/graspnet_infer/graspnet.onnx \
 ```
 
 #### 模式 3: 自主移动抓取全流程 (Mobile Pick and Place)
-在 `manipulation_test` 场景中唤醒机器人，同时启动完整的视觉感知流水线 (YOLOE, GraspNet)，并触发一个 MoveIt! 语义物体的循环搬运操作演示 (例如：循环寻找、抓取、移动与放置 coke、book、cup)：
+在 main 的原始 `manipulation_test` 场景中唤醒机器人，同时启动完整的视觉感知流水线 (YOLOE, GraspNet)，并触发一个 MoveIt! 语义物体的循环搬运操作演示 (例如：循环寻找、抓取、移动与放置 coke、book、cup)：
 ```bash
 ./start_pick_and_place_demo.sh
 ```
 
 #### 模式 4: 导航 + 抓取 (Navigation and Pick)
 
-在 `simple_room` 中启动 Nav2、MoveIt 2 与完整视觉抓取栈，自动执行“导航到厨房 → 检测并抓取 → 返回”的移动操作流程：
+在 `simple_room`（沿用 main 的房间布局和任务坐标）中启动 Nav2、MoveIt 2 与完整视觉抓取栈，自动执行“导航到厨房 → 检测并抓取 → 返回”的移动操作流程：
 
 ```bash
 ./start_navigation_and_pick_demo.sh

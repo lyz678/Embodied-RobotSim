@@ -152,13 +152,14 @@ The [dependency manifest](dependencies/isaac.repos) pins FAST_LIO_ROS2 and the s
 #### Map first, then localize
 
 ```bash
-# Mapping defaults to maps/room_a; saving refuses to overwrite an existing bundle.
+# Main simple_room mapping defaults to maps/gazebo_simple_room; saving refuses to overwrite an existing bundle.
 ./start_explore_and_mapping.sh
 
 # Another terminal, after exploring the required area:
 source install/setup.bash
 ros2 service call /localization/save_map std_srvs/srv/Trigger '{}'
 
+# Navigation uses the same main simple_room and map directory.
 # Stop the mapping session, then localize in the saved map:
 ./start_navigation.sh
 ```
@@ -169,22 +170,58 @@ A bundle contains `map.pcd`, `map.pgm`, `map.yaml` and `bundle.json`. The grid r
 
 | Entry point | Mode / scene |
 |---|---|
-| `start_explore_and_mapping.sh` | Mapping / simple_room |
-| `start_pick_and_place_demo.sh` | Mapping-based pose / manipulation_test |
-| `start_navigation.sh` | Known-map localization / simple_room |
-| `start_navigation_and_pick_demo.sh` | Localization + grasping / simple_room |
-| `start_llm_agent.sh` | Localization + LLM / simple_room |
+| `start_explore_and_mapping.sh` | Automatic exploration / main simple_room |
+| `start_pick_and_place_demo.sh` | Mapping-based pose + grasping / main manipulation_test |
+| `start_navigation.sh` | Known-map localization / simple_room (main room layout) |
+| `start_navigation_and_pick_demo.sh` | Localization + grasping / simple_room (main room layout) |
+| `start_llm_agent.sh` | Localization + LLM / simple_room (main room layout) |
 
-Run each script directly without arguments. Edit `MAP_BUNDLE`, `INITIAL_X/Y/YAW`, `HEADLESS`, and `BUILD` at the top of each entry point; exploration also has `AUTO_EXPLORE`. The default bundle is `maps/room_a`, or `maps/manipulation_test` for standalone grasping. Navigation modes use ICP with an existing bundle and automatically use live mapping when the bundle is missing. Navigation/tasks wait for readiness, with a 180-second startup timeout. Five consecutive ICP failures require a new initial pose. Localization loss stops the base. Pause stops motion; after a simulation-clock reset, restart FAST-LIO, adapters and navigation rather than reusing estimator state. Startup runs `stop_robot_sim.sh`, closes marked service terminals, clears previous ROS/simulation processes and deletes ROS logs.
+Run each script directly without arguments. Edit `WORLD`, `MAP_BUNDLE`, `INITIAL_X/Y/YAW`, `HEADLESS`, and `BUILD` at the top of each entry point; exploration also has `AUTO_EXPLORE`. Exploration uses `maps/gazebo_simple_room`, standalone grasping uses `maps/manipulation_test`, and navigation modes use `maps/gazebo_simple_room`. As in main, navigation requires an existing map and exits when it is missing. Exploration, navigation and grasping build by default; LLM builds on demand. Navigation uses ICP localization. Navigation/tasks wait for readiness, with a 180-second startup timeout. Five consecutive ICP failures require a new initial pose. Localization loss stops the base. Pause stops motion; after a simulation-clock reset, restart FAST-LIO, adapters and navigation rather than reusing estimator state. Startup runs `stop_robot_sim.sh`, closes marked service terminals, clears previous ROS/simulation processes and deletes ROS logs.
 
 Isaac navigation targets **2 m/s in simulation time** on straight paths. Nav2 smoothing, the localization safety gate, and the base drive share this forward limit, with 1 m/s² acceleration and 2 m/s² deceleration. Turns, obstacles and goal approach still reduce speed. Observed wall-time speed also depends on the real-time factor; changing the speed limit does not make the simulator run in real time.
 
 
+On this machine in Office, the original Python per-ray implementation measured about 0.20 real-time factor versus about 0.51 with native C++ batched raycasting (roughly 2.5x). Physics, wheel control and IMU remain at 200 Hz; lidar retains 1000 rays per physics step, 10 Hz clouds, and real sample offsets of 0–95 ms. Rendering targets 30 Hz. GPU physics was incompatible with the current ros2_control CPU tensor interface, so physics remains on CPU. These results depend on view, path and process load and are still below real time. Set `HEADLESS=true` in an entry point to disable the additional observer viewport while keeping cameras and ROS perception active.
+
+Read-only telemetry using system ROS Python:
+```bash
+source /opt/ros/jazzy/setup.bash
+python3 scripts/measure_isaac_performance.py --seconds 30 --output /tmp/isaac_performance.json
+```
+This reports real-time factor, sensor message rates per simulation second, commands, and actual travel speed. `ISAAC_PROFILE_SECONDS=20 ./start_explore_and_mapping.sh` writes `/tmp/isaac_performance_profile.txt`; profiling adds overhead, so disable it for speed measurements. The internal runtime accepts `--lidar-backend python` for reference comparisons. See the [NVIDIA performance handbook](https://docs.isaacsim.omniverse.nvidia.com/latest/reference_material/sim_performance_optimization_handbook.html).
+
+Isaac chassis/roof visuals and colliders share 96-segment circular rings. The chassis radius is 0.35 m and the stowed-arm collision envelope is about 0.369 m; Nav2 retains a 0.45 m safety radius. RViz displays the planning footprint in green under `Navigation Safety Footprint`. Since `/x_bot/scan` is a height-filtered 2D virtual scan, the local costmap uses ObstacleLayer to avoid failed VoxelLayer clearing when FAST-LIO z drifts slightly below zero.
+
 Existing navigation-and-pick/LLM tasks include hardcoded map goals: review them after changing maps/origins. Localization readiness does not establish that a task goal is valid for the new map.
+
+Root entry points match main; shared startup lives in `scripts/robot_services.sh` and the Isaac runtime in `scripts/isaac_runtime.sh`. Office has ambient fill and eight ceiling lights. Download scenes and main-branch grasp objects once:
+```bash
+~/isaacsim/python.sh scripts/download_isaac_environments.py
+```
+
+The original main-branch Gazebo worlds are converted into `~/isaacsim_assets/6.1/GazeboMain`, alongside source assets and licences. Their first launch converts missing assets automatically; to prepare all six worlds:
+```bash
+~/isaacsim/python.sh scripts/migrate_gazebo_scenes.py
+```
+Supported original worlds: `simple_room` (compatible aliases `legacy_room` or `gazebo_simple_room`), `manipulation_test`, `small_house`, `ware_house`, `obstacle_avoidance_test`, and `empty`. `WORLD=simple_room` selects main's original room; NVIDIA's official Simple Room uses `isaac_simple_room`. Conversion preserves meshes, UVs/textures, COLLADA units/node matrices, and hierarchical SDF poses/scales, with separate visual and collision geometry. PhysX uses convex decomposition for dynamic mesh colliders, and lights use USD intensity units; contact dynamics and rendering differ from Gazebo.
+
+Standalone grasping defaults to main's original manipulation test. Navigation in the restored room uses `maps/gazebo_simple_room`; rebuild the map in the restored geometry. Exploration now defaults to `WORLD=simple_room` and `MAP_BUNDLE="$ROOT_DIR/maps/gazebo_simple_room"`; launch, explore and save, then navigate. Office remains available by editing the script defaults.
+
+Check transforms and asset references and render reference views into `docs/validation/gazebo_scene_migration`:
+```bash
+~/isaacsim/python.sh scripts/validate_gazebo_scene_assets.py
+```
+
+Dynamic mesh decomposition uses shrink-wrap and a lower approximation error to prevent an inflated tabletop from making objects float. Run actual physics for four seconds and compare object bottoms against the visible tabletop:
+```bash
+~/isaacsim/python.sh scripts/validate_gazebo_scene_contacts.py
+~/isaacsim/python.sh scripts/validate_gazebo_scene_contacts.py --world simple_room
+```
+Assets default to `~/isaacsim_assets/6.1`, overridden by `ISAAC_ASSETS_PATH`.
 
 Low-level debugging, in separate terminals:
 ```bash
-./start_isaac_sim.sh
+bash scripts/isaac_runtime.sh
 ros2 launch x_bot isaac_controllers.launch.py
 ros2 launch x_bot_localization localization.launch.py mode:=mapping bundle:=/absolute/path/new_map
 ```
@@ -229,7 +266,7 @@ trtexec --onnx=src/graspnet_infer/graspnet.onnx \
 
 ### 4. Run the Demos
 
-All five one-click scripts start Isaac Sim without arguments. Exploration starts automatically; navigation, mobile manipulation and LLM modes use maps/room_a if present and automatically use live mapping otherwise.
+All five one-click scripts start Isaac Sim without arguments. Exploration starts automatically; navigation, mobile manipulation and LLM modes use maps/gazebo_simple_room if present and exit with a map prerequisite message otherwise.
 
 #### Mode 1: Autonomous Exploration & Mapping
 Wait for localization and active Nav2 servers, then explore automatically using MID-360, FAST-LIO, Nav2 and `explore_lite`, with YOLOE/OctoMap:
@@ -251,7 +288,7 @@ Spawn the robot in the `manipulation_test` world, start perception pipelines (YO
 
 #### Mode 4: Navigation and Pick
 
-Run Nav2, MoveIt 2, and the complete perception/grasping stack in `simple_room` to execute the mobile workflow “navigate to the kitchen → detect and grasp → return”:
+Run Nav2, MoveIt 2, and the complete perception/grasping stack in `legacy_room` (main room layout and task coordinates) to execute the mobile workflow “navigate to the kitchen → detect and grasp → return”:
 
 ```bash
 ./start_navigation_and_pick_demo.sh

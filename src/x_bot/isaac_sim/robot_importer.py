@@ -123,12 +123,47 @@ def find_articulation_root(stage: Usd.Stage) -> Usd.Prim:
     raise RuntimeError("Imported x_bot asset contains no ArticulationRootAPI prim")
 
 
+def round_chassis_geometry(stage: Usd.Stage) -> None:
+    """Use matching smooth visuals and fine convex collision rings for the base."""
+    for prim in stage.Traverse():
+        if not str(prim.GetPath()).startswith(ROBOT_PRIM_PATH + '/') or not prim.IsA(UsdGeom.Cylinder):
+            continue
+        cylinder = UsdGeom.Cylinder(prim)
+        radius = cylinder.GetRadiusAttr().Get()
+        if abs(radius - .35) > 1e-6:
+            continue  # chassis and roof only; preserve tested tire contacts
+        half_height = cylinder.GetHeightAttr().Get() / 2
+        count = 96
+        angles = [2 * math.pi * i / count for i in range(count)]
+        points = [Gf.Vec3f(radius * math.cos(a), radius * math.sin(a), z)
+                  for z in (-half_height, half_height) for a in angles]
+        faces = [[i, (i+1) % count, (i+1) % count + count, i+count] for i in range(count)]
+        faces += [list(reversed(range(count))), list(range(count, 2*count))]
+        normals = [Gf.Vec3f(math.cos(angles[i % count]), math.sin(angles[i % count]), 0)
+                   for face in faces[:-2] for i in face]
+        normals += [Gf.Vec3f(0, 0, -1)] * count + [Gf.Vec3f(0, 0, 1)] * count
+        prim.SetTypeName('Mesh')
+        mesh = UsdGeom.Mesh(prim)
+        mesh.CreatePointsAttr(points)
+        mesh.CreateExtentAttr([Gf.Vec3f(-radius, -radius, -half_height), Gf.Vec3f(radius, radius, half_height)])
+        mesh.CreateFaceVertexCountsAttr([len(face) for face in faces])
+        mesh.CreateFaceVertexIndicesAttr([i for face in faces for i in face])
+        mesh.CreateSubdivisionSchemeAttr('none')
+        mesh.CreateNormalsAttr(normals)
+        mesh.SetNormalsInterpolation('faceVarying')
+        if prim.HasAPI(UsdPhysics.CollisionAPI):
+            UsdPhysics.MeshCollisionAPI.Apply(prim).CreateApproximationAttr('convexHull')
+            PhysxSchema.PhysxConvexHullCollisionAPI.Apply(prim).CreateHullVertexLimitAttr(255)
+            PhysxSchema.PhysxCollisionAPI.Apply(prim).CreateContactOffsetAttr(.002)
+
+
 def configure_joint_drives(stage: Usd.Stage) -> None:
     """Configure stable tire contacts and wheel/arm/gripper drives."""
     root = PhysxSchema.PhysxArticulationAPI.Apply(find_articulation_root(stage))
     root.CreateSolverPositionIterationCountAttr(32)
     root.CreateSolverVelocityIterationCountAttr(8)
     root.CreateEnabledSelfCollisionsAttr(False)
+    round_chassis_geometry(stage)
     # Compliant rubber contacts absorb small polygon/contact corrections
     # instead of transmitting each impulse through the unsuspended chassis.
     tire_material = UsdShade.Material.Define(stage, "/World/Materials/x_bot_tire")
