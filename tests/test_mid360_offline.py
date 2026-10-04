@@ -260,6 +260,7 @@ class Contracts(unittest.TestCase):
                               '--initial-yaw', '1.5708', '--depth-source', 'isaac',
                               '--lsm-config', str(Path(folder)/'src/LSM_depth_infer/config/config.yaml'),
                               '--lsm-params', str(Path(folder)/'src/LSM_depth_infer/config/isaac_params.yaml'),
+                              '--semantic-cloud-source', 'fastlio',
                               '--octomap-backend', 'semantic_cuda', '--semantic-map-config',
                               str(Path(folder)/'src/semantic_voxel_mapping/config/map.yaml'), '--build'])
 
@@ -296,12 +297,12 @@ class Contracts(unittest.TestCase):
         limits=params['velocity_smoother']['ros__parameters']['max_velocity']
         self.assertLessEqual(controller['desired_linear_vel'], limits[0])
         self.assertLessEqual(controller['rotate_to_heading_angular_vel'], limits[2])
-        self.assertEqual(params['velocity_smoother']['ros__parameters']['max_velocity'],[2.,0,1])
+        self.assertEqual(params['velocity_smoother']['ros__parameters']['max_velocity'],[2.,0,.6])
 
     def test_rviz_goal_tool_has_navigation_panel(self):
         # GoalTool updates GoalUpdater; Navigation 2 consumes that event and
         # sends NavigateToPose. A toolbar tool alone cannot start navigation.
-        config = yaml.safe_load((ROOT/'src/x_bot_localization/rviz/localization.rviz').read_text())
+        config = yaml.safe_load((ROOT/'src/x_bot/rviz/octomap.rviz').read_text())
         tools = {tool['Class'] for tool in config['Visualization Manager']['Tools']}
         panels = {panel['Class'] for panel in config['Panels']}
         self.assertIn('nav2_rviz_plugins/GoalTool', tools)

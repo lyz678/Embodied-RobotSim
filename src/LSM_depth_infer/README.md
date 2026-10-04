@@ -1,11 +1,12 @@
 # LSM 双目深度
 
-ROS 包名是 `stereo_matching`。探索入口设置 `DEPTH_SOURCE=lsm` 时启动本节点：左右 RGB → TensorRT 视差 → 深度图和彩色点云。YOLOE 深度输入 `/x_bot/camera_left/nn_depth`；新语义后端融合 YOLOE 输出的 `/yoloe_multi_text_prompt/pointcloud_semantic`。旧 OctoMap 后端输入 `/x_bot/camera_left/nn_pointcloud`。FAST-LIO、`/map` 和导航虚拟扫描继续来自 MID360。
+ROS 包名是 `stereo_matching`。探索入口设置 `SEMANTIC_CLOUD_SOURCE=depth` 且 `DEPTH_SOURCE=lsm` 时启动本节点：左右 RGB → TensorRT 视差 → 深度图和彩色点云。YOLOE 深度输入 `/x_bot/camera_left/nn_depth`；新语义后端融合 YOLOE 输出的 `/yoloe_multi_text_prompt/pointcloud_semantic`。旧 OctoMap 后端输入 `/x_bot/camera_left/nn_pointcloud`。FAST-LIO、`/map` 和导航虚拟扫描继续来自 MID360。
 
 直接运行探索脚本即可，无需参数。脚本顶部暴露：
 
 | 配置 | 用途 |
 |---|---|
+| `SEMANTIC_CLOUD_SOURCE` | `fastlio`（探索默认）或 `depth`；depth 模式才启动所选深度链路 |
 | `DEPTH_SOURCE` | `lsm` 或 `isaac`（当前入口默认） |
 | `LSM_CONFIG_FILE` | 基础配置 YAML：引擎、CUDA 设备、输入尺寸、内参、基线、话题 |
 | `LSM_PARAMS_FILE` | 标准 ROS 参数 YAML，覆盖基础配置 |

@@ -55,7 +55,18 @@ controller_server:
       xy_goal_tolerance: 0.25               # XY目标容忍度（米）
       yaw_goal_tolerance: 0.25              # 偏航角目标容忍度（弧度）
     FollowPath:
-      plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      plugin: "nav2_rotation_shim_controller::RotationShimController"
+      primary_controller: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      # Hysteresis: enter alignment above 29 degrees, leave below 9 degrees.
+      angular_dist_threshold: 0.5
+      angular_disengage_threshold: 0.15
+      forward_sampling_distance: 0.5
+      rotate_to_goal_heading: true
+      rotate_to_heading_once: false
+      # Use commanded ramp for startup; noisy skid-steer odometry must not
+      # pin the first command below static-friction breakaway indefinitely.
+      closed_loop: false
+      simulate_ahead_time: 1.5
       desired_linear_vel: 2.0
       # Shorter carrots reduce corner cutting in the original room's doors.
       lookahead_dist: 0.4
@@ -64,17 +75,15 @@ controller_server:
       lookahead_time: 0.4
       use_velocity_scaled_lookahead_dist: true
       transform_tolerance: 0.5
-      use_rotate_to_heading: true
+      use_rotate_to_heading: false # RotationShim owns path/goal alignment.
       rotate_to_heading_min_angle: 0.5
-      rotate_to_heading_angular_vel: 0.8
-      # BaseMotion and velocity_smoother enforce the physical 1 rad/s² ramp.
-      # A tighter odometry-based clamp here stalls skid-steer wheel slip.
-      max_angular_accel: 10.0
+      rotate_to_heading_angular_vel: 0.45
+      max_angular_accel: 0.8
       allow_reversing: false
       use_collision_detection: true
       max_allowed_time_to_collision_up_to_carrot: 1.5
       use_regulated_linear_velocity_scaling: true
-      regulated_linear_scaling_min_radius: 2.0
+      regulated_linear_scaling_min_radius: 3.5 # Keep curved-path yaw below 0.6 rad/s at 2 m/s.
       regulated_linear_scaling_min_speed: 0.08
       use_cost_regulated_linear_velocity_scaling: true
       cost_scaling_dist: 1.0
@@ -236,9 +245,9 @@ behavior_server:
     robot_base_frame: base_link
     transform_tolerance: 0.5
     simulate_ahead_time: 2.0
-    max_rotational_vel: 1.0
-    min_rotational_vel: 0.4
-    rotational_acc_lim: 3.2
+    max_rotational_vel: 0.6
+    min_rotational_vel: 0.15
+    rotational_acc_lim: 0.8
 
 waypoint_follower:
   ros__parameters:
@@ -258,10 +267,10 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [2.0, 0.0, 1.0]
-    min_velocity: [-0.2, 0.0, -1.0]
-    max_accel: [1.0, 0.0, 1.0]
-    max_decel: [-2.0, 0.0, -1.0]
+    max_velocity: [2.0, 0.0, 0.6]
+    min_velocity: [-0.2, 0.0, -0.6]
+    max_accel: [1.0, 0.0, 0.8]
+    max_decel: [-2.0, 0.0, -1.2]
     odom_topic: "/odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]

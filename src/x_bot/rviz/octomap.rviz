@@ -5,15 +5,17 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
-        - /Octomap1
-        - /Map2D1
+        - /FAST-LIO Point Cloud1
+        - /Nav2 Global Plan1
       Splitter Ratio: 0.5
-    Tree Height: 1220
+    Tree Height: 1213
   - Class: rviz_common/Views
     Expanded:
       - /Current View1
     Name: Views
     Splitter Ratio: 0.5
+  - Class: nav2_rviz_plugins/Navigation 2
+    Name: Navigation 2
 Visualization Manager:
   Class: ""
   Displays:
@@ -42,7 +44,7 @@ Visualization Manager:
       Description Source: Topic
       Description Topic:
         Depth: 5
-        Durability Policy: Volatile
+        Durability Policy: Transient Local
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /robot_description
@@ -178,6 +180,15 @@ Visualization Manager:
           Alpha: 1
           Show Axes: false
           Show Trail: false
+        mid360_imu_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        mid360_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
         pillar_bl:
           Alpha: 1
           Show Axes: false
@@ -199,11 +210,6 @@ Visualization Manager:
           Show Trail: false
           Value: true
         roof_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        two_d_lidar:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -217,146 +223,26 @@ Visualization Manager:
       Value: true
       Visual Enabled: true
     - Class: rviz_default_plugins/TF
-      Enabled: true
+      Enabled: false
       Filter (blacklist): ""
       Filter (whitelist): ""
       Frame Timeout: 15
       Frames:
         All Enabled: false
-        back_left_wheel:
-          Value: true
-        back_right_wheel:
-          Value: true
-        base_footprint:
-          Value: true
-        base_link:
-          Value: true
-        camera_depth_frame:
-          Value: true
-        camera_left_frame:
-          Value: true
-        camera_link:
-          Value: true
-        camera_right_frame:
-          Value: true
-        chassis_link:
-          Value: true
-        fingers_center:
-          Value: true
-        fr3_hand:
-          Value: true
-        fr3_hand_tcp:
-          Value: true
-        fr3_leftfinger:
-          Value: true
-        fr3_link0:
-          Value: true
-        fr3_link1:
-          Value: true
-        fr3_link2:
-          Value: true
-        fr3_link3:
-          Value: true
-        fr3_link4:
-          Value: true
-        fr3_link5:
-          Value: true
-        fr3_link6:
-          Value: true
-        fr3_link7:
-          Value: true
-        fr3_link8:
-          Value: true
-        fr3_mount_link:
-          Value: true
-        fr3_rightfinger:
-          Value: true
-        front_left_wheel:
-          Value: true
-        front_right_wheel:
-          Value: true
-        imu_frame:
-          Value: true
-        map:
-          Value: true
-        odom:
-          Value: true
-        pillar_bl:
-          Value: true
-        pillar_br:
-          Value: true
-        pillar_fl:
-          Value: true
-        pillar_fr:
-          Value: true
-        roof_link:
-          Value: true
-        two_d_lidar:
-          Value: true
       Marker Scale: 0.5
       Name: TF
       Show Arrows: true
       Show Axes: true
       Show Names: true
       Tree:
-        map:
-          odom:
-            base_footprint:
-              base_link:
-                back_left_wheel:
-                  {}
-                back_right_wheel:
-                  {}
-                chassis_link:
-                  pillar_bl:
-                    {}
-                  pillar_br:
-                    {}
-                  pillar_fl:
-                    {}
-                  pillar_fr:
-                    {}
-                  roof_link:
-                    fr3_mount_link:
-                      fr3_link0:
-                        fr3_link1:
-                          fr3_link2:
-                            fr3_link3:
-                              fr3_link4:
-                                fr3_link5:
-                                  fr3_link6:
-                                    fr3_link7:
-                                      fr3_link8:
-                                        fr3_hand:
-                                          camera_link:
-                                            camera_left_frame:
-                                              camera_depth_frame:
-                                                {}
-                                            camera_right_frame:
-                                              {}
-                                          fingers_center:
-                                            {}
-                                          fr3_hand_tcp:
-                                            {}
-                                          fr3_leftfinger:
-                                            {}
-                                          fr3_rightfinger:
-                                            {}
-                front_left_wheel:
-                  {}
-                front_right_wheel:
-                  {}
-                imu_frame:
-                  {}
-                two_d_lidar:
-                  {}
+        {}
       Update Interval: 0
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: Octomap
       Namespaces:
-        map: true
+        semantic_voxels: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -370,8 +256,8 @@ Visualization Manager:
       Class: rviz_default_plugins/Map
       Color Scheme: map
       Draw Behind: true
-      Enabled: true
-      Name: Map2D
+      Enabled: false
+      Name: Semantic Map Projection
       Topic:
         Depth: 1
         Durability Policy: Transient Local
@@ -386,7 +272,7 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /projected_map_updates
       Use Timestamp: false
-      Value: true
+      Value: false
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
@@ -405,7 +291,7 @@ Visualization Manager:
       Max Intensity: 4096
       Min Color: 0; 0; 0
       Min Intensity: 0
-      Name: PointCloud
+      Name: LSM Depth Point Cloud
       Position Transformer: XYZ
       Selectable: true
       Size (Pixels): 2
@@ -420,18 +306,298 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: false
+    - Alpha: 0.699999988079071
+      Binary representation: false
+      Binary threshold: 100
+      Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Draw Behind: false
+      Enabled: true
+      Name: Map
+      Topic:
+        Depth: 5
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /map_updates
+      Use Timestamp: false
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 2.537058115005493
+        Min Value: 0.0124437240883708
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: AxisColor
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: FAST-LIO Point Cloud
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.019999999552965164
+      Style: Points
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /fastlio/cloud_odom
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Alpha: 1
+      Class: rviz_default_plugins/Polygon
+      Color: 0; 255; 0
+      Enabled: true
+      Name: Navigation Safety Footprint
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /local_costmap/published_footprint
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 255; 180; 0
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Billboards
+      Line Width: 0.03999999910593033
+      Name: Nav2 Global Plan
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /plan
+      Value: true
+    - Alpha: 1
+      Buffer Length: 1
+      Class: rviz_default_plugins/Path
+      Color: 0; 220; 255
+      Enabled: true
+      Head Diameter: 0.30000001192092896
+      Head Length: 0.20000000298023224
+      Length: 0.30000001192092896
+      Line Style: Billboards
+      Line Width: 0.029999999329447746
+      Name: Nav2 Controller Plan
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Pose Color: 255; 85; 255
+      Pose Style: None
+      Radius: 0.029999999329447746
+      Shaft Diameter: 0.10000000149011612
+      Shaft Length: 0.10000000149011612
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /received_global_plan
+      Value: true
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz_default_plugins/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: true
+        Position:
+          Alpha: 0.30000001192092896
+          Color: 204; 51; 204
+          Scale: 1
+          Value: true
+        Value: false
+      Enabled: true
+      Keep: 1000
+      Name: Robot Odometry Trail
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 1
+        Axes Length: 1
+        Axes Radius: 0.10000000149011612
+        Color: 255; 80; 180
+        Head Length: 0.03999999910593033
+        Head Radius: 0.02500000037252903
+        Shaft Length: 0.10000000149011612
+        Shaft Radius: 0.009999999776482582
+        Value: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /odom
+      Value: true
+    - Class: rviz_common/Group
+      Displays:
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 19.44495964050293
+            Min Value: 1.1904261112213135
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz_default_plugins/PointCloud2
+          Color: 255; 255; 255
+          Color Transformer: RGB8
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Max Intensity: 4096
+          Min Color: 0; 0; 0
+          Min Intensity: 0
+          Name: Input Cloud
+          Position Transformer: XYZ
+          Selectable: true
+          Size (Pixels): 10
+          Size (m): 0.009999999776482582
+          Style: Points
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Best Effort
+            Value: /graspnet_sampled_cloud
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: true
+          Name: Grasps
+          Namespaces:
+            {}
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /grasp_markers
+          Value: true
+        - Alpha: 1
+          Arrow Length: 0.30000001192092896
+          Axes Length: 0.30000001192092896
+          Axes Radius: 0.009999999776482582
+          Class: rviz_default_plugins/PoseArray
+          Color: 255; 25; 0
+          Enabled: true
+          Head Length: 0.05000000074505806
+          Head Radius: 0.019999999552965164
+          Name: Best Grasp Poses
+          Shaft Length: 0.10000000149011612
+          Shaft Radius: 0.009999999776482582
+          Shape: Arrow
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            Filter size: 10
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /grasp_pose
+          Value: true
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: true
+          Name: Matched Grasps
+          Namespaces:
+            {}
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /matched_grasp_markers
+          Value: true
+        - Class: rviz_default_plugins/Marker
+          Enabled: true
+          Name: Target Pose Markers
+          Namespaces:
+            {}
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            Filter size: 10
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /target_pose_marker
+          Value: true
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: true
+          Name: Grasp Pose Axes
+          Namespaces:
+            {}
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /grasp_pose_axes
+          Value: true
+      Enabled: false
+      Name: Grasp Debug
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: odom
+    Fixed Frame: map
     Frame Rate: 30
   Name: root
   Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
     - Class: rviz_default_plugins/MoveCamera
-    - Class: rviz_default_plugins/Select
-    - Class: rviz_default_plugins/FocusCamera
-    - Class: rviz_default_plugins/Measure
-      Line color: 128; 128; 0
+    - Class: rviz_default_plugins/SetInitialPose
+      Covariance x: 0.25
+      Covariance y: 0.25
+      Covariance yaw: 0.06853891909122467
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /initialpose
+    - Class: nav2_rviz_plugins/GoalTool
   Transformation:
     Current:
       Class: rviz_default_plugins/TF
@@ -439,35 +605,37 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 7.731045246124268
+      Distance: 26.22364616394043
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.6256155371665955
-        Y: -0.39206820726394653
-        Z: 1.067462682723999
+        X: 0
+        Y: 0
+        Z: 0
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4899998903274536
+      Pitch: 0.9303980469703674
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 3.134993553161621
+      Yaw: 0.4404006898403168
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
   Height: 1371
   Hide Left Dock: false
-  Hide Right Dock: true
-  QMainWindow State: 000000ff00000000fd00000004000000000000016a00000501fc020000000afb0000001200530065006c0065006300740069006f006e00000001e10000009b0000000000000000fb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073010000003d00000501000000c900fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb00000018004e0061007600690067006100740069006f006e00200032010000026f0000015f0000000000000000fb0000001e005200650061006c00730065006e0073006500430061006d0065007200610000000338000000960000000000000000000000010000010f0000034afc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000003d0000034a000000a400fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000004420000003efc0100000002fb0000000800540069006d00650100000000000004420000000000000000fb0000000800540069006d006501000000000000045000000000000000000000084e0000050100000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Hide Right Dock: false
+  Navigation 2:
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd0000000200000000000001af000004fdfc0200000001fb000000100044006900730070006c006100790073010000003f000004fd000000cc00ffffff00000001000001c9000004fdfc0200000002fb0000000a00560069006500770073010000003f0000017d000000a900fffffffb00000018004e0061007600690067006100740069006f006e0020003201000001c20000037a000001e300ffffff0000063a000004fd00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
-    collapsed: true
+    collapsed: false
   Width: 2494
   X: 66
   Y: 32

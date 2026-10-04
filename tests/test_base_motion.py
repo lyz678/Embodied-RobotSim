@@ -6,7 +6,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src/x_bot/isaac_sim'))
-from base_motion import BaseMotion, WHEEL_NAMES, wheel_velocities, RADIUS, TRACK
+from base_motion import (BaseMotion, WHEEL_NAMES, wheel_velocities, RADIUS, TRACK,
+                         MAX_ANGULAR, ANGULAR_ACCEL, MAX_WHEEL_YAW_DEMAND)
 
 
 class BaseMotionTests(unittest.TestCase):
@@ -35,7 +36,7 @@ class BaseMotionTests(unittest.TestCase):
             old_v,old_w=motion.linear,motion.angular
             motion.advance(.4,.6,.005)
             self.assertLessEqual(abs(motion.linear-old_v),.005+1e-12)
-            self.assertLessEqual(abs(motion.angular-old_w),.005+1e-12)
+            self.assertLessEqual(abs(motion.angular-old_w),ANGULAR_ACCEL*.005+1e-12)
             self.assertAlmostEqual(motion.angular/motion.linear,1.5)
         self.assertAlmostEqual(motion.linear,.4)
         self.assertAlmostEqual(motion.angular,.6)
@@ -71,7 +72,24 @@ class BaseMotionTests(unittest.TestCase):
     def test_stall_does_not_jump(self):
         motion=BaseMotion(); motion.advance(.5,1.,10.)
         self.assertLessEqual(motion.linear,.05)
-        self.assertLessEqual(motion.angular,.05)
+        self.assertLessEqual(motion.angular,ANGULAR_ACCEL*.05)
+
+    def test_yaw_reversal_and_straight_command_discard_old_integral(self):
+        motion = BaseMotion()
+        motion.angular = .5
+        motion.yaw_integral = .8
+        motion.advance(0., -.3, .005, measured_angular=.5)
+        self.assertEqual(motion.yaw_integral, 0.)
+        motion.yaw_integral = .8
+        motion.advance(.2, 0., .005, measured_angular=.3)
+        self.assertEqual(motion.yaw_integral, 0.)
+
+    def test_yaw_limit_and_bounded_skid_compensation(self):
+        motion = BaseMotion()
+        for _ in range(2000):
+            wheels = motion.advance(0., 2., .005, measured_angular=0.)
+            self.assertLessEqual(abs(motion.angular), MAX_ANGULAR)
+            self.assertLessEqual(abs(RADIUS*(wheels[1]-wheels[0])/TRACK), MAX_WHEEL_YAW_DEMAND)
 
     def test_yaw_feedback_overcomes_skid_and_resets_on_stop(self):
         # A slipping plant only realizes 35% of ideal differential yaw, with

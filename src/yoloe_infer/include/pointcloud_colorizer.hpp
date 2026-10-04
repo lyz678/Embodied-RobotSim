@@ -36,6 +36,15 @@ public:
         const cv::Mat& depth, const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info,
         const std::vector<Detection>& detections, const std_msgs::msg::Header& header);
 
+    // Input coordinates are deskewed into the lidar frame at scan end. Project
+    // a separate camera-frame copy at image time; never replace the geometry.
+    sensor_msgs::msg::PointCloud2 semantic_lidar_cloud(
+        const pcl::PointCloud<pcl::PointXYZ>& lidar_points,
+        const pcl::PointCloud<pcl::PointXYZ>& camera_points,
+        const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info,
+        const std::vector<Detection>& detections, const std_msgs::msg::Header& header,
+        double occlusion_tolerance);
+
     void process(
         const cv::Mat& depth_image,
         const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info_msg,

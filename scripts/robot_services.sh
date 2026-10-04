@@ -34,6 +34,8 @@ OCTOMAP_CLOUD_TOPIC=""
 OCTOMAP_BACKEND=legacy
 [[ "$MODE" == explore ]] && OCTOMAP_BACKEND=semantic_cuda
 SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/semantic_voxel_mapping/config/map.yaml"
+SEMANTIC_CLOUD_SOURCE=depth
+[[ "$MODE" == explore ]] && SEMANTIC_CLOUD_SOURCE=fastlio
 while (($#)); do
     case "$1" in
         --headless) HEADLESS=true ;;
@@ -51,6 +53,7 @@ while (($#)); do
         --octomap-cloud-topic) shift; OCTOMAP_CLOUD_TOPIC="${1:?缺少 OctoMap 点云话题}" ;;
         --octomap-backend) shift; OCTOMAP_BACKEND="${1:?缺少 semantic_cuda/legacy}" ;;
         --semantic-map-config) shift; SEMANTIC_MAP_CONFIG="${1:?缺少语义地图配置}" ;;
+        --semantic-cloud-source) shift; SEMANTIC_CLOUD_SOURCE="${1:?缺少语义点云来源 fastlio/depth}" ;;
         *.yaml) echo "Isaac 定位需要配套 PCD 地图目录，请用 --bundle；不能只用旧二维 YAML 地图。" >&2; exit 2 ;;
         *) echo "未知参数：$1" >&2; exit 2 ;;
     esac
@@ -67,13 +70,24 @@ case "$OCTOMAP_BACKEND" in
     *) echo "OctoMap 后端必须为 semantic_cuda 或 legacy" >&2; exit 2 ;;
 esac
 
+case "$SEMANTIC_CLOUD_SOURCE" in
+    fastlio|depth) ;;
+    *) echo "语义点云来源必须为 fastlio 或 depth" >&2; exit 2 ;;
+esac
+# The legacy manipulation/perception path continues to generate RGB-D clouds.
+[[ "$OCTOMAP_BACKEND" == legacy ]] && SEMANTIC_CLOUD_SOURCE=depth
+USE_LSM=false
+[[ "$DEPTH_SOURCE" == lsm && "$SEMANTIC_CLOUD_SOURCE" == depth ]] && USE_LSM=true
+
 case "$DEPTH_SOURCE" in
     lsm)
         DEPTH_IMAGE_TOPIC="${DEPTH_IMAGE_TOPIC:-/x_bot/camera_left/nn_depth}"
         OCTOMAP_CLOUD_TOPIC="${OCTOMAP_CLOUD_TOPIC:-/x_bot/camera_left/nn_pointcloud}"
-        for config_path in "$LSM_CONFIG_FILE" "$LSM_PARAMS_FILE"; do
-            [[ -f "$config_path" && "$config_path" != *"'"* && "$config_path" != *$'\n'* ]] || { echo "LSM 配置文件无效：$config_path" >&2; exit 2; }
-        done
+        if [[ "$USE_LSM" == true ]]; then
+            for config_path in "$LSM_CONFIG_FILE" "$LSM_PARAMS_FILE"; do
+                [[ -f "$config_path" && "$config_path" != *"'"* && "$config_path" != *$'\n'* ]] || { echo "LSM 配置文件无效：$config_path" >&2; exit 2; }
+            done
+        fi
         ;;
     isaac)
         DEPTH_IMAGE_TOPIC="${DEPTH_IMAGE_TOPIC:-/x_bot/camera_left/depth/image_raw}"
@@ -132,14 +146,14 @@ for package in x_bot x_bot_localization livox_ros_driver2 fast_lio; do
         exit 1
     fi
 done
-if [[ "$DEPTH_SOURCE" == lsm ]]; then
+if [[ "$USE_LSM" == true ]]; then
     ros2 pkg prefix stereo_matching >/dev/null 2>&1 || { echo "错误：缺少 stereo_matching，请先构建 LSM_depth_infer 或使用 --build。" >&2; exit 1; }
 fi
 if [[ "$OCTOMAP_BACKEND" == semantic_cuda ]]; then
     ros2 pkg prefix semantic_voxel_mapping >/dev/null 2>&1 || { echo "错误：缺少 semantic_voxel_mapping，请使用 --build。" >&2; exit 1; }
 fi
 if [[ "$MODE" == explore && "$AUTO_EXPLORE" == true ]]; then
-    for package in explore_lite nav2_bringup nav2_regulated_pure_pursuit_controller; do
+    for package in explore_lite nav2_bringup nav2_regulated_pure_pursuit_controller nav2_rotation_shim_controller; do
         ros2 pkg prefix "$package" >/dev/null 2>&1 || { echo "错误：缺少自动探索依赖 $package" >&2; exit 1; }
     done
 fi
@@ -223,29 +237,30 @@ launch_window "Isaac Sim" "cd '$ROOT_DIR' && ISAAC_SIM_CLEANUP_DONE=1 bash '$ROO
 sleep 8
 launch_window "Isaac Controllers" "$ROS_ENV && ros2 launch x_bot isaac_controllers.launch.py"
 launch_window "FAST-LIO Localization" "$ROS_ENV && ros2 launch x_bot_localization localization.launch.py mode:=$LOCALIZATION_MODE bundle:='$BUNDLE' initial_x:=$INITIAL_X initial_y:=$INITIAL_Y initial_yaw:=$INITIAL_YAW"
+launch_window "RViz" "$ROS_ENV && rviz2 -d '$ROOT_DIR/src/x_bot/rviz/octomap.rviz' --ros-args -r __node:=rviz2_unified -p use_sim_time:=true"
 READY="ros2 run x_bot_localization wait_ready"
 launch_navigation() {
     launch_window "Nav2 FAST-LIO" "$ROS_ENV && $READY && ros2 launch x_bot_localization navigation.launch.py"
 }
 
 launch_yoloe() {
-    launch_window "YOLOE Vision" "$ROS_ENV && ros2 run yoloe_infer ros2_trt_infer_text_prompt_multi_node --ros-args -p use_sim_time:=true -p config_path:='$ROOT_DIR/src/yoloe_infer/configs/config.yaml' -p depth_topic:='$DEPTH_IMAGE_TOPIC'"
+    launch_window "YOLOE Vision" "$ROS_ENV && ros2 run yoloe_infer ros2_trt_infer_text_prompt_multi_node --ros-args -p use_sim_time:=true -p config_path:='$ROOT_DIR/src/yoloe_infer/configs/config.yaml' -p depth_topic:='$DEPTH_IMAGE_TOPIC' -p semantic_cloud_source:='$SEMANTIC_CLOUD_SOURCE'"
 }
 
-if [[ "$DEPTH_SOURCE" == lsm ]]; then
+if [[ "$USE_LSM" == true ]]; then
     echo "深度来源：LSM 双目推理；OctoMap 点云：$OCTOMAP_CLOUD_TOPIC"
     launch_window "LSM Stereo Depth" "$ROS_ENV && ros2 launch stereo_matching stereo_matching.launch.py config_file:='$LSM_CONFIG_FILE' params_file:='$LSM_PARAMS_FILE' use_sim_time:=true use_rviz:=false"
 fi
 
 launch_manipulation_stack() {
-    launch_window "MoveIt" "$ROS_ENV && ros2 launch x_bot move_group.launch.py use_sim_time:=true use_rviz:=true"
+    launch_window "MoveIt" "$ROS_ENV && ros2 launch x_bot move_group.launch.py use_sim_time:=true use_rviz:=false"
     launch_yoloe
     sleep 2
     if [[ "$MODE" != pick ]]; then
-        launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py use_sim_time:=true use_rviz:=true"
+        launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py use_sim_time:=true use_rviz:=false"
         sleep 2
     fi
-    launch_window "GraspNet" "$ROS_ENV && { ros2 run graspnet_ros graspnet_node --ros-args -p use_sim_time:=true --params-file '$ROOT_DIR/src/graspnet_infer/graspnet_ros/config/config.yaml' -p engine_path:='$ROOT_DIR/src/graspnet_infer/graspnet.trt' -p plugin_path:='$ROOT_DIR/src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so' & grasp_pid=\$!; rviz2 -d '$ROOT_DIR/src/graspnet_infer/graspnet.rviz'; wait \$grasp_pid; }"
+    launch_window "GraspNet" "$ROS_ENV && ros2 run graspnet_ros graspnet_node --ros-args -p use_sim_time:=true --params-file '$ROOT_DIR/src/graspnet_infer/graspnet_ros/config/config.yaml' -p engine_path:='$ROOT_DIR/src/graspnet_infer/graspnet.trt' -p plugin_path:='$ROOT_DIR/src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so'"
     launch_window "Arm Ctrl" "$ROS_ENV && ros2 run x_bot robot_actions --ros-args -p use_sim_time:=true"
 }
 
@@ -259,7 +274,7 @@ case "$MODE" in
         else
             echo "手动建图导航模式：在 RViz 中设置 Nav2 Goal。"
         fi
-        launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py backend:='$OCTOMAP_BACKEND' semantic_config:='$SEMANTIC_MAP_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC'"
+        launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py backend:='$OCTOMAP_BACKEND' semantic_config:='$SEMANTIC_MAP_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC' use_rviz:=false"
         ;;
     navigation)
         launch_navigation

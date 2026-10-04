@@ -18,6 +18,7 @@ class Gate(Node):
         self.arbiter = VelocityArbiter()
         self.last_state = None
         self.max_forward = self.declare_parameter('max_forward_speed', 2.0).value
+        self.max_angular = self.declare_parameter('max_angular_speed', .6).value
         self.pub = self.create_publisher(Twist, '/x_bot/cmd_vel_safe', 10)
         self.ready_pub = self.create_publisher(Bool, '/localization/ready', 10)
         self.state_pub = self.create_publisher(String, '/x_bot/control_state', 10)
@@ -38,7 +39,7 @@ class Gate(Node):
         if not math.isfinite(msg.linear.x) or not math.isfinite(msg.angular.z):
             self.arbiter.update(source, 0., 0., time.monotonic())
             return
-        ratio = max(1., abs(msg.linear.x)/(self.max_forward if msg.linear.x >= 0 else .2), abs(msg.angular.z))
+        ratio = max(1., abs(msg.linear.x)/(self.max_forward if msg.linear.x >= 0 else .2), abs(msg.angular.z)/self.max_angular)
         self.arbiter.update(source, msg.linear.x / ratio, msg.angular.z / ratio, time.monotonic())
 
     def odom(self, msg):

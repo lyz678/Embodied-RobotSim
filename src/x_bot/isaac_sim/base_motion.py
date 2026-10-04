@@ -13,6 +13,14 @@ MAX_FORWARD = 2.0
 MAX_REVERSE = .2
 LINEAR_ACCEL = 1.0
 LINEAR_DECEL = 2.0
+MAX_ANGULAR = .6
+ANGULAR_ACCEL = .8
+ANGULAR_DECEL = 1.2
+YAW_FEED_FORWARD = 1.0
+YAW_KP = 2.0
+YAW_KI = 2.0
+YAW_INTEGRAL_LIMIT = 2.5
+MAX_WHEEL_YAW_DEMAND = 3.5
 
 
 def wheel_velocities(linear, angular):
@@ -43,14 +51,20 @@ Intentional pure rotations are supported; this is not a blanket spin filter.
         if linear == 0 and angular == 0:
             return self.reset()
         # Scale both components uniformly at saturation, preserving curvature.
-        ratio = max(1., abs(linear) / (MAX_FORWARD if linear >= 0 else MAX_REVERSE), abs(angular))
+        ratio = max(1., abs(linear) / (MAX_FORWARD if linear >= 0 else MAX_REVERSE), abs(angular)/MAX_ANGULAR)
         linear, angular = linear / ratio, angular / ratio
         dv, dw = linear-self.linear, angular-self.angular
         # Cap elapsed time after stalls: don't jump to a large target on resume.
         dt = min(dt, .05)
         decelerating = linear * self.linear >= 0 and abs(linear) < abs(self.linear)
         acceleration = LINEAR_DECEL if decelerating else LINEAR_ACCEL
-        fraction = min(1., acceleration*dt/abs(dv) if dv else 1., 1.*dt/abs(dw) if dw else 1.)
+        braking_yaw = angular*self.angular < 0 or abs(angular) < abs(self.angular)
+        if abs(angular) < .02 or angular*self.angular < 0:
+            self.yaw_integral = 0.
+        elif braking_yaw:
+            self.yaw_integral *= math.exp(-dt/.15)
+        angular_acceleration = ANGULAR_DECEL if braking_yaw else ANGULAR_ACCEL
+        fraction = min(1., acceleration*dt/abs(dv) if dv else 1., angular_acceleration*dt/abs(dw) if dw else 1.)
         self.linear += fraction * dv
         self.angular += fraction * dw
         wheel_angular = self.angular
@@ -59,8 +73,10 @@ Intentional pure rotations are supported; this is not a blanket spin filter.
             # yaw from IMU feedback instead of assuming ideal differential
             # drive kinematics; otherwise Nav2 substantially understeers.
             error = self.angular - measured_angular
-            demand = self.angular + 2.0 * error + self.yaw_integral
-            if abs(demand) < 3.5 or demand * error < 0:
-                self.yaw_integral = max(-2.5, min(2.5, self.yaw_integral + 2.0 * error * dt))
-            wheel_angular = max(-3.5, min(3.5, self.angular + 2.0 * error + self.yaw_integral))
+            demand = YAW_FEED_FORWARD*self.angular + YAW_KP*error + self.yaw_integral
+            if not braking_yaw and abs(angular)>=.02 and (abs(demand) < MAX_WHEEL_YAW_DEMAND or demand*error < 0):
+                self.yaw_integral = max(-YAW_INTEGRAL_LIMIT, min(YAW_INTEGRAL_LIMIT,
+                    self.yaw_integral + YAW_KI*error*dt))
+            wheel_angular = max(-MAX_WHEEL_YAW_DEMAND, min(MAX_WHEEL_YAW_DEMAND,
+                YAW_FEED_FORWARD*self.angular + YAW_KP*error + self.yaw_integral))
         return wheel_velocities(self.linear, wheel_angular)

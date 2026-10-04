@@ -50,7 +50,8 @@ def generate_launch_description():
         executable='rviz2',
         name='rviz2',
         output='screen',
-        arguments=['-d', os.path.join(get_package_share_directory('x_bot'), 'rviz', 'entire_setup.rviz')]
+        arguments=['-d', os.path.join(get_package_share_directory('x_bot'), 'rviz', 'octomap.rviz')],
+        parameters=[{'use_sim_time': use_sim_time}]
     )
 
     # 返回启动描述

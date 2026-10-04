@@ -87,6 +87,8 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 
 > **重要**：ROS 2 Jazzy 是公共依赖。所有仿真启动脚本统一使用 Isaac Sim 6.1；运行完整视觉抓取功能时仍需 CUDA、TensorRT 和对应模型。
 
+仿真脚本统一只启动一个 RViz，配置为 `src/x_bot/rviz/octomap.rviz`。窗口包含 FAST-LIO 点云、机器人里程计轨迹、语义 OctoMap、导航地图和 Nav2 规划路径，可用 **Nav2 Goal** 设置目标。`Semantic Map Projection`、`LSM Depth Point Cloud` 和 `Grasp Debug` 默认关闭，按需在 Displays 中启用；定位服务不再单独启动 `localization.rviz`。
+
 ### 1. 编译工作空间
 
 ```bash
@@ -181,14 +183,14 @@ ros2 service call /localization/save_map std_srvs/srv/Trigger '{}'
 
 直接执行脚本即可，无需命令行参数。默认配置写在各入口顶部：`WORLD`、`MAP_BUNDLE`、`INITIAL_X/Y/YAW`、`HEADLESS`、`BUILD`，探索另有 `AUTO_EXPLORE`。探索地图为 `maps/gazebo_simple_room`，单独抓取为 `maps/manipulation_test`，导航类为 `maps/gazebo_simple_room`。与 main 一致，导航类要求已有地图，缺地图会报错退出；探索、导航和抓取入口默认构建，LLM 按需构建。已有地图时使用 ICP 定位。导航与任务入口等待 ready，180 秒内未就绪则不启动；ICP 连续失败 5 次后需要重新给初始位姿。定位丢失会停止底盘。暂停时停止运动；重置仿真时钟后必须重启 FAST-LIO、适配器和导航链路，不能沿用旧估计器状态。启动脚本先执行 `stop_robot_sim.sh`，清理上一轮进程并关闭带项目标记的服务终端。该脚本会清理所有 ROS 会话并删除日志。
 
-Isaac 导航的直行目标速度为 **2 m/s（按仿真时间）**，Nav2 平滑器、定位安全节点和底盘驱动采用相同前进上限；线加速度为 1 m/s²、减速度为 2 m/s²。弯道、障碍附近和接近目标时仍会减速。实际观看速度还取决于仿真实时倍率，2 m/s 的配置不会自动让仿真达到实时运行。
+Isaac 导航的直行目标速度为 **2 m/s（按仿真时间）**，Nav2 平滑器、定位安全节点和底盘驱动采用相同前进上限；线加速度为 1 m/s²、减速度为 2 m/s²。原地对齐速度为 0.45 rad/s，整体角速度上限 0.6 rad/s；角加速度 0.8 rad/s²、减速度 1.2 rad/s²。RotationShim 包裹 RPP，路径方向误差超过 0.5 rad 时进入对齐、降至 0.15 rad 内后退出，使用不同进入/退出阈值减少阶段切换；RPP 自身的原地对齐关闭。四轮滑移补偿保留，在转向反向或回正时清除旧积分、减速时衰减积分。弯道、障碍附近和接近目标时仍会减速。实际观看速度还取决于仿真实时倍率，2 m/s 的配置不会自动让仿真达到实时运行。
 
 
 本机 Office 实测：原 Python 逐射线版本实时倍率约 0.20，原生 C++ 批量雷达约 0.51（约 2.5 倍）。物理、轮控制和 IMU 仍为 200 Hz，雷达仍为每步 1000 条射线、10 Hz 点云，采样时间偏移为 0–95 ms。渲染目标频率为 30 Hz；GPU 物理与当前 ros2_control 的 CPU 张量接口不兼容，因此保留 CPU 物理。倍率会随视野、探索路径和其他进程负载变化，未达到实时运行。更快的无界面运行可将入口顶部 `HEADLESS=true`，相机与 ROS 感知仍运行，停用额外的观察视口。
 
 探索入口默认使用 CUDA 多帧语义体素建图，输入 YOLOE 的 `/yoloe_multi_text_prompt/pointcloud_semantic`，类别 RGB 经跨帧多数投票确认，几何通过 hit/miss 更新。配置位于 `src/semantic_voxel_mapping/config/map.yaml`，入口顶部 `OCTOMAP_BACKEND=legacy` 可切回原后端。详见 [语义地图配置、保存及验证](src/semantic_voxel_mapping/README.md)。
 
-当前探索入口 `DEPTH_SOURCE=isaac` 使用仿真器深度；改为 `lsm` 可启用 `src/LSM_depth_infer`（ROS 包 `stereo_matching`），YOLOE 使用 `/x_bot/camera_left/nn_depth`。语义地图随 YOLOE 使用所选深度来源；二维 `/map` 和 FAST-LIO 定位仍使用 MID360。脚本顶部暴露 `LSM_CONFIG_FILE`、`LSM_PARAMS_FILE` 和下游输入话题。详见 [LSM 配置接口](src/LSM_depth_infer/README.md)。
+当前探索入口 `SEMANTIC_CLOUD_SOURCE=fastlio` 使用 FAST-LIO 单帧去畸变点云。点云投影到同期 RGB 图像，只有相机 FOV 内且命中 YOLOE mask 的点赋类别颜色，其他点保留未知几何；raycast 从扫描时间的雷达原点发射。改为 `SEMANTIC_CLOUD_SOURCE=depth` 可回到深度点云路径，并保留 `DEPTH_SOURCE=isaac #lsm`：Isaac 使用仿真深度，LSM 使用 `src/LSM_depth_infer`（ROS 包 `stereo_matching`）输出的 `/x_bot/camera_left/nn_depth`。FAST-LIO 模式不依赖深度图，也不启动未使用的 LSM。二维 `/map` 和 FAST-LIO 定位仍使用 MID360。详见 [LSM 配置接口](src/LSM_depth_infer/README.md)。
 
 RViz 定位窗口默认显示橙色 `/plan` 全局导航路径和青色 `/received_global_plan` 控制器路径；收到导航目标并规划成功后出现。手动速度指令可发送到 `/cmd_vel` 或 `/x_bot/cmd_vel`，优先于自动导航。停止发送 0.5 秒后底盘停下，最后一次手动指令 2 秒后恢复自动导航；定位未就绪时两种输入均停止。自动导航经过接近障碍减速，再经定位安全节点输出到 `/x_bot/cmd_vel_safe`，避免自动零速度覆盖手动指令。
 

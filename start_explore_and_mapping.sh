@@ -13,6 +13,7 @@ HEADLESS=false
 BUILD=true
 AUTO_EXPLORE=true
 DEPTH_SOURCE=isaac #lsm
+SEMANTIC_CLOUD_SOURCE=fastlio #depth：depth 时由 DEPTH_SOURCE 选择 Isaac/LSM。
 LSM_CONFIG_FILE="$ROOT_DIR/src/LSM_depth_infer/config/config.yaml"
 LSM_PARAMS_FILE="$ROOT_DIR/src/LSM_depth_infer/config/isaac_params.yaml"
 # 深度输入空值按 DEPTH_SOURCE 选择，lsm 默认 nn_depth。
@@ -25,6 +26,7 @@ SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/semantic_voxel_mapping/config/map.yaml"
 DEFAULT_ARGS=(--world "$WORLD" --bundle "$MAP_BUNDLE"
     --initial-x "$INITIAL_X" --initial-y "$INITIAL_Y" --initial-yaw "$INITIAL_YAW"
     --depth-source "$DEPTH_SOURCE" --lsm-config "$LSM_CONFIG_FILE" --lsm-params "$LSM_PARAMS_FILE"
+    --semantic-cloud-source "$SEMANTIC_CLOUD_SOURCE"
     --octomap-backend "$OCTOMAP_BACKEND" --semantic-map-config "$SEMANTIC_MAP_CONFIG")
 [[ -n "$DEPTH_IMAGE_TOPIC" ]] && DEFAULT_ARGS+=(--depth-image-topic "$DEPTH_IMAGE_TOPIC")
 [[ -n "$OCTOMAP_CLOUD_TOPIC" ]] && DEFAULT_ARGS+=(--octomap-cloud-topic "$OCTOMAP_CLOUD_TOPIC")

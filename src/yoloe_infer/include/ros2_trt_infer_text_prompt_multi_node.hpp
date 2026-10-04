@@ -41,6 +41,12 @@ private:
         const sensor_msgs::msg::Image::ConstSharedPtr& depth_msg,
         const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info_msg);
 
+    void lidar_sync_callback(
+        const sensor_msgs::msg::Image::ConstSharedPtr& image_msg,
+        const sensor_msgs::msg::PointCloud2::ConstSharedPtr& cloud_msg,
+        const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info_msg);
+    std::vector<Detection> infer_image(const sensor_msgs::msg::Image::ConstSharedPtr& image_msg);
+
     cv::Mat draw_detections(const cv::Mat& image,
                            const std::vector<Detection>& detections,
                            const Timings& timings);
@@ -80,6 +86,12 @@ private:
         sensor_msgs::msg::CameraInfo
     > SyncPolicy;
     std::shared_ptr<message_filters::Synchronizer<SyncPolicy>> sync_;
+    message_filters::Subscriber<sensor_msgs::msg::PointCloud2> sub_lidar_sync_;
+    using LidarSyncPolicy = message_filters::sync_policies::ApproximateTime<
+        sensor_msgs::msg::Image, sensor_msgs::msg::PointCloud2, sensor_msgs::msg::CameraInfo>;
+    std::shared_ptr<message_filters::Synchronizer<LidarSyncPolicy>> lidar_sync_;
+    std::string semantic_cloud_source_, lidar_frame_, projection_fixed_frame_;
+    double lidar_sync_slop_, occlusion_tolerance_;
     
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_pointcloud_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_semantic_cloud_;

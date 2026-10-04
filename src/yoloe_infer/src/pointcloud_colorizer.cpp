@@ -4,6 +4,7 @@
 #include <numeric>
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <tf2/LinearMath/Quaternion.h>
 
 namespace yoloe_infer {
@@ -33,6 +34,80 @@ void PointCloudColorizer::process(
 
     // 3. Generate Point Cloud
     generate_pointcloud(depth_image, color_image, info_msg, cloud);
+}
+
+sensor_msgs::msg::PointCloud2 PointCloudColorizer::semantic_lidar_cloud(
+    const pcl::PointCloud<pcl::PointXYZ>& lidar_points,
+    const pcl::PointCloud<pcl::PointXYZ>& camera_points,
+    const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info,
+    const std::vector<Detection>& detections, const std_msgs::msg::Header& header,
+    double occlusion_tolerance) {
+    if (lidar_points.size() != camera_points.size() || !info->width || !info->height) {
+        throw std::runtime_error("Invalid lidar projection dimensions");
+    }
+    image_geometry::PinholeCameraModel camera;
+    camera.fromCameraInfo(info);
+    if (!(camera.fx() > 0 && camera.fy() > 0)) {
+        throw std::runtime_error("Invalid projection camera intrinsics");
+    }
+    cv::Mat colors(info->height, info->width, CV_8UC3, default_color_);
+    cv::Mat scores = cv::Mat::zeros(info->height, info->width, CV_32F);
+    for (const auto& det : detections) {
+        if (det.mask.empty() || det.mask.type() != CV_8UC1 ||
+            !std::isfinite(det.conf) || det.conf <= 0 || det.conf > 1 ||
+            !color_mapping_.count(det.class_id)) continue;
+        const int x0 = std::max(0, int(det.bbox.x));
+        const int y0 = std::max(0, int(det.bbox.y));
+        const int width = std::min(det.mask.cols, int(info->width)-x0);
+        const int height = std::min(det.mask.rows, int(info->height)-y0);
+        for (int y=0; y<height; ++y) for (int x=0; x<width; ++x) {
+            if (det.mask.at<uint8_t>(y,x) && det.conf > scores.at<float>(y0+y,x0+x)) {
+                colors.at<cv::Vec3b>(y0+y,x0+x) = color_mapping_.at(det.class_id);
+                scores.at<float>(y0+y,x0+x) = det.conf;
+            }
+        }
+    }
+    // Keep only the closest lidar surface at each image pixel eligible for
+    // semantics. Farther returns remain geometrically present but unknown.
+    std::vector<cv::Point> pixels(camera_points.size(), cv::Point(-1,-1));
+    cv::Mat nearest(info->height, info->width, CV_32F,
+        cv::Scalar(std::numeric_limits<float>::infinity()));
+    for (size_t i=0; i<camera_points.size(); ++i) {
+        const auto& p = camera_points[i];
+        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z) || p.z<=0) continue;
+        auto uv = camera.project3dToPixel(cv::Point3d(p.x,p.y,p.z));
+        if (!std::isfinite(uv.x) || !std::isfinite(uv.y) ||
+            uv.x<0 || uv.y<0 || uv.x>=info->width || uv.y>=info->height) continue;
+        pixels[i] = cv::Point(int(uv.x),int(uv.y));
+        auto& depth = nearest.at<float>(pixels[i].y,pixels[i].x);
+        depth = std::min(depth,p.z);
+    }
+    sensor_msgs::msg::PointCloud2 cloud;
+    cloud.header=header; cloud.height=1; cloud.is_bigendian=false; cloud.is_dense=true;
+    for (const auto& entry : std::vector<std::pair<std::string,uint8_t>>{
+        {"x",7},{"y",7},{"z",7},{"rgb",6},{"confidence",7}}) {
+        sensor_msgs::msg::PointField field;
+        field.name=entry.first; field.offset=cloud.fields.size()*4;
+        field.datatype=entry.second; field.count=1; cloud.fields.push_back(field);
+    }
+    cloud.point_step=20; cloud.data.reserve(lidar_points.size()*20);
+    for (size_t i=0; i<lidar_points.size(); ++i) {
+        const auto& p = lidar_points[i];
+        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) continue;
+        auto color = default_color_; float score = 0;
+        const auto pixel = pixels[i];
+        if (pixel.x>=0 && camera_points[i].z <= nearest.at<float>(pixel.y,pixel.x)+occlusion_tolerance) {
+            color = colors.at<cv::Vec3b>(pixel.y,pixel.x);
+            score = scores.at<float>(pixel.y,pixel.x);
+        }
+        float values[5]={p.x,p.y,p.z,0,score};
+        uint32_t rgb=(uint32_t(color[2])<<16)|(uint32_t(color[1])<<8)|color[0];
+        std::memcpy(&values[3],&rgb,4);
+        auto offset=cloud.data.size(); cloud.data.resize(offset+20);
+        std::memcpy(cloud.data.data()+offset,values,20);
+    }
+    cloud.width=cloud.data.size()/20; cloud.row_step=cloud.data.size();
+    return cloud;
 }
 
 sensor_msgs::msg::PointCloud2 PointCloudColorizer::semantic_cloud(

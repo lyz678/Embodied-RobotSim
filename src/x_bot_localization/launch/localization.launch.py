@@ -20,8 +20,6 @@ def setup(context):
         raise ValueError('Initial pose must be finite')
     common = {'use_sim_time':True}
     nodes = [
-        Node(package='rviz2', executable='rviz2', arguments=['-d',str(share/'rviz/localization.rviz')],
-             parameters=[common]),
         Node(package='fast_lio', executable='fastlio_mapping', output='screen',
              parameters=[str(share/'config/fastlio_mid360.yaml')],
              remappings=[('/tf','/fastlio/tf_internal'), ('/tf_static','/fastlio/tf_static_internal'),
