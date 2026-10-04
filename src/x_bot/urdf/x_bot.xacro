@@ -72,12 +72,29 @@
     <!-- ................................ BASE LINK .................................. -->
     <link name="base_footprint"/>
 
-    <link name="base_link"/>
+    <link name="base_link">
+        <!-- Give Isaac a physical root above both chassis and wheel branches. -->
+        <xacro:if value="$(arg sim_isaac)">
+            <inertial>
+                <!-- A tiny root body is ill-conditioned against the 70 kg
+                     chassis. Allocate 1 kg of chassis mass to the root. -->
+                <mass value="1"/>
+                <xacro:cylinder_inertia m="1" r="${chassis_radius}" h="${chassis_height}"/>
+            </inertial>
+        </xacro:if>
+    </link>
 
     <joint name="base_joint" type="fixed">
         <parent link="base_footprint"/>
         <child link="base_link"/>
-        <origin xyz="0.0 0 ${chassis_height/2 + traction_wheel_radius}" rpy="0 0 0.0" />
+        <!-- Isaac spawns base_footprint on z=0: wheel centres must be one
+             radius above that plane (wheel joints are 0.09 m below base_link). -->
+        <xacro:if value="$(arg sim_isaac)">
+            <origin xyz="0 0 ${chassis_height/2 + 1.5*traction_wheel_radius}" rpy="0 0 0"/>
+        </xacro:if>
+        <xacro:unless value="$(arg sim_isaac)">
+            <origin xyz="0.0 0 ${chassis_height/2 + traction_wheel_radius}" rpy="0 0 0.0" />
+        </xacro:unless>
     </joint>
 
     <link name="chassis_link">
@@ -98,8 +115,14 @@
         </visual>
 
         <inertial>
-            <mass value="${chassis_mass}" />
-            <xacro:cylinder_inertia m="${chassis_mass}" r="${chassis_radius}" h="${chassis_height}"/>
+            <xacro:if value="$(arg sim_isaac)">
+                <mass value="${chassis_mass-1}"/>
+                <xacro:cylinder_inertia m="${chassis_mass-1}" r="${chassis_radius}" h="${chassis_height}"/>
+            </xacro:if>
+            <xacro:unless value="$(arg sim_isaac)">
+                <mass value="${chassis_mass}" />
+                <xacro:cylinder_inertia m="${chassis_mass}" r="${chassis_radius}" h="${chassis_height}"/>
+            </xacro:unless>
         </inertial>
 
     </link>
@@ -241,6 +264,13 @@
             </geometry>
             <material name="grey"/>
         </visual>
+        <xacro:if value="$(arg sim_isaac)">
+            <collision>
+                <geometry>
+                    <cylinder radius="0.02" length="0.08"/>
+                </geometry>
+            </collision>
+        </xacro:if>
     </link>
     <joint name="pillar_fl_joint" type="fixed">
         <parent link="chassis_link"/>
@@ -257,6 +287,13 @@
             </geometry>
             <material name="grey"/>
         </visual>
+        <xacro:if value="$(arg sim_isaac)">
+            <collision>
+                <geometry>
+                    <cylinder radius="0.02" length="0.08"/>
+                </geometry>
+            </collision>
+        </xacro:if>
     </link>
     <joint name="pillar_fr_joint" type="fixed">
         <parent link="chassis_link"/>
@@ -273,6 +310,13 @@
             </geometry>
             <material name="grey"/>
         </visual>
+        <xacro:if value="$(arg sim_isaac)">
+            <collision>
+                <geometry>
+                    <cylinder radius="0.02" length="0.08"/>
+                </geometry>
+            </collision>
+        </xacro:if>
     </link>
     <joint name="pillar_bl_joint" type="fixed">
         <parent link="chassis_link"/>
@@ -289,6 +333,13 @@
             </geometry>
             <material name="grey"/>
         </visual>
+        <xacro:if value="$(arg sim_isaac)">
+            <collision>
+                <geometry>
+                    <cylinder radius="0.02" length="0.08"/>
+                </geometry>
+            </collision>
+        </xacro:if>
     </link>
     <joint name="pillar_br_joint" type="fixed">
         <parent link="chassis_link"/>
@@ -357,6 +408,7 @@
         <xacro:franka_robot
             robot_type="fr3"
             parent="fr3_mount_link"
+            connected_to=""
             xyz="0 0 0"
             rpy="0 0 0"
             rpy_ee="0 0 ${-pi/4}"
@@ -370,6 +422,13 @@
             kinematics="${xacro.load_yaml('$(find franka_description)/robots/fr3/kinematics.yaml')}"
             dynamics="${xacro.load_yaml('$(find franka_description)/robots/fr3/dynamics.yaml')}"
         />
+        <!-- With gazebo=false, the Franka macro does not use parent and would
+             otherwise create a disconnected default base link. -->
+        <joint name="fr3_base_joint" type="fixed">
+            <parent link="fr3_mount_link"/>
+            <child link="fr3_link0"/>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+        </joint>
     </xacro:if>
     <xacro:unless value="$(arg sim_isaac)">
         <xacro:franka_robot

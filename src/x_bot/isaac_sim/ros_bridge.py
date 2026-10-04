@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +11,7 @@ import omni.graph.core as og
 import usdrt.Sdf
 from pxr import Gf, Sdf, Usd, UsdGeom
 
-from robot_importer import find_prim
+from robot_importer import ROBOT_PRIM_PATH, find_prim
 from base_motion import WHEEL_NAMES
 
 
@@ -23,8 +24,37 @@ def create_control_graph(
     stage: Usd.Stage,
     articulation_path: str,
     controller_config: Path,
+    source_urdf: Path,
 ) -> Any:
     """Create clock, base control, debug odometry, joint-state and arm-control nodes."""
+    # Isaac 6.1's live USD exporter mutates collider prims and omits the arm
+    # branch across fixed frame-only mount links. Reuse our generated, connected
+    # URDF for kinematics and synthesize hardware interfaces from the live USD.
+    from isaacsim.ros2.control import urdf_synth
+
+    original_builder = urdf_synth.build_full_urdf
+    def build_control_urdf(stage, target_prim_path, sensor_overlay_urdf_path=None):
+        if target_prim_path != ROBOT_PRIM_PATH:
+            return original_builder(stage, target_prim_path, sensor_overlay_urdf_path)
+        roots = urdf_synth.discover_articulations(stage, target_prim_path)
+        if len(roots) != 1:
+            raise RuntimeError(f"Expected one x_bot articulation, found {len(roots)}")
+        root = ET.parse(source_urdf).getroot()
+        block = urdf_synth.synthesize_hardware_block(
+            stage, roots[0], stage.GetPrimAtPath(target_prim_path),
+            mimic_map=urdf_synth._extract_mimic_map(root),
+        )
+        names = {joint.get("name") for joint in root.findall("joint")}
+        missing = {joint.name for joint in block.joints} - names
+        if missing:
+            raise RuntimeError(f"USD control joints missing from source URDF: {sorted(missing)}")
+        urdf_synth._fix_joint_limits(root)
+        root.append(urdf_synth.hardware_block_to_xml(block))
+        return ET.tostring(root, encoding="unicode")
+
+    # setup() imports the builder into its own module namespace.
+    from isaacsim.ros2.control import ros2_control_manager
+    ros2_control_manager.build_full_urdf = build_control_urdf
     keys = og.Controller.Keys
     chassis_path = str(find_prim(stage, "chassis_link").GetPath())
 
@@ -66,14 +96,18 @@ def create_control_graph(
         ("PublishOdometry.inputs:chassisFrameId", "chassis_link"),
         ("PublishNamespacedJointState.inputs:topicName", "/x_bot/joint_states"),
         ("PublishNamespacedJointState.inputs:targetPrim", _target(articulation_path)),
-        ("ROS2ControlManager.inputs:targetPrim", _target(articulation_path)),
+        ("ROS2ControlManager.inputs:targetPrim", _target(ROBOT_PRIM_PATH)),
         ("ROS2ControlManager.inputs:controllerConfig", str(controller_config)),
         ("ROS2ControlManager.inputs:namespace", ""),
         ("ROS2ControlManager.inputs:publishRobotDescription", True),
     ]
 
     graph, _, _, _ = og.Controller.edit(
-        {"graph_path": "/World/ROS2ControlGraph", "evaluator_name": "execution"},
+        {
+            "graph_path": "/World/ROS2ControlGraph",
+            "evaluator_name": "execution",
+            "pipeline_stage": og.GraphPipelineStage.GRAPH_PIPELINE_STAGE_ONDEMAND,
+        },
         {
             keys.CREATE_NODES: nodes,
             keys.CONNECT: connections,

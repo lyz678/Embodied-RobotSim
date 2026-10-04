@@ -4,7 +4,7 @@
 [![Isaac Sim](https://img.shields.io/badge/Isaac%20Sim-6.1-76B900.svg)](https://docs.isaacsim.omniverse.nvidia.com/6.1.0/)
 [![中文](https://img.shields.io/badge/🌍_Language-中文-blue.svg)](README.md)
 
-Embodied-RobotSim is a ROS 2 (Jazzy) simulation workspace for a differential-drive mobile robot with a **Franka FR3 arm**, lidar and RGB-D sensors. Gazebo uses 2-D LiDAR; Isaac Sim uses a roof-mounted MID-360 approximation and FAST-LIO localization pipeline. The project integrates mapping, navigation, perception, mobile manipulation and a **Qwen3 LLM-driven embodied intelligence loop**, with natural-language commands and a Web UI.
+Embodied-RobotSim is a ROS 2 (Jazzy) simulation workspace for a differential-drive mobile robot with a **Franka FR3 arm**, lidar and RGB-D sensors. Isaac Sim uses a roof-mounted MID-360 approximation and FAST-LIO localization pipeline. The project integrates mapping, navigation, perception, mobile manipulation and a **Qwen3 LLM-driven embodied intelligence loop**, with natural-language commands and a Web UI.
 
 ## 🎬 Demos
 
@@ -18,16 +18,15 @@ Embodied-RobotSim is a ROS 2 (Jazzy) simulation workspace for a differential-dri
 
 *Autonomous Grasping via YOLOE & GraspNet*
 
-### 3. Simulation Environments (Gazebo / Isaac Sim)
-![GazeboSim](assets/GazeboSim.gif)
+### 3. Simulation Environment (Isaac Sim)
 
-*Indoor simulation with shared Nav2, MoveIt 2, and perception stacks across Gazebo Harmonic and Isaac Sim 6.1*
+*Indoor simulation in Isaac Sim 6.1 with Nav2, MoveIt 2, and perception stacks*
 
 ## 🌟 Key Features
 
-* **Dual Simulation Backends:** The same Xacro, ROS 2 topics, and controller interfaces run with Gazebo Harmonic or Isaac Sim 6.1.
+* **Isaac Sim Backend:** Import the robot from Xacro and connect ROS 2 topics and controller interfaces.
 * **Mobile Manipulation:** Integration of MoveIt 2 for the Franka FR3 arm with a four-wheel differential-drive mobile base controller.
-* **Exploration & Mapping:** Gazebo uses Cartographer; Isaac uses MID-360 + FAST-LIO mapping and seeded ICP map localization, with `m-explore-ros2` frontier exploration.
+* **Exploration & Mapping:** MID-360 + FAST-LIO mapping and seeded ICP map localization, with `m-explore-ros2` frontier exploration.
 * **Advanced Perception (Vision):**
   * **YOLOE Inference:** Real-time object detection with text prompts (`yoloe_infer`).
 * **Semantic Occupancy & Grasping:**
@@ -44,7 +43,7 @@ Embodied-RobotSim is a ROS 2 (Jazzy) simulation workspace for a differential-dri
 
 | Package | Purpose |
 |---------|---------|
-| `x_bot` | Main robot package: URDF, Gazebo/Isaac Sim backends, scenes, launch files, navigation configs, and the `robot_actions` MoveIt arm controller. |
+| `x_bot` | Main robot package: URDF, Isaac Sim backend, scenes, launch files, navigation configs, and the `robot_actions` MoveIt arm controller. |
 | `yoloe_infer` | TensorRT-based YOLOE object detection with text prompts. |
 | `graspnet_infer` | TensorRT-based GraspNet integration for 6-DoF grasp pose generation from point clouds. |
 | `m-explore-ros2` | `explore_lite` package adapted for ROS 2 to perform autonomous frontier-based exploration. |
@@ -59,8 +58,7 @@ To ensure the simulation system runs correctly, please deploy in the following e
 |---------|---------|
 | **Operating System** | [Ubuntu 24.04 (Noble)](https://ubuntu.com/download/desktop) |
 | **ROS 2** | [Jazzy Jalisco](https://docs.ros.org/en/jazzy/installation.html) ([One-click Install](https://fishros.org.cn/forum/topic/20)) |
-| **Gazebo** | [Harmonic (Gz Sim 8)](https://gazebosim.org/docs/harmonic/install) |
-| **Isaac Sim (optional backend)** | 6.1 with ROS 2 Bridge, URDF Importer, experimental physics sensors and ros2_control extensions |
+| **Isaac Sim** | 6.1 with ROS 2 Bridge, URDF Importer, experimental physics sensors and ros2_control extensions |
 | **CUDA** | [13.1](https://developer.nvidia.com/cuda-toolkit) |
 | **TensorRT** | [10.14.1.48](https://developer.nvidia.com/tensorrt) |
 | **Python** | 3.12+ |
@@ -87,7 +85,7 @@ Since the model files are quite large, please download the pre-trained weights f
 
 ## 🚀 Quick Start Instructions
 
-> **IMPORTANT**: ROS 2 Jazzy is a common dependency. Choose either Gazebo Harmonic or Isaac Sim 6.1 as the simulator. CUDA, TensorRT, and model files are still required for the complete perception and grasping pipeline.
+> **IMPORTANT**: ROS 2 Jazzy is a common dependency. All simulation startup scripts use Isaac Sim 6.1. CUDA, TensorRT, and model files are still required for the complete perception and grasping pipeline.
 
 ### 1. Build the Workspace
 
@@ -99,7 +97,7 @@ bash src/graspnet_infer/tensorrt_plugins/build.sh
 # 2. Install dependencies (rosdep + additional system packages)
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y
-sudo apt install ros-jazzy-gz-ros2-control ros-jazzy-moveit-ros-perception
+sudo apt install ros-jazzy-moveit-ros-perception
 
 # 3. Build all ROS 2 packages
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
@@ -108,9 +106,9 @@ source install/setup.bash
 
 ### 2. Isaac Sim 6.1: roof MID-360 + FAST-LIO
 
-> **Validation boundary:** Code and offline tests are available. This development host has no ROS 2 Jazzy, Isaac Sim or PCL; ROS/C++ builds and target-machine integration remain unverified.
+> **Validation boundary:** Target-machine ROS/C++ builds, stationary IMU/TF, Nav2 motion and consecutive frontier goals have been checked in Isaac Sim 6.1. Known-map ICP, complete scene coverage and full grasping/LLM workflows still require separate validation.
 
-Only the **Isaac backend** changes. Gazebo retains its 2-D lidar, Cartographer/AMCL and default entry points. Isaac still imports the shared Xacro and retains FR3, RGB-D, Nav2, MoveIt and all five demo entry points.
+All five demo entry points use **Isaac Sim**, importing the shared Xacro with FR3, RGB-D, Nav2 and MoveIt.
 
 #### Sensor and localization contracts
 
@@ -130,11 +128,11 @@ Only the **Isaac backend** changes. Gazebo retains its 2-D lidar, Cartographer/A
 | `/localization/ready` / `/localization/status` | Readiness / registration quality and failure reasons |
 | `/debug/ground_truth/odom` | Debug only: no navigation TF or estimator input |
 
-Native FAST-LIO `camera_init/body` TF is remapped to a private topic. robot_state_publisher owns internal robot transforms. Commands retain `/x_bot/cmd_vel` and pass through a health gate to `/x_bot/cmd_vel_safe`. Invalid localization, stale data or time rewind stop the base; a simulator-side watchdog also checks command timeout. Limits: 0.5 m/s forward, 0.2 m/s reverse, 1 rad/s yaw. The gate does not cancel an already executing arm trajectory.
+Native FAST-LIO `camera_init/body` TF is remapped to a private topic. robot_state_publisher owns internal robot transforms. Commands retain `/x_bot/cmd_vel` and pass through a health gate to `/x_bot/cmd_vel_safe`. Invalid localization, stale data or time rewind stop the base; a simulator-side watchdog also checks command timeout. Limits: 2 m/s forward, 0.2 m/s reverse, 1 rad/s yaw. The gate does not cancel an already executing arm trajectory.
 
 #### Target-machine installation
 
-**Isaac base stability:** A single articulation controller writes all four wheel targets with an explicit left/right mapping. Coupled simulation-time ramps limit linear/angular acceleration to 0.5 m/s² and 1 rad/s²; saturation preserves target curvature. Zero, invalid and expired commands stop immediately, while intentional in-place turns remain supported. These are preventive changes for abrupt commands and multiple writer paths, not a runtime-confirmed fix for spinning. If it persists, record `/x_bot/cmd_vel`, `/x_bot/cmd_vel_safe`, `/odom` and wheel joint velocities to distinguish requested turns from execution errors. Gazebo control configuration is unchanged.
+**Isaac base stability:** A single articulation controller writes all four wheel targets. Simulated IMU yaw-rate PI feedback compensates for four-wheel skid. Coupled simulation-time ramps limit target linear/angular acceleration to 1 m/s² and 1 rad/s². Zero, invalid and expired commands stop immediately and clear the integral, while intentional in-place turns remain supported. Compare `/x_bot/cmd_vel`, `/x_bot/cmd_vel_safe`, `/odom` and wheel joint velocities when debugging.
 
 Use Ubuntu 24.04, ROS 2 Jazzy, and Isaac Sim 6.1 with ROS 2 Bridge, URDF Importer, experimental physics sensors and ros2_control extensions. No Livox hardware SDK is needed.
 
@@ -154,37 +152,39 @@ The [dependency manifest](dependencies/isaac.repos) pins FAST_LIO_ROS2 and the s
 #### Map first, then localize
 
 ```bash
-# Mapping: use a new directory; saving refuses to overwrite an existing bundle.
-./start_explore_and_mapping.sh --sim isaac --bundle maps/room_a
+# Mapping defaults to maps/room_a; saving refuses to overwrite an existing bundle.
+./start_explore_and_mapping.sh
 
 # Another terminal, after exploring the required area:
 source install/setup.bash
 ros2 service call /localization/save_map std_srvs/srv/Trigger '{}'
 
 # Stop the mapping session, then localize in the saved map:
-./start_navigation.sh --sim isaac --bundle maps/room_a \
-  --initial-x 0.0 --initial-y 0.0 --initial-yaw 0.0
+./start_navigation.sh
 ```
 
-A bundle contains `map.pcd`, `map.pgm`, `map.yaml` and `bundle.json`. The grid retains unobserved cells as unknown and clears free cells along measured rays; empty space is not assumed traversable. All files share the configured map origin. Existing Gazebo maps or `isaac_simple_room.yaml` alone **cannot** supply this localization pipeline. No fabricated “validated PCD map” is shipped.
+A bundle contains `map.pcd`, `map.pgm`, `map.yaml` and `bundle.json`. The grid retains unobserved cells as unknown and clears free cells along measured rays; empty space is not assumed traversable. All files share the configured map origin. A 2-D YAML/PGM map or `isaac_simple_room.yaml` alone **cannot** supply this localization pipeline. No fabricated “validated PCD map” is shipped.
 
-`--initial-x/y/yaw` is the prior **base_footprint pose in map** (yaw in radians), not the IMU pose and not a ground-truth subscription. Exploration defaults to yaw=1.5708 and navigation to yaw=0, matching their respective example spawn headings. Supply the appropriate prior when changing spawn or map, or reset it in the RViz window.
+`INITIAL_X/Y/YAW` at the top of each script is the prior **base_footprint pose in map** (yaw in radians), not the IMU pose and not a ground-truth subscription. Exploration defaults to yaw=1.5708 and navigation to yaw=0, matching their respective example spawn headings. Edit the script defaults when changing spawn or map, or reset it in the RViz window.
 
 | Entry point | Mode / scene |
 |---|---|
-| `start_explore_and_mapping.sh --sim isaac --bundle DIR` | Mapping / simple_room |
-| `start_pick_and_place_demo.sh --sim isaac --bundle DIR` | Mapping-based pose / manipulation_test |
-| `start_navigation.sh --sim isaac --bundle DIR` | Known-map localization / simple_room |
-| `start_navigation_and_pick_demo.sh --sim isaac --bundle DIR` | Localization + grasping / simple_room |
-| `start_llm_agent.sh --sim isaac --bundle DIR` | Localization + LLM / simple_room |
+| `start_explore_and_mapping.sh` | Mapping / simple_room |
+| `start_pick_and_place_demo.sh` | Mapping-based pose / manipulation_test |
+| `start_navigation.sh` | Known-map localization / simple_room |
+| `start_navigation_and_pick_demo.sh` | Localization + grasping / simple_room |
+| `start_llm_agent.sh` | Localization + LLM / simple_room |
 
-The scripts support `--headless`, `--build` and `SIM_BACKEND=isaac`. Navigation/tasks wait for readiness, with a 180-second startup timeout. Five consecutive ICP failures require a new initial pose. Localization loss stops the base. Pause stops motion; after a simulation-clock reset, restart FAST-LIO, adapters and navigation rather than reusing estimator state. Startup no longer kills existing sessions automatically. The original `stop_robot_sim.sh` is a broad cleanup tool that can affect other ROS sessions and delete logs; use it cautiously.
+Run each script directly without arguments. Edit `MAP_BUNDLE`, `INITIAL_X/Y/YAW`, `HEADLESS`, and `BUILD` at the top of each entry point; exploration also has `AUTO_EXPLORE`. The default bundle is `maps/room_a`, or `maps/manipulation_test` for standalone grasping. Navigation modes use ICP with an existing bundle and automatically use live mapping when the bundle is missing. Navigation/tasks wait for readiness, with a 180-second startup timeout. Five consecutive ICP failures require a new initial pose. Localization loss stops the base. Pause stops motion; after a simulation-clock reset, restart FAST-LIO, adapters and navigation rather than reusing estimator state. Startup runs `stop_robot_sim.sh`, closes marked service terminals, clears previous ROS/simulation processes and deletes ROS logs.
+
+Isaac navigation targets **2 m/s in simulation time** on straight paths. Nav2 smoothing, the localization safety gate, and the base drive share this forward limit, with 1 m/s² acceleration and 2 m/s² deceleration. Turns, obstacles and goal approach still reduce speed. Observed wall-time speed also depends on the real-time factor; changing the speed limit does not make the simulator run in real time.
+
 
 Existing navigation-and-pick/LLM tasks include hardcoded map goals: review them after changing maps/origins. Localization readiness does not establish that a task goal is valid for the new map.
 
 Low-level debugging, in separate terminals:
 ```bash
-./start_isaac_sim.sh --world simple_room --headless
+./start_isaac_sim.sh
 ros2 launch x_bot isaac_controllers.launch.py
 ros2 launch x_bot_localization localization.launch.py mode:=mapping bundle:=/absolute/path/new_map
 ```
@@ -229,16 +229,16 @@ trtexec --onnx=src/graspnet_infer/graspnet.onnx \
 
 ### 4. Run the Demos
 
-The repository root provides five one-click scripts. The following commands use Gazebo by default; append `--sim isaac` to switch to Isaac Sim.
+All five one-click scripts start Isaac Sim without arguments. Exploration starts automatically; navigation, mobile manipulation and LLM modes use maps/room_a if present and automatically use live mapping otherwise.
 
 #### Mode 1: Autonomous Exploration & Mapping
-Automatically explore unknown environments using `explore_lite`, Cartographer and generated YOLOE/OctoMap:
+Wait for localization and active Nav2 servers, then explore automatically using MID-360, FAST-LIO, Nav2 and `explore_lite`, with YOLOE/OctoMap:
 ```bash
 ./start_explore_and_mapping.sh
 ```
 
 #### Mode 2: Static Navigation
-Navigate the robot in an already mapped environment using Nav2 and Cartographer localization:
+Navigate with Nav2, FAST-LIO and seeded ICP localization against a saved map bundle:
 ```bash
 ./start_navigation.sh
 ```
@@ -282,8 +282,8 @@ This mode launches the full suite of low-level control and perception nodes, mou
 
 ## 🤝 Contribution and Customization
 
-* **World Environments:** Gazebo SDF worlds are in `src/x_bot/worlds/`; Isaac procedural USD scenes are authored in `src/x_bot/isaac_sim/scene_builder.py`.
-* **Navigation Config:** Tune Nav2 and Cartographer parameters in `src/x_bot/config/`.
+* **World Environments:** Scene structure files are in `src/x_bot/worlds/`; Isaac procedural USD scenes are authored in `src/x_bot/isaac_sim/scene_builder.py`.
+* **Navigation Config:** Tune Isaac Nav2 and FAST-LIO parameters in `src/x_bot_localization/config/`.
 ## 👏 Acknowledgements
 
 This project is built upon the following open-source repositories. We sincerely thank the authors and maintainers for their contributions:
@@ -292,5 +292,5 @@ This project is built upon the following open-source repositories. We sincerely 
 * **[GraspNet-Baseline](https://github.com/graspnet/graspnet-baseline):** Foundation for 6-DoF grasp pose estimation.
 * **[m-explore-ros2](https://github.com/robo-friends/m-explore-ros2):** Autonomous exploration components for ROS 2.
 * **[franka_ros2](https://github.com/frankaemika/franka_ros2) & [franka_description](https://github.com/frankaemika/franka_description):** Official ROS 2 support from Franka Emika.
-* **[Cartographer](https://github.com/cartographer-project/cartographer_ros):** Advanced 2D/3D SLAM solution.
+* **[FAST-LIO](https://github.com/hku-mars/FAST_LIO):** LiDAR-inertial odometry and mapping.
 * **[bcr_bot](https://github.com/blackcoffeerobotics/bcr_bot):** Reference for differential drive mobile base simulation.

@@ -20,7 +20,7 @@ from isaacsim.sensors.experimental.physics import IMU, IMUSensor
 from omni.physx import get_physx_scene_query_interface
 from pxr import Gf
 from robot_importer import find_prim, ROBOT_PRIM_PATH
-from mid360_sampling import Packet, POINT, directions
+from mid360_sampling import Packet, POINT, directions, settled_at_rest
 from base_motion import BaseMotion
 
 
@@ -39,6 +39,7 @@ class Mid360:
         self.node = rclpy.create_node('isaac_mid360')
         self.command = (0., 0.)
         self.motion = BaseMotion()
+        self.measured_angular = 0.
         self.command_sim_time = None
         self.command_time = -math.inf
         self.command_sub = self.node.create_subscription(Twist, '/x_bot/cmd_vel_safe', self.receive_command, 1)
@@ -49,16 +50,25 @@ class Mid360:
         self.packet = Packet()
         self.index = 0
         self.last_imu = None
+        self.ready = False
+        self.stable_time = 0.0
+        self.start_time = None
+        self.previous_position = None
         self.error = None
         self.callback = SimulationManager.register_callback(self.step, SimulationEvent.PHYSICS_POST_STEP, order=100)
         self.reset_callback = SimulationManager.register_callback(self.reset, SimulationEvent.SIMULATION_STOPPED)
 
     def reset(self, *args):
         self.motion.reset()
+        self.measured_angular = 0.
         self.command_sim_time = None
         self.packet.reset()
         self.index = 0
         self.last_imu = None
+        self.ready = False
+        self.stable_time = 0.0
+        self.start_time = None
+        self.previous_position = None
         self.command = (0., 0.)
         self.command_time = -math.inf
 
@@ -76,7 +86,8 @@ class Mid360:
         dt = 0. if self.command_sim_time is None else sim_time-self.command_sim_time
         self.command_sim_time = sim_time
         speeds = self.motion.advance(*self.command, dt,
-            enabled=playing and time.monotonic()-self.command_time < .5)
+            enabled=playing and self.ready and time.monotonic()-self.command_time < .5,
+            measured_angular=self.measured_angular)
         # One articulation writer applies all four wheel targets atomically.
         og.Controller.set(og.Controller.attribute('/World/ROS2ControlGraph/BaseWheels.inputs:velocityCommand'), speeds)
 
@@ -92,8 +103,30 @@ class Mid360:
         ns = round(SimulationManager.get_simulation_time() * 1e9)
         if self.packet.last is not None and ns <= self.packet.last:
             self.reset()
+        reading = self.imu.get_sensor_reading(read_gravity=True)
+        if not reading.is_valid:
+            return
+        imu_data = self.imu.get_data(read_gravity=True)
+        self.measured_angular = float(imu_data['angular_velocity'][2])
         positions, orientations = self.body.get_world_poses()
-        origin = positions.numpy()[0].astype(float)
+        position = positions.numpy()[0].astype(float)
+        if not self.ready:
+            if self.start_time is None:
+                self.start_time = ns
+            linear, angular = self.body.get_velocities()
+            pose_speed = (math.inf if self.previous_position is None else
+                          float(np.linalg.norm(position-self.previous_position)/dt))
+            self.previous_position = position.copy()
+            stable = settled_at_rest(linear.numpy()[0], angular.numpy()[0],
+                                     imu_data['angular_velocity'], imu_data['linear_acceleration'], pose_speed)
+            self.stable_time = self.stable_time + dt if stable else 0.0
+            if self.stable_time < .5:
+                if ns - self.start_time > 30_000_000_000:
+                    raise RuntimeError('Robot did not settle at rest; MID360/FAST-LIO initialization withheld')
+                return
+            self.ready = True
+            self.node.get_logger().info('Robot settled at rest; starting MID360 lidar/IMU publication')
+        origin = position
         q = orientations.numpy()[0].astype(float)  # wxyz
         rotation = Gf.Rotation(Gf.Quatd(float(q[0]), Gf.Vec3d(*q[1:])))
         # RigidPrim tensor poses are current physics poses, not delayed USD poses.
@@ -126,17 +159,15 @@ class Mid360:
                 ('offset_time', 16, 6), ('line', 20, 2), ('tag', 21, 2))]
             msg.data = data
             self.cloud_pub.publish(msg)
-        reading = self.imu.get_sensor_reading(read_gravity=True)
         if reading.is_valid:
-            data = self.imu.get_data(read_gravity=True)
-            imu_ns = round(data['time'] * 1e9)
+            imu_ns = round(imu_data['time'] * 1e9)
             if imu_ns != self.last_imu:
                 self.last_imu = imu_ns
                 msg = Imu()
                 msg.header.stamp, msg.header.frame_id = stamp(imu_ns), 'mid360_imu_link'
                 msg.orientation_covariance[0] = -1.0  # don't leak world orientation
                 for attr in ('linear_acceleration', 'angular_velocity'):
-                    for axis, value in zip('xyz', data[attr]):
+                    for axis, value in zip('xyz', imu_data[attr]):
                         setattr(getattr(msg, attr), axis, float(value))
                 self.imu_pub.publish(msg)
 

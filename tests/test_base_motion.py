@@ -34,7 +34,7 @@ class BaseMotionTests(unittest.TestCase):
         for _ in range(200):
             old_v,old_w=motion.linear,motion.angular
             motion.advance(.4,.6,.005)
-            self.assertLessEqual(abs(motion.linear-old_v),.0025+1e-12)
+            self.assertLessEqual(abs(motion.linear-old_v),.005+1e-12)
             self.assertLessEqual(abs(motion.angular-old_w),.005+1e-12)
             self.assertAlmostEqual(motion.angular/motion.linear,1.5)
         self.assertAlmostEqual(motion.linear,.4)
@@ -42,8 +42,8 @@ class BaseMotionTests(unittest.TestCase):
 
     def test_saturation_preserves_curvature(self):
         motion=BaseMotion()
-        for _ in range(300): motion.advance(1.,1.,.005)
-        self.assertAlmostEqual(motion.linear,.5)
+        for _ in range(500): motion.advance(4.,1.,.005)
+        self.assertAlmostEqual(motion.linear,2.)
         self.assertAlmostEqual(motion.angular,.5)
 
     def test_immediate_stop_and_timeout(self):
@@ -53,6 +53,16 @@ class BaseMotionTests(unittest.TestCase):
         motion.advance(.4,.7,.05)
         self.assertEqual(motion.advance(.4,.7,.005,enabled=False),[0]*4)
 
+    def test_two_meters_per_second_and_braking(self):
+        motion = BaseMotion()
+        for _ in range(400):
+            wheels = motion.advance(2., 0., .005)
+        self.assertAlmostEqual(motion.linear, 2.)
+        for velocity in wheels:
+            self.assertAlmostEqual(velocity * RADIUS, 2.)
+        motion.advance(.1, 0., .005)
+        self.assertAlmostEqual(motion.linear, 1.99)
+
     def test_invalid_and_rewind_fail_closed(self):
         for cmd in [(math.nan,0,.01),(0,math.inf,.01),(.1,.1,-.1)]:
             motion=BaseMotion(); motion.advance(.4,.7,.05)
@@ -60,8 +70,22 @@ class BaseMotionTests(unittest.TestCase):
 
     def test_stall_does_not_jump(self):
         motion=BaseMotion(); motion.advance(.5,1.,10.)
-        self.assertLessEqual(motion.linear,.025)
+        self.assertLessEqual(motion.linear,.05)
         self.assertLessEqual(motion.angular,.05)
+
+    def test_yaw_feedback_overcomes_skid_and_resets_on_stop(self):
+        # A slipping plant only realizes 35% of ideal differential yaw, with
+        # first-order response. Test tracking, reversal and stopped state.
+        motion=BaseMotion(); actual=0.
+        for target in (.5, -.5):
+            for _ in range(2000):
+                left,right,_,_=motion.advance(.1,target,.005,measured_angular=actual)
+                demand=RADIUS*(right-left)/TRACK
+                actual += (.35*demand-actual)*.005/.1
+            self.assertAlmostEqual(actual,target,delta=.02)
+        self.assertEqual(motion.advance(0,0,.005,measured_angular=actual),[0]*4)
+        self.assertEqual(motion.yaw_integral,0.)
+        self.assertEqual(motion.advance(.1,.5,.005,measured_angular=math.nan),[0]*4)
 
     def test_single_wheel_writer(self):
         source=(ROOT/'src/x_bot/isaac_sim/ros_bridge.py').read_text()

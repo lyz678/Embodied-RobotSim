@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Wall-clock bounded startup barrier. Exit nonzero; shell && prevents task start."""
 import time
+import argparse
 import rclpy
 from std_msgs.msg import Bool
+from lifecycle_msgs.srv import GetState
+from lifecycle_msgs.msg import State
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--nav2', action='store_true', help='Also wait for active Nav2 servers')
+args, _ = parser.parse_known_args()
 rclpy.init()
 node = rclpy.create_node('wait_localization_ready')
 started = time.monotonic()
@@ -13,15 +19,45 @@ def receive(msg):
     state['since'] = (state['since'] or now) if msg.data else None
 sub = node.create_subscription(Bool, '/localization/ready', receive, 10)
 code = 1
+clients = {name: node.create_client(GetState, f'/{name}/get_state')
+           for name in ('bt_navigator', 'controller_server', 'planner_server')} if args.nav2 else {}
+pending = {}
+pending_started = None
+navigation_ready = not args.nav2
+next_poll = 0.0
 while rclpy.ok() and time.monotonic()-started < 180:
     rclpy.spin_once(node, timeout_sec=.1)
+    now = time.monotonic()
+    if pending and pending_started is not None and now-pending_started > 3.0:
+        # A lost lifecycle response must not block all later readiness polls.
+        for name, future in pending.items():
+            clients[name].remove_pending_request(future)
+            future.cancel()
+        pending.clear()
+        pending_started = None
+        next_poll = now
+    if clients and now >= next_poll:
+        for name, client in clients.items():
+            if name not in pending and client.service_is_ready():
+                pending[name] = client.call_async(GetState.Request())
+                if pending_started is None:
+                    pending_started = now
+        if len(pending) == len(clients) and all(f.done() for f in pending.values()):
+            navigation_ready = all(f.result() is not None and
+                                   f.result().current_state.id == State.PRIMARY_STATE_ACTIVE
+                                   for f in pending.values())
+            pending.clear()
+            pending_started = None
+            next_poll = now + .5
     if time.monotonic()-state['last'] > .5:
         state['since'] = None
-    if state['since'] and time.monotonic()-state['since'] >= 1:
+    if state['since'] and time.monotonic()-state['since'] >= 1 and navigation_ready:
         code = 0
         break
 if code:
-    node.get_logger().error('Localization not ready after 180 seconds; task NOT started')
+    node.get_logger().error('Localization/Nav2 not ready after 180 seconds; task NOT started')
+else:
+    node.get_logger().info('Localization and requested navigation servers are ready')
 node.destroy_node()
 rclpy.shutdown()
 raise SystemExit(code)

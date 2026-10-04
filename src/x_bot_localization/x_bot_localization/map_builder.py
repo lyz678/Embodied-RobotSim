@@ -10,7 +10,7 @@ from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2
 from std_srvs.srv import Trigger
 from std_msgs.msg import Header, Bool, String
-from tf2_ros import TransformBroadcaster
+from tf2_ros import StaticTransformBroadcaster
 from message_filters import Subscriber, TimeSynchronizer
 from .core import Grid, matrix, transform, save_bundle
 from .adapter import tf_message
@@ -27,7 +27,10 @@ class MapBuilder(Node):
         self.voxels = {}
         self.last_stamp = None
         self.dirty = False
-        self.tf = TransformBroadcaster(self)
+        # Mapping keeps the supplied map origin fixed; it must remain valid
+        # between lidar packets rather than expiring at the last scan stamp.
+        self.tf = StaticTransformBroadcaster(self)
+        self.tf.sendTransform(tf_message(self.origin, self.get_clock().now().to_msg(), 'map', 'odom'))
         self.pub = self.create_publisher(OccupancyGrid, '/map', QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
         self.ready = self.create_publisher(Bool, '/localization/valid', 10)
         self.status = self.create_publisher(String, '/localization/status', 10)
@@ -54,7 +57,6 @@ class MapBuilder(Node):
             self.voxels[key] = tuple(float(v) for v in p)
         self.last_stamp = stamp
         self.dirty = True
-        self.tf.sendTransform(tf_message(self.origin, stamp, 'map', 'odom'))
         self.ready.publish(Bool(data=len(self.voxels) >= 100 and bool(self.grid.cells)))
         self.status.publish(String(data=f'mapping points={len(self.voxels)} cells={len(self.grid.cells)}'))
 

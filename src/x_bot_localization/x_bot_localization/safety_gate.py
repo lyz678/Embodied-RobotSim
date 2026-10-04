@@ -17,6 +17,7 @@ class Gate(Node):
         self.valid_wall = -float('inf')
         self.last_command = -float('inf')
         self.command = Twist()
+        self.max_forward = self.declare_parameter('max_forward_speed', 2.0).value
         self.pub = self.create_publisher(Twist, '/x_bot/cmd_vel_safe', 10)
         self.ready_pub = self.create_publisher(Bool, '/localization/ready', 10)
         self.create_subscription(Twist, '/x_bot/cmd_vel', self.cmd, 10)
@@ -29,7 +30,7 @@ class Gate(Node):
             self.command = Twist()
             return
         self.command = Twist()
-        ratio = max(1., abs(msg.linear.x)/(.5 if msg.linear.x >= 0 else .2), abs(msg.angular.z))
+        ratio = max(1., abs(msg.linear.x)/(self.max_forward if msg.linear.x >= 0 else .2), abs(msg.angular.z))
         self.command.linear.x = msg.linear.x / ratio
         self.command.angular.z = msg.angular.z / ratio
         self.last_command = time.monotonic()

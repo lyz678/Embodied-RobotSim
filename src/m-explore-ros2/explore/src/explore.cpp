@@ -39,6 +39,7 @@
 #include <explore/explore.h>
 
 #include <thread>
+#include <rclcpp/create_timer.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 
@@ -60,8 +61,8 @@ Explore::Explore()
   , tf_listener_(tf_buffer_)
   , costmap_client_(*this, &tf_buffer_)
   , last_markers_count_(0)
-  , has_prev_robot_position_(false)  // 初始化位置记录标志
   , prev_robot_yaw_(0.0)             // 初始化角度记录
+  , has_prev_robot_position_(false)  // 初始化位置记录标志
   , return_to_init_retry_count_(0)   // 初始化返回初始位置重试计数
 {
   double min_frontier_size;
@@ -139,8 +140,8 @@ Explore::Explore()
 
   // ⏰ 创建探索定时器 - 定期执行探索规划
   // 频率 = planner_frequency_
-  exploring_timer_ = this->create_wall_timer(
-      std::chrono::milliseconds((uint16_t)(1000.0 / planner_frequency_)),
+  exploring_timer_ = rclcpp::create_timer(this, this->get_clock(),
+      rclcpp::Duration::from_seconds(1.0 / planner_frequency_),
       [this]() { makePlan(); });
 }
 
@@ -246,6 +247,9 @@ void Explore::visualizeFrontiers(
 
 void Explore::makePlan()
 {
+  if (exploring_timer_->is_canceled()) {
+    return;
+  }
   // 🎯 核心探索规划函数 - 实现前沿检测和目标选择
   // ⚠️ 注意：每次调用都会重新评估当前情况，可能改变导航目标！
 
@@ -350,60 +354,33 @@ void Explore::makePlan()
     resuming_ = false;  // 清除恢复标志
   }
 
-  // 👁️ 检查当前目标是否已被探索（周围不再有未知区域）
-  // 检查目标点周围一定范围内是否还有未知区域
-  bool current_goal_explored = false;
-  if (navigating_) {
-    nav2_costmap_2d::Costmap2D* costmap = costmap_client_.getCostmap();
-    unsigned int mx, my;
-    if (costmap->worldToMap(prev_goal_.x, prev_goal_.y, mx, my)) {
-      // 检查目标点周围 5x5 区域（约 0.25m x 0.25m ）是否还有未知点
-      constexpr int CHECK_RADIUS = 2;  // 检查半径（单位：栅格）
-      bool has_unknown_nearby = false;
-      
-      int size_x = static_cast<int>(costmap->getSizeInCellsX());
-      int size_y = static_cast<int>(costmap->getSizeInCellsY());
-      
-      for (int dy = -CHECK_RADIUS; dy <= CHECK_RADIUS && !has_unknown_nearby; ++dy) {
-        for (int dx = -CHECK_RADIUS; dx <= CHECK_RADIUS && !has_unknown_nearby; ++dx) {
-          int nx = static_cast<int>(mx) + dx;
-          int ny = static_cast<int>(my) + dy;
-          if (nx >= 0 && nx < size_x && ny >= 0 && ny < size_y) {
-            unsigned char cost = costmap->getCost(nx, ny);
-            if (cost == nav2_costmap_2d::NO_INFORMATION) {
-              has_unknown_nearby = true;
-            }
-          }
-        }
-      }
-      
-      // 只有当周围完全没有未知区域时，才认为目标已被探索
-      if (!has_unknown_nearby) {
-        current_goal_explored = true;
-        RCLCPP_INFO(logger_, "Current goal (%.2f, %.2f) area is fully explored, switching to new frontier",
-                    prev_goal_.x, prev_goal_.y);
-        // 取消当前导航
-        move_base_client_->async_cancel_all_goals();
-        navigating_ = false;
-      }
+  // A frontier centroid can lie in known space, even while its boundary is
+  // still unexplored. Keep the active goal until Nav2 finishes or progress
+  // stalls instead of testing unknown cells around that centroid.
+
+  if (robot_is_stuck) {
+    // The blacklist changed after selecting the candidate above.
+    frontier = std::find_if_not(frontiers.begin(), frontiers.end(),
+        [this](const frontier_exploration::Frontier& f) {
+          return goalOnBlacklist(f.centroid);
+        });
+    if (frontier == frontiers.end()) {
+      stop(true);
+      return;
     }
+    target_position = frontier->centroid;
   }
 
   // 🎯 导航决策逻辑：
   // 1. 首次启动时发送导航目标
   // 2. 卡住时重新规划
-  // 3. 当前目标已被探索（可见），切换到新目标
-  // 4. 如果正在导航且没卡住，继续等待
-  // 5. 导航完成后发送新目标
+  // 3. 如果正在导航且没卡住，继续等待
+  // 4. 导航完成后发送新目标
   if (first_goal) {
     RCLCPP_INFO(logger_, "First run, sending initial navigation goal to (%.2f, %.2f)",
                 target_position.x, target_position.y);
   } else if (robot_is_stuck) {
     RCLCPP_INFO(logger_, "Robot stuck, sending new navigation goal to (%.2f, %.2f)",
-                target_position.x, target_position.y);
-  } else if (current_goal_explored) {
-    // 当前目标已被探索，发送新目标
-    RCLCPP_INFO(logger_, "Frontier visible, sending new goal to (%.2f, %.2f)",
                 target_position.x, target_position.y);
   } else if (navigating_) {
     // 正在导航中，等待当前导航完成
@@ -428,13 +405,32 @@ void Explore::makePlan()
   // send goal to move_base if we have something new to pursue
   auto goal = nav2_msgs::action::NavigateToPose::Goal();
   goal.pose.pose.position = target_position;              // 设置目标位置（前沿质心）
-  goal.pose.pose.orientation.w = 1.;                     // 设置朝向（四元数，朝向任意）
+  const double target_yaw = std::atan2(target_position.y - pose.position.y,
+                                      target_position.x - pose.position.x);
+  goal.pose.pose.orientation.z = std::sin(target_yaw / 2.0);
+  goal.pose.pose.orientation.w = std::cos(target_yaw / 2.0);
   goal.pose.header.frame_id = costmap_client_.getGlobalFrameID();  // 坐标系（通常是map）
   goal.pose.header.stamp = this->now();                   // 时间戳
 
   // 配置动作调用选项
   auto send_goal_options =
       rclcpp_action::Client<nav2_msgs::action::NavigateToPose>::SendGoalOptions();
+  const auto generation = ++goal_generation_;
+  send_goal_options.goal_response_callback =
+      [this, generation](NavigationGoalHandle::SharedPtr handle) {
+        if (generation != goal_generation_) {
+          if (handle) {
+            move_base_client_->async_cancel_goal(handle);
+          }
+          return;
+        }
+        navigation_goal_handle_ = handle;
+        if (!handle) {
+          RCLCPP_WARN(logger_, "Navigation goal rejected; retrying on next planning tick");
+          navigating_ = false;
+          has_prev_robot_position_ = false;
+        }
+      };
   // send_goal_options.goal_response_callback =
   // std::bind(&Explore::goal_response_callback, this, _1);
   // send_goal_options.feedback_callback =
@@ -442,9 +438,12 @@ void Explore::makePlan()
 
   // 📋 结果回调函数 - 导航完成后处理
   send_goal_options.result_callback =
-      [this,
+      [this, generation,
        target_position](const NavigationGoalHandle::WrappedResult& result) {
-        reachedGoal(result, target_position);
+        if (generation == goal_generation_) {
+          navigation_goal_handle_.reset();
+          reachedGoal(result, target_position);
+        }
       };
 
   // 🎯 异步发送导航目标到Nav2
@@ -599,7 +598,10 @@ void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
     case rclcpp_action::ResultCode::SUCCEEDED:
       // ✅ 导航成功 - 继续探索下一个前沿
       RCLCPP_INFO(logger_, "[CALLBACK] Goal SUCCEEDED for (%.2f, %.2f)", frontier_goal.x, frontier_goal.y);
+      frontier_blacklist_.push_back(frontier_goal);
       navigating_ = false;
+      has_prev_robot_position_ = false;
+      stuck_count_ = 0;
       break;
 
     case rclcpp_action::ResultCode::ABORTED:
@@ -611,8 +613,9 @@ void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
 
     case rclcpp_action::ResultCode::CANCELED:
       // 🛑 导航被取消 - 可能是我们主动取消（切换目标）
-      RCLCPP_INFO(logger_, "[CALLBACK] Goal CANCELED for (%.2f, %.2f) - keeping navigating_=true", frontier_goal.x, frontier_goal.y);
-      // 不设置 navigating_ = false
+      RCLCPP_INFO(logger_, "[CALLBACK] Goal CANCELED for (%.2f, %.2f); retrying on next tick", frontier_goal.x, frontier_goal.y);
+      navigating_ = false;
+      has_prev_robot_position_ = false;
       return;
 
     default:
@@ -635,11 +638,16 @@ void Explore::start()
 
 void Explore::stop(bool finished_exploring)
 {
+  ++goal_generation_;  // Ignore late results from the previous session/goal.
+  navigating_ = false;
   // 🛑 停止探索
   RCLCPP_INFO(logger_, "Exploration stopped.");
 
-  // 取消所有正在进行的导航目标
-  move_base_client_->async_cancel_all_goals();
+  // Cancel only this exploration goal; a return/manual goal may start next.
+  if (navigation_goal_handle_) {
+    move_base_client_->async_cancel_goal(navigation_goal_handle_);
+    navigation_goal_handle_.reset();
+  }
 
   // 停止探索定时器
   exploring_timer_->cancel();
@@ -662,6 +670,8 @@ void Explore::stop(bool finished_exploring)
 
 void Explore::resume()
 {
+  has_prev_robot_position_ = false;
+  stuck_count_ = 0;
   // ▶️ 恢复探索
   resuming_ = true;  // 设置恢复标志（影响进度检查）
   RCLCPP_INFO(logger_, "Exploration resuming.");

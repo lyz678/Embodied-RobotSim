@@ -1,6 +1,7 @@
 """Run: python3 -m unittest discover -s tests -v (no ROS2/Isaac/PCL)."""
 import ast
 import math
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -16,7 +17,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT/'src/x_bot_localization'), str(ROOT/'src/x_bot/isaac_sim')]
-from mid360_sampling import Packet, POINT, directions
+from mid360_sampling import Packet, POINT, directions, settled_at_rest
 from x_bot_localization.core import matrix, quaternion, transform, decode_cloud, Grid, ray_cells, Health, save_bundle
 
 
@@ -178,6 +179,15 @@ class Mapping(unittest.TestCase):
 
 
 class Readiness(unittest.TestCase):
+    def test_compliant_contact_requires_stationary_pose(self):
+        state = ([0, 0, -.015], [0, 0, 0], [0, 0, 0], [0, 0, 9.81])
+        self.assertTrue(settled_at_rest(*state, .0001))
+        self.assertFalse(settled_at_rest(*state, .012))
+        self.assertFalse(settled_at_rest(*state, math.inf))
+        self.assertFalse(settled_at_rest([0, 0, -.04], *state[1:], .0001))
+        self.assertFalse(settled_at_rest(*state[:3], [0, 0, 8.], .0001))
+        self.assertFalse(settled_at_rest(*state[:3], [0, 0, math.nan], .0001))
+
     def test_stale_invalid_and_future(self):
         h=Health()
         self.assertFalse(h.ready(0,0))
@@ -197,9 +207,23 @@ class Readiness(unittest.TestCase):
 
 
 class Contracts(unittest.TestCase):
+    def test_default_entrypoint_starts_isaac_exploration(self):
+        with tempfile.TemporaryDirectory() as folder:
+            entry = Path(folder)/'start_explore_and_mapping.sh'
+            entry.write_text((ROOT/'start_explore_and_mapping.sh').read_text())
+            (Path(folder)/'start_isaac_demo.sh').write_text('printf "%s\\n" "$@"\n')
+            environment = dict(os.environ)
+            environment.pop('SIM_BACKEND', None)
+            result = subprocess.run(['bash', str(entry)], env=environment,
+                                    check=True, capture_output=True, text=True)
+            self.assertEqual(result.stdout.splitlines(),
+                             ['explore', '--bundle', str(Path(folder)/'maps/room_a'),
+                              '--initial-x', '0.0', '--initial-y', '0.0',
+                              '--initial-yaw', '1.5708'])
+
     def test_python_syntax(self):
         paths=list((ROOT/'src/x_bot/isaac_sim').glob('*.py'))+list((ROOT/'src/x_bot_localization').rglob('*.py'))
-        paths+=list((ROOT/'src/x_bot_localization/scripts').iterdir())
+        paths += [path for path in (ROOT/'src/x_bot_localization/scripts').iterdir() if path.is_file()]
         for path in paths:
             ast.parse(path.read_text(),filename=str(path))
 
@@ -215,8 +239,20 @@ class Contracts(unittest.TestCase):
 
     def test_nav2_limits(self):
         params=yaml.safe_load((ROOT/'src/x_bot_localization/config/nav2_isaac.yaml').read_text())
-        self.assertEqual(params['controller_server']['ros__parameters']['FollowPath']['vx_max'],.5)
-        self.assertEqual(params['velocity_smoother']['ros__parameters']['max_velocity'],[.5,0,1])
+        controller=params['controller_server']['ros__parameters']['FollowPath']
+        limits=params['velocity_smoother']['ros__parameters']['max_velocity']
+        self.assertLessEqual(controller['desired_linear_vel'], limits[0])
+        self.assertLessEqual(controller['rotate_to_heading_angular_vel'], limits[2])
+        self.assertEqual(params['velocity_smoother']['ros__parameters']['max_velocity'],[2.,0,1])
+
+    def test_rviz_goal_tool_has_navigation_panel(self):
+        # GoalTool updates GoalUpdater; Navigation 2 consumes that event and
+        # sends NavigateToPose. A toolbar tool alone cannot start navigation.
+        config = yaml.safe_load((ROOT/'src/x_bot_localization/rviz/localization.rviz').read_text())
+        tools = {tool['Class'] for tool in config['Visualization Manager']['Tools']}
+        panels = {panel['Class'] for panel in config['Panels']}
+        self.assertIn('nav2_rviz_plugins/GoalTool', tools)
+        self.assertIn('nav2_rviz_plugins/Navigation 2', panels)
 
     def test_single_tf_authority(self):
         bridge=(ROOT/'src/x_bot/isaac_sim/ros_bridge.py').read_text()
@@ -260,6 +296,22 @@ class Contracts(unittest.TestCase):
                 names={n.get('name') for n in tree.findall('link')}
                 self.assertEqual('mid360_link' in names,isaac=='true')
                 self.assertEqual('two_d_lidar' in names,isaac=='false')
+                joints = {j.get('name'): j for j in tree.findall('joint')}
+                base_height = float(joints['base_joint'].find('origin').get('xyz').split()[2])
+                self.assertAlmostEqual(base_height, .15 if isaac == 'true' else .12)
+                if isaac == 'true':
+                    # A zero-height footprint must put all four tire bottoms
+                    # on the ground, and the root/chassis mass must stay 70 kg.
+                    for side in ('front_left', 'front_right', 'back_left', 'back_right'):
+                        joint = joints[side + '_wheel_joint']
+                        wheel_z = float(joint.find('origin').get('xyz').split()[2])
+                        wheel = tree.find(f'link[@name="{side}_wheel"]')
+                        radius = float(wheel.find('collision/geometry/cylinder').get('radius'))
+                        self.assertAlmostEqual(base_height + wheel_z - radius, 0.)
+                    masses = [float(tree.find(f'link[@name="{name}"]/inertial/mass').get('value'))
+                              for name in ('base_link', 'chassis_link')]
+                    self.assertAlmostEqual(sum(masses), 70.)
+                    self.assertGreaterEqual(masses[0], 1.)
 
 
 if __name__=='__main__':

@@ -40,7 +40,7 @@ if [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then
 fi
 
 # source 工作空间（如果存在）
-WS_SETUP="${SCRIPT_DIR}/../install/setup.bash"
+WS_SETUP="${SCRIPT_DIR}/install/setup.bash"
 if [ -f "$WS_SETUP" ]; then
   source "$WS_SETUP"
   info "已加载工作空间: $WS_SETUP"

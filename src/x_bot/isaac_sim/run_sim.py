@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import traceback
 from pathlib import Path
 
 from isaacsim import SimulationApp
@@ -75,9 +76,6 @@ def main() -> int:
             app_utils.enable_extension(extension)
         simulation_app.update()
 
-        stage = stage_utils.create_new_stage()
-        build_scene(stage, args.world, args.package_share.resolve())
-
         urdf_path, temp_dir = generate_urdf(args.package_share.resolve(), args.mid360_xyz, args.mid360_rpy)
         robot_usd = import_robot_asset(
             urdf_path,
@@ -87,6 +85,11 @@ def main() -> int:
                 "franka_description": args.franka_share.resolve(),
             },
         )
+        # The URDF importer opens its conversion stages in the global USD
+        # context. Build the simulation stage after conversion so rendering,
+        # physics and the robot reference all use the same active stage.
+        stage = stage_utils.create_new_stage()
+        build_scene(stage, args.world, args.package_share.resolve())
         add_robot_reference(stage, robot_usd, args.x, args.y, args.yaw)
         simulation_app.update()
         while omni.usd.get_context().get_stage_loading_status()[2] > 0:
@@ -95,19 +98,20 @@ def main() -> int:
         articulation = find_articulation_root(stage)
         articulation_path = str(articulation.GetPath())
         configure_joint_drives(stage)
-        create_control_graph(stage, articulation_path, args.controller_config.resolve())
+        create_control_graph(stage, articulation_path, args.controller_config.resolve(), urdf_path)
         create_camera_graphs(stage)
         SimulationManager.setup_simulation(dt=1.0 / 200.0, device="cpu")
         from mid360 import Mid360
         lidar_sensor = Mid360(stage)
+        # Initialize tensor views without advancing the timeline, so the arm
+        # and base start at rest before the first published physics sample.
+        SimulationManager.initialize_physics()
+        set_initial_joint_state(articulation_path)
         if not args.headless:
             ViewportManager.set_camera_view(
                 "/OmniverseKit_Persp", eye=[3.5, 3.5, 2.8], target=[0.0, 0.0, 0.8]
             )
         app_utils.play()
-        for _ in range(4):
-            simulation_app.update()
-        set_initial_joint_state(articulation_path)
 
         carb.log_info(
             f"Embodied-RobotSim Isaac backend ready: world={args.world}, robot={ROBOT_PRIM_PATH}, "
@@ -121,7 +125,7 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     except Exception as error:
-        carb.log_error(f"Embodied-RobotSim Isaac backend failed: {error}")
+        carb.log_error(f"Embodied-RobotSim Isaac backend failed: {error}\n{traceback.format_exc()}")
         return_code = 1
     else:
         return_code = 0

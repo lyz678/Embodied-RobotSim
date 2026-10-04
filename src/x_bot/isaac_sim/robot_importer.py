@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import math
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from pxr import Gf, Usd, UsdGeom, UsdPhysics
+from pxr import Gf, Usd, UsdGeom, UsdPhysics, UsdShade, PhysxSchema
 
 
 ROBOT_PRIM_PATH = "/World/x_bot"
@@ -87,8 +88,18 @@ def import_robot_asset(urdf_path: Path, output_dir: Path, package_paths: dict[st
 def add_robot_reference(stage: Usd.Stage, usd_path: Path, x: float, y: float, yaw: float) -> Usd.Prim:
     robot = stage.DefinePrim(ROBOT_PRIM_PATH, "Xform")
     robot.GetReferences().AddReference(str(usd_path))
+    # Isaac Sim 6.1's asset transformer separates physics into variants and
+    # leaves the variant unselected in the generated asset interface.
+    variants = robot.GetVariantSets()
+    if variants.HasVariantSet("Physics"):
+        physics = variants.GetVariantSet("Physics")
+        if "physx" not in physics.GetVariantNames():
+            raise RuntimeError(f"Imported x_bot asset has no physx Physics variant: {usd_path}")
+        physics.SetVariantSelection("physx")
+        robot.Load()
     xform = UsdGeom.XformCommonAPI(robot)
-    xform.SetTranslate(Gf.Vec3d(x, y, 0.15))
+    # The Isaac URDF places base_footprint at the wheel contact plane.
+    xform.SetTranslate(Gf.Vec3d(x, y, 0.0))
     xform.SetRotate((0.0, 0.0, yaw * 180.0 / 3.141592653589793), UsdGeom.XformCommonAPI.RotationOrderXYZ)
     return robot
 
@@ -113,14 +124,62 @@ def find_articulation_root(stage: Usd.Stage) -> Usd.Prim:
 
 
 def configure_joint_drives(stage: Usd.Stage) -> None:
-    """Use velocity drives for wheels and position drives for arm joints."""
+    """Configure stable tire contacts and wheel/arm/gripper drives."""
+    root = PhysxSchema.PhysxArticulationAPI.Apply(find_articulation_root(stage))
+    root.CreateSolverPositionIterationCountAttr(32)
+    root.CreateSolverVelocityIterationCountAttr(8)
+    root.CreateEnabledSelfCollisionsAttr(False)
+    # Compliant rubber contacts absorb small polygon/contact corrections
+    # instead of transmitting each impulse through the unsuspended chassis.
+    tire_material = UsdShade.Material.Define(stage, "/World/Materials/x_bot_tire")
+    material = UsdPhysics.MaterialAPI.Apply(tire_material.GetPrim())
+    material.CreateStaticFrictionAttr(0.8)
+    material.CreateDynamicFrictionAttr(0.7)
+    material.CreateRestitutionAttr(0.0)
+    rubber = PhysxSchema.PhysxMaterialAPI.Apply(tire_material.GetPrim())
+    rubber.CreateCompliantContactStiffnessAttr(100000.0)
+    rubber.CreateCompliantContactDampingAttr(2000.0)
+    # PhysX's analytic USD cylinders rock and sink for these small, thin
+    # wheels. Use explicit convex tire meshes; keep the visual cylinders.
+    for name in ("front_left_wheel", "front_right_wheel", "back_left_wheel", "back_right_wheel"):
+        for prim in Usd.PrimRange(find_prim(stage, name)):
+            if not prim.IsA(UsdGeom.Cylinder) or not prim.HasAPI(UsdPhysics.CollisionAPI):
+                continue
+            cylinder = UsdGeom.Cylinder(prim)
+            radius, half_width = cylinder.GetRadiusAttr().Get(), cylinder.GetHeightAttr().Get() / 2
+            # Preserve the circular profile using PhysX's full hull budget;
+            # the default 64-vertex budget flattens these tires considerably.
+            count = 128
+            # Start on a horizontal facet, with its support plane exactly at
+            # the nominal tire radius, rather than balancing on a vertex.
+            vertex_radius = radius / math.cos(math.pi/count)
+            points = [Gf.Vec3f(vertex_radius * math.cos((2*i+1)*math.pi/count),
+                              vertex_radius * math.sin((2*i+1)*math.pi/count), z)
+                      for z in (-half_width, half_width) for i in range(count)]
+            faces = [[i, (i+1) % count, (i+1) % count + count, i+count] for i in range(count)]
+            faces += [list(reversed(range(count))), list(range(count, 2*count))]
+            prim.SetTypeName("Mesh")
+            mesh = UsdGeom.Mesh(prim)
+            mesh.CreatePointsAttr(points)
+            mesh.CreateExtentAttr([Gf.Vec3f(-vertex_radius, -vertex_radius, -half_width),
+                                   Gf.Vec3f(vertex_radius, vertex_radius, half_width)])
+            mesh.CreateFaceVertexCountsAttr([len(face) for face in faces])
+            mesh.CreateFaceVertexIndicesAttr([index for face in faces for index in face])
+            mesh.CreateSubdivisionSchemeAttr("none")
+            UsdPhysics.MeshCollisionAPI.Apply(prim).CreateApproximationAttr("convexHull")
+            PhysxSchema.PhysxConvexHullCollisionAPI.Apply(prim).CreateHullVertexLimitAttr(255)
+            UsdShade.MaterialBindingAPI.Apply(prim).Bind(tire_material, materialPurpose="physics")
+            collision = PhysxSchema.PhysxCollisionAPI.Apply(prim)
+            collision.CreateContactOffsetAttr(0.002)
+            collision.CreateRestOffsetAttr(0.0)
     for name in WHEEL_JOINTS:
         joint = find_prim(stage, name)
         drive = UsdPhysics.DriveAPI.Apply(joint, "angular")
         drive.CreateTypeAttr("force")
         drive.CreateStiffnessAttr(0.0)
-        drive.CreateDampingAttr(80.0)
-        drive.CreateMaxForceAttr(20000.0)
+        # Bounded velocity-servo torque prevents violent contact corrections.
+        drive.CreateDampingAttr(8.0)
+        drive.CreateMaxForceAttr(12.0)
     for name in ARM_JOINTS:
         joint = find_prim(stage, name)
         drive = UsdPhysics.DriveAPI.Apply(joint, "angular")
@@ -147,6 +206,8 @@ def set_initial_joint_state(articulation_path: str) -> None:
     indices = articulation.get_dof_indices(names).numpy().flatten().tolist()
     articulation.set_dof_positions(INITIAL_JOINT_POSITIONS, dof_indices=indices)
     articulation.set_dof_position_targets(INITIAL_JOINT_POSITIONS, dof_indices=indices)
+    articulation.set_dof_velocities(0.0)
+    articulation.set_velocities([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
 
 
 def cleanup_temp_dir(path: Path) -> None:

@@ -4,7 +4,7 @@
 [![Isaac Sim](https://img.shields.io/badge/Isaac%20Sim-6.1-76B900.svg)](https://docs.isaacsim.omniverse.nvidia.com/6.1.0/)
 [![English](https://img.shields.io/badge/🌍_Language-English-blue.svg)](README_en.md)
 
-Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空间。差速移动平台搭载 **Franka FR3 机械臂**、激光雷达及 RGB-D 深度传感器：Gazebo 使用 2D LiDAR，Isaac Sim 使用顶部 MID-360 近似仿真和 FAST-LIO 定位链路。项目集成建图、导航、视觉感知、移动抓取以及 **Qwen3 大语言模型驱动的具身智能闭环**，支持自然语言指令和 Web UI 控制。
+Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空间。差速移动平台搭载 **Franka FR3 机械臂**、激光雷达及 RGB-D 深度传感器，Isaac Sim 使用顶部 MID-360 近似仿真和 FAST-LIO 定位链路。项目集成建图、导航、视觉感知、移动抓取以及 **Qwen3 大语言模型驱动的具身智能闭环**，支持自然语言指令和 Web UI 控制。
 
 ## 🎬 演示 (Demos)
 
@@ -18,16 +18,15 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 
 *基于 YOLOE 与 GraspNet 的自主抓取*
 
-### 3. 仿真环境 (Gazebo / Isaac Sim)
-![GazeboSim](assets/GazeboSim.gif)
+### 3. 仿真环境 (Isaac Sim)
 
-*室内场景仿真：Gazebo Harmonic 与 Isaac Sim 6.1 共用 Nav2、MoveIt 2 和感知栈*
+*Isaac Sim 6.1 室内场景仿真，集成 Nav2、MoveIt 2 和感知栈*
 
 ## 🌟 主要特性
 
-* **双仿真后端:** 同一套 Xacro、ROS 2 话题和控制器接口可运行于 Gazebo Harmonic 或 Isaac Sim 6.1。
+* **Isaac Sim 仿真:** 使用 Xacro 导入机器人，连接 ROS 2 话题和控制器接口。
 * **移动抓取操作 (Mobile Manipulation):** 为 Franka FR3 机械臂提供 MoveIt 2 集成，同时支持稳定的四轮差速移动底盘控制。
-* **自主探索与建图:** Gazebo 使用 Cartographer；Isaac 使用 MID-360 + FAST-LIO 建图、已知地图 ICP 定位，配合 `m-explore-ros2` 进行前沿探索。
+* **自主探索与建图:** 使用 MID-360 + FAST-LIO 建图、已知地图 ICP 定位，配合 `m-explore-ros2` 进行前沿探索。
 * **先进感知系统 (视觉):** 
   * **YOLOE 感知推理:** 支持输入文本提示词 (Text Prompt) 的实时多目标检测 (`yoloe_infer`)。
 * **语义占据栅格与任意物体抓取:** 
@@ -44,7 +43,7 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 
 | 功能包 | 用途 |
 |---------|---------|
-| `x_bot` | 核心机器人包：包含 URDF、Gazebo/Isaac Sim 后端、场景、启动脚本、导航配置以及 MoveIt 机械臂控制节点 (`robot_actions`)。 |
+| `x_bot` | 核心机器人包：包含 URDF、Isaac Sim 后端、场景、启动脚本、导航配置以及 MoveIt 机械臂控制节点 (`robot_actions`)。 |
 | `yoloe_infer` | 基于 TensorRT 加速的 YOLOE 文本提示目标检测。 |
 | `graspnet_infer` | 基于 TensorRT 的 GraspNet 推理封装，支持直接从杂乱点云场景中计算物体的 6-DoF 抓取位姿。 |
 | `m-explore-ros2` | 适配 ROS 2 的 `explore_lite` 包，为建图过程提供完全自主的探索与地图边界拓展能力。 |
@@ -59,8 +58,7 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 |---------|---------|
 | **操作系统** | [Ubuntu 24.04 (Noble)](https://ubuntu.com/download/desktop) |
 | **ROS 2** | [Jazzy Jalisco](https://docs.ros.org/en/jazzy/installation.html) ([一键安装](https://fishros.org.cn/forum/topic/20)) |
-| **Gazebo** | [Harmonic (Gz Sim 8)](https://gazebosim.org/docs/harmonic/install) |
-| **Isaac Sim（可选后端）** | 6.1，启用 ROS 2 Bridge、URDF Importer、experimental physics sensors 与 ros2_control 扩展 |
+| **Isaac Sim** | 6.1，启用 ROS 2 Bridge、URDF Importer、experimental physics sensors 与 ros2_control 扩展 |
 | **CUDA** | [13.1](https://developer.nvidia.com/cuda-toolkit) |
 | **TensorRT** | [10.14.1.48](https://developer.nvidia.com/tensorrt) |
 | **Python** | 3.12+ |
@@ -87,7 +85,7 @@ Embodied-RobotSim 是一个基于 ROS 2 (Jazzy) 构建的综合仿真工作空�
 
 ## 🚀 快速启动指南
 
-> **重要**：ROS 2 Jazzy 是公共依赖。仿真器可在 Gazebo Harmonic 与 Isaac Sim 6.1 中二选一；运行完整视觉抓取功能时仍需 CUDA、TensorRT 和对应模型。
+> **重要**：ROS 2 Jazzy 是公共依赖。所有仿真启动脚本统一使用 Isaac Sim 6.1；运行完整视觉抓取功能时仍需 CUDA、TensorRT 和对应模型。
 
 ### 1. 编译工作空间
 
@@ -99,7 +97,7 @@ bash src/graspnet_infer/tensorrt_plugins/build.sh
 # 2. 安装依赖扩展包 (rosdep 及额外系统包)
 rosdep update
 rosdep install --from-paths src --ignore-src -r -y
-sudo apt install ros-jazzy-gz-ros2-control ros-jazzy-moveit-ros-perception
+sudo apt install ros-jazzy-moveit-ros-perception
 
 # 3. 构建所有功能包
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
@@ -108,9 +106,9 @@ source install/setup.bash
 
 ### 2. Isaac Sim 6.1：顶部 MID-360 + FAST-LIO
 
-> **验证范围：** 当前完成代码与离线测试；开发机没有 ROS 2 Jazzy、Isaac Sim 或 PCL，尚未完成 ROS/C++ 编译和目标机联调。不要把下面的启动入口理解为已实测通过的运行结果。
+> **验证范围：** 已在目标机完成 ROS/C++ 构建、Isaac Sim 6.1 静止 IMU/TF、Nav2 运动与连续前沿目标探索联测。已知地图 ICP、完整场景覆盖和抓取/LLM 全流程仍需分别验证。
 
-只替换 **Isaac 后端**：Gazebo 保留原来的二维雷达、Cartographer/AMCL 和无参数启动方式。Isaac 仍通过共享 Xacro 导入机器人，保留 FR3、RGB-D、Nav2、MoveIt 和五种演示入口。
+五个演示入口统一使用 **Isaac Sim**，通过共享 Xacro 导入机器人，集成 FR3、RGB-D、Nav2、MoveIt。
 
 #### 传感器与定位设计
 
@@ -118,6 +116,7 @@ source install/setup.bash
 * 使用 **PhysX 碰撞几何射线**近似非重复扫描：水平 360°、垂直 -7°～52°、0.1～40 m、200,000 条射线/仿真秒、10 Hz 点云。不是官方 Livox 光学模型，也不是 RTX 材质回波模型；强度为常量，遮挡由碰撞几何决定，自身命中丢弃。40 m 为当前仿真截断距离。
 * 每个 200 Hz 物理步真实采集 1,000 条射线，每 100 ms 组帧。点的 `offset_time` 是实际物理采样时刻，**5 ms 分辨率**，不是给瞬时点云伪造逐点时间。Python 射线查询可能显著低于实时，目标机必须检查实时系数。
 * IMU 200 Hz，发布含重力反作用的比力（静止时约 +9.81 m/s²），不将世界真值姿态送给 FAST-LIO。控制器更新率也设为 200 Hz。
+* Isaac 的 `base_footprint` 位于轮胎接地平面（出生高度为 0）；机械臂初始关节姿态和零速度在时间线启动前设置。轮胎使用凸包碰撞体，机器人连续静止稳定 0.5 秒后才发布雷达和 IMU，避免启动瞬态干扰 FAST-LIO 的重力初始化。导航坐标链为 `map → odom → base_footprint → mid360_imu_link`，其中 `odom` 原点是初始底盘位姿，不是雷达的安装高度。
 * FAST-LIO 提供局部激光惯性里程计；**已知三维地图定位另外通过多分辨率 ICP 完成**，需要配置初始位姿或 RViz「2D Pose Estimate」，不支持无先验全局搜索。建图没有回环优化，长程漂移仍可能存在。
 
 | 输出 / TF | 来源 |
@@ -130,11 +129,13 @@ source install/setup.bash
 | `/localization/ready` / `/localization/status` | 可运行状态 / 配准质量与失败原因 |
 | `/debug/ground_truth/odom` | 仅调试真值，无导航 TF，不参与定位 |
 
-FAST-LIO 的原生 `camera_init/body` TF 被重映射到私有话题，避免重复 TF 发布者。机器人内部 TF 由 robot_state_publisher 发布。底盘命令保持 `/x_bot/cmd_vel`，通过健康门控变为 `/x_bot/cmd_vel_safe`；定位无效、数据过期或时钟回退时停止底盘，仿真端还有命令超时保护。速度限制为前进 0.5 m/s、后退 0.2 m/s、转向 1 rad/s。门控不接管已执行中的机械臂轨迹。
+FAST-LIO 的原生 `camera_init/body` TF 被重映射到私有话题，避免重复 TF 发布者。机器人内部 TF 由 robot_state_publisher 发布。底盘命令保持 `/x_bot/cmd_vel`，通过健康门控变为 `/x_bot/cmd_vel_safe`；定位无效、数据过期或时钟回退时停止底盘，仿真端还有命令超时保护。速度限制为前进 2 m/s、后退 0.2 m/s、转向 1 rad/s。门控不接管已执行中的机械臂轨迹。
+
+RViz 的 `FAST-LIO Point Cloud` 显示 `/fastlio/cloud_odom`，按高度着色并保留 10 秒点云；`Navigation 2` 面板负责将 `Nav2 Goal` 工具选取的位姿发送给导航动作服务器。手动建图导航可将 `start_explore_and_mapping.sh` 顶部的 `AUTO_EXPLORE` 改为 `false` 后直接运行，避免自动探索抢占手动目标。已有探索会话可向 `/explore/resume` 发布 `std_msgs/msg/Bool` 的 `data: false` 暂停探索，再设置 Goal；发布 `data: true` 恢复自动探索。
 
 #### 目标机安装
 
-**Isaac 底盘稳定性：** 四个车轮使用固定的左右映射，由一个关节控制节点统一写入；命令按仿真时间做联动斜坡，线加速度上限 0.5 m/s²、角加速度上限 1 rad/s²，饱和时保持目标曲率。零命令、失效和超时停车绕过斜坡立即归零，正常原地调头仍可使用。这是针对突变和多写入路径的预防性优化，尚未在目标机复现/确认转圈根因。若仍转圈，请同时记录 `/x_bot/cmd_vel`、`/x_bot/cmd_vel_safe`、`/odom` 和轮关节速度，区分导航主动转向与底盘执行偏差；Gazebo 控制配置不受此改动影响。
+**Isaac 底盘稳定性：** 四个车轮由一个关节控制节点统一写入，使用模拟 IMU 角速度 PI 闭环补偿四轮滑移。目标命令按仿真时间做联动斜坡，线加速度上限 1 m/s²、角加速度上限 1 rad/s²。零命令、失效和超时立即归零并清空积分，支持原地转向。调试时可对照 `/x_bot/cmd_vel`、`/x_bot/cmd_vel_safe`、`/odom` 和轮关节速度。
 
 需要 Ubuntu 24.04、ROS 2 Jazzy、Isaac Sim 6.1 的 ROS 2 Bridge、URDF Importer、experimental physics sensors 和 ros2_control 扩展。无需本地安装 Livox 硬件 SDK。
 
@@ -154,37 +155,39 @@ export ISAAC_SIM_PATH=/path/to/isaac-sim
 #### 先建图，再定位
 
 ```bash
-# 建图；目录必须尚不存在，保存时不会覆盖已有地图
-./start_explore_and_mapping.sh --sim isaac --bundle maps/room_a
+# 建图，默认输出 maps/room_a；保存时不会覆盖已有地图
+./start_explore_and_mapping.sh
 
 # 另一终端，待走过所需区域后保存配套地图
 source install/setup.bash
 ros2 service call /localization/save_map std_srvs/srv/Trigger '{}'
 
 # 停止本次运行后，使用刚保存的三维地图定位
-./start_navigation.sh --sim isaac --bundle maps/room_a \
-  --initial-x 0.0 --initial-y 0.0 --initial-yaw 0.0
+./start_navigation.sh
 ```
 
-地图目录包含 `map.pcd`、`map.pgm`、`map.yaml`、`bundle.json`。栅格保留未观测区域为 unknown，利用传感器原点到障碍物的射线清空自由区，不把所有空白区域标成可通行。PCD 与二维地图共享配置的 `map` 原点。旧的 Gazebo 地图或 `isaac_simple_room.yaml` **不能单独用于这条定位链路**；仓库不提供伪造的「已验证」PCD。
+地图目录包含 `map.pcd`、`map.pgm`、`map.yaml`、`bundle.json`。栅格保留未观测区域为 unknown，利用传感器原点到障碍物的射线清空自由区，不把所有空白区域标成可通行。PCD 与二维地图共享配置的 `map` 原点。仅有二维 YAML/PGM 地图或 `isaac_simple_room.yaml` **不能单独用于这条定位链路**；仓库不提供伪造的「已验证」PCD。
 
-`--initial-x/y/yaw` 表示 **base_footprint 在 map 中的先验位姿**（yaw 为弧度），不是 IMU 位姿或真值订阅。探索默认 yaw=1.5708、导航默认 yaw=0，和各自示例的初始朝向一致。改变仿真出生点或换地图时必须相应提供先验；不确定时在已启动的 RViz 中重新设定。
+脚本顶部的 `INITIAL_X/Y/YAW` 表示 **base_footprint 在 map 中的先验位姿**（yaw 为弧度），不是 IMU 位姿或真值订阅。探索默认 yaw=1.5708、导航默认 yaw=0，和各自示例的初始朝向一致。改变仿真出生点或换地图时修改脚本顶部的初始位姿；不确定时在已启动的 RViz 中重新设定。
 
 | 入口 | 模式 / 场景 |
 |---|---|
-| `start_explore_and_mapping.sh --sim isaac --bundle DIR` | 建图 / simple_room |
-| `start_pick_and_place_demo.sh --sim isaac --bundle DIR` | 建图定位 / manipulation_test |
-| `start_navigation.sh --sim isaac --bundle DIR` | 已知地图定位 / simple_room |
-| `start_navigation_and_pick_demo.sh --sim isaac --bundle DIR` | 已知地图定位 + 抓取 / simple_room |
-| `start_llm_agent.sh --sim isaac --bundle DIR` | 已知地图定位 + LLM / simple_room |
+| `start_explore_and_mapping.sh` | 建图 / simple_room |
+| `start_pick_and_place_demo.sh` | 建图定位 / manipulation_test |
+| `start_navigation.sh` | 已知地图定位 / simple_room |
+| `start_navigation_and_pick_demo.sh` | 已知地图定位 + 抓取 / simple_room |
+| `start_llm_agent.sh` | 已知地图定位 + LLM / simple_room |
 
-支持 `--headless`、`--build` 和 `SIM_BACKEND=isaac`。导航与任务入口等待 ready，180 秒内未就绪则不启动；ICP 连续失败 5 次后需要重新给初始位姿。定位丢失会停止底盘。暂停时停止运动；重置仿真时钟后必须重启 FAST-LIO、适配器和导航链路，不能沿用旧估计器状态。启动脚本不再自动杀掉已有仿真，请先结束上一轮会话。原 `stop_robot_sim.sh` 是全局清理脚本，可能影响其他 ROS 会话并删除日志，谨慎使用。
+直接执行脚本即可，无需命令行参数。默认配置写在各入口顶部：`MAP_BUNDLE`、`INITIAL_X/Y/YAW`、`HEADLESS`、`BUILD`，探索另有 `AUTO_EXPLORE`。默认地图为 `maps/room_a`，单独抓取为 `maps/manipulation_test`。导航类入口在缺少配套地图时自动切换实时建图；已有地图时使用 ICP 定位。导航与任务入口等待 ready，180 秒内未就绪则不启动；ICP 连续失败 5 次后需要重新给初始位姿。定位丢失会停止底盘。暂停时停止运动；重置仿真时钟后必须重启 FAST-LIO、适配器和导航链路，不能沿用旧估计器状态。启动脚本先执行 `stop_robot_sim.sh`，清理上一轮进程并关闭带项目标记的服务终端。该脚本会清理所有 ROS 会话并删除日志。
+
+Isaac 导航的直行目标速度为 **2 m/s（按仿真时间）**，Nav2 平滑器、定位安全节点和底盘驱动采用相同前进上限；线加速度为 1 m/s²、减速度为 2 m/s²。弯道、障碍附近和接近目标时仍会减速。实际观看速度还取决于仿真实时倍率，2 m/s 的配置不会自动让仿真达到实时运行。
+
 
 导航抓取/LLM 的既有任务包含硬编码地图坐标，换地图或原点后必须检查/修改目标点；定位 ready 不代表目标点在新地图中有效。
 
 低层调试：
 ```bash
-./start_isaac_sim.sh --world simple_room --headless
+./start_isaac_sim.sh
 ros2 launch x_bot isaac_controllers.launch.py
 ros2 launch x_bot_localization localization.launch.py mode:=mapping bundle:=/absolute/path/new_map
 ```
@@ -229,16 +232,16 @@ trtexec --onnx=src/graspnet_infer/graspnet.onnx \
 
 ### 4. 运行演示案例
 
-项目根目录提供了 5 个“一键启动”脚本。以下命令默认使用 Gazebo；增加 `--sim isaac` 即可切换到 Isaac Sim。
+项目根目录提供了 5 个“一键启动”脚本，全部无参数直接使用 Isaac Sim。探索默认开启自动探索；导航、移动抓取和 LLM 默认读取 `maps/room_a`，没有配套地图时自动使用实时建图。
 
 #### 模式 1: 自主探索建图 (Explore & Mapping)
-使用 `explore_lite` 在完全未知的 Gazebo 房间中进行自主探索，同步运行 Cartographer 生成高精度地图与 YOLOE / OctoMap 语义网格。
+无参数启动 Isaac Sim、FAST-LIO、Nav2 和 `explore_lite`。自动探索等待定位就绪和 Nav2 导航服务器激活，随后自行选择前沿目标并持续建图。Isaac 的 Nav2 使用 Regulated Pure Pursuit，先对齐路径方向再前进；进度检测同时考虑平移和转向。底盘用模拟 IMU 角速度闭环补偿四轮滑移，保留速度和加速度限制。每次启动先执行 `stop_robot_sim.sh` 并关闭上次服务窗口。
 ```bash
 ./start_explore_and_mapping.sh
 ```
 
 #### 模式 2: 静态导航 (Static Navigation)
-由于场景已被扫描完毕，可以使用 Nav2 和预存地图依靠 Cartographer amcl 进行无缝导航与巡逻：
+使用 Nav2、FAST-LIO 与已保存地图的 ICP 定位进行导航与巡逻：
 ```bash
 ./start_navigation.sh
 ```
@@ -282,8 +285,8 @@ trtexec --onnx=src/graspnet_infer/graspnet.onnx \
 
 ## 🤝 自定义与贡献建议
 
-* **仿真世界构建:** Gazebo SDF 位于 `src/x_bot/worlds/`；Isaac 程序化 USD 场景位于 `src/x_bot/isaac_sim/scene_builder.py`。
-* **导航调优:** Nav2 和 Cartographer 的核心配置文件存放在 `src/x_bot/config/`，可根据使用环境调整。
+* **仿真世界构建:** 场景结构文件位于 `src/x_bot/worlds/`；Isaac 程序化 USD 场景位于 `src/x_bot/isaac_sim/scene_builder.py`。
+* **导航调优:** Isaac 的 Nav2 和 FAST-LIO 配置位于 `src/x_bot_localization/config/`。
 ## 👏 致谢 (Acknowledgements)
 
 本项目的开发离不开以下开源社区和仓库的贡献，在此深表感谢：
@@ -292,5 +295,5 @@ trtexec --onnx=src/graspnet_infer/graspnet.onnx \
 * **[GraspNet-Baseline](https://github.com/graspnet/graspnet-baseline):** 6-DoF 抓取位姿估计的基石。
 * **[m-explore-ros2](https://github.com/robo-friends/m-explore-ros2):** ROS 2 的自主探索组件。
 * **[franka_ros2](https://github.com/frankaemika/franka_ros2) & [franka_description](https://github.com/frankaemika/franka_description):** Franka Emika 提供的官方 ROS 2 支持。
-* **[Cartographer](https://github.com/cartographer-project/cartographer_ros):** 高效的 2D/3D SLAM 解决方案。
+* **[FAST-LIO](https://github.com/hku-mars/FAST_LIO):** 激光惯性里程计与建图。
 * **[bcr_bot](https://github.com/blackcoffeerobotics/bcr_bot):** 差速移动底盘仿真参考。
