@@ -57,10 +57,11 @@ controller_server:
     FollowPath:
       plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
       desired_linear_vel: 2.0
-      lookahead_dist: 0.6
-      min_lookahead_dist: 0.6
-      max_lookahead_dist: 1.2
-      lookahead_time: 0.6
+      # Shorter carrots reduce corner cutting in the original room's doors.
+      lookahead_dist: 0.4
+      min_lookahead_dist: 0.3
+      max_lookahead_dist: 0.8
+      lookahead_time: 0.4
       use_velocity_scaled_lookahead_dist: true
       transform_tolerance: 0.5
       use_rotate_to_heading: true
@@ -94,16 +95,18 @@ local_costmap:
       rolling_window: true                    # 是否使用滚动窗口（跟随机器人移动）
       width: 10                               # 代价地图宽度（米）
       height: 10                              # 代价地图高度（米）
-      resolution: 0.06                        # 代价地图分辨率（米/像素）
-      robot_radius: 0.45
+      resolution: 0.04                        # 减少窄通道障碍格的离散误差
+      # Stowed collision envelope is 0.3686 m; retain >5 cm radial margin
+      # plus explicit padding. Global and local geometry must agree.
+      robot_radius: 0.42
+      footprint_padding: 0.01
       # /x_bot/scan is already height-filtered and projected into 2D.
       # VoxelLayer rejects a scan origin slightly below z=0 after LIO drift,
       # leaving stale lethal cells that make RPP stop indefinitely.
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: true   # FAST-LIO 使用 transient local QoS
-        map_topic: /map
+      # Historical SLAM occupancy belongs in the global planner. Keeping it
+      # locally reintroduces old lethal cells after laser/footprint clearing,
+      # blocking spin and backup even when the current scan is clear.
+      plugins: ["obstacle_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -122,9 +125,9 @@ local_costmap:
           clearing: true
           marking: true
           data_type: "LaserScan"
-          raytrace_max_range: 3.0
+          raytrace_max_range: 6.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
+          obstacle_max_range: 5.0
           obstacle_min_range: 0.0
       always_send_full_costmap: true
 
@@ -138,7 +141,8 @@ global_costmap:
       publish_frequency: 5.0                  # 提高发布频率以支持 explore_lite
       global_frame: map
       robot_base_frame: base_link
-      robot_radius: 0.45
+      robot_radius: 0.42
+      footprint_padding: 0.01
       resolution: 0.05                        # 匹配 FAST-LIO 地图分辨率
       rolling_window: false                   # 不使用滚动窗口，使用全局地图
       track_unknown_space: true
@@ -269,7 +273,8 @@ collision_monitor:
     base_frame_id: "base_link"
     odom_frame_id: "odom"
     cmd_vel_in_topic: "/cmd_vel_smoothed"
-    cmd_vel_out_topic: "/x_bot/cmd_vel"
+    # Separate automatic commands from manual /cmd_vel and /x_bot/cmd_vel.
+    cmd_vel_out_topic: "/x_bot/cmd_vel_nav"
     state_topic: "collision_monitor_state"
     transform_tolerance: 0.5
     source_timeout: 1.0
@@ -282,11 +287,13 @@ collision_monitor:
       type: "polygon"
       action_type: "approach"
       footprint_topic: "local_costmap/published_footprint"
-      time_before_collision: 1.2
+      # Slow before the physical acceleration/deceleration ramp can overshoot
+      # the footprint and make both spin and backup recovery impossible.
+      time_before_collision: 2.0
       simulation_time_step: 0.1
       min_points: 6
       visualize: False
-      enabled: false
+      enabled: true
     observation_sources: ["scan"]
     scan:
       type: "scan"

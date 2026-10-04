@@ -1,0 +1,33 @@
+{
+  "topic": "/cmd_vel",
+  "command_m_s": -0.15,
+  "duration_wall_s": 8,
+  "start_xy": [
+    0.8396055180170707,
+    -2.5837349225445094
+  ],
+  "end_xy": [
+    0.4837607306881125,
+    -2.0959536267093872
+  ],
+  "displacement_m": 0.6037848169967365,
+  "reverse_safe_samples": 160,
+  "localization_ready": true,
+  "validation": "Live Isaac Sim: manual /cmd_vel overrides autonomous navigation, reverse commands reach the safety output and move the robot away from the wall.",
+  "post_recovery": {
+    "nearest_scan_range_m": 1.0074,
+    "localization_ready": true,
+    "safe_velocity": [
+      0,
+      0
+    ],
+    "exploration_paused": true,
+    "active_navigation_canceled": true
+  },
+  "rviz_subscribed_paths": [
+    "/plan",
+    "/received_global_plan"
+  ],
+  "offline_tests_passed": 61,
+  "limitation": "Automatic exploration still encountered a wall collision after enabling approach slowdown; full autonomous recovery is not validated."
+}

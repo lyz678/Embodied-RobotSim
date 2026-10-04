@@ -18,7 +18,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT/'src/x_bot_localization'), str(ROOT/'src/x_bot/isaac_sim')]
 from mid360_sampling import Packet, POINT, directions, direction_array, settled_at_rest
-from x_bot_localization.core import matrix, quaternion, transform, decode_cloud, Grid, ray_cells, Health, save_bundle
+from x_bot_localization.core import matrix, quaternion, transform, decode_cloud, Grid, ray_cells, Health, save_bundle, VelocityArbiter
 
 
 def cloud(data, endian=False):
@@ -193,6 +193,28 @@ class Mapping(unittest.TestCase):
         self.assertEqual(image[0,2],100)
 
 
+class CommandPriority(unittest.TestCase):
+    def test_manual_overrides_navigation_and_stops_before_resuming(self):
+        arbiter = VelocityArbiter()
+        arbiter.update('navigation', 1., .1, 10.)
+        self.assertEqual(arbiter.select(10.1), ((1., .1), 'navigation'))
+        arbiter.update('manual', -.15, 0., 10.2)
+        arbiter.update('navigation', 2., .5, 10.3)
+        self.assertEqual(arbiter.select(10.4), ((-.15, 0.), 'manual'))
+        self.assertEqual(arbiter.select(10.8), ((0., 0.), 'manual_stop'))
+        arbiter.update('navigation', .2, 0., 12.3)
+        self.assertEqual(arbiter.select(12.4), ((.2, 0.), 'navigation'))
+
+    def test_manual_stop_invalid_input_and_deadman(self):
+        arbiter = VelocityArbiter()
+        arbiter.update('navigation', 1., 0., 1.)
+        arbiter.update('manual', 0., 0., 1.1)
+        self.assertEqual(arbiter.select(1.2), ((0., 0.), 'manual'))
+        arbiter.update('manual', float('nan'), 1., 1.3)
+        self.assertEqual(arbiter.select(1.4), ((0., 0.), 'manual'))
+        self.assertEqual(arbiter.select(4.), ((0., 0.), 'idle'))
+
+
 class Readiness(unittest.TestCase):
     def test_compliant_contact_requires_stationary_pose(self):
         state = ([0, 0, -.015], [0, 0, 0], [0, 0, 0], [0, 0, 9.81])
@@ -235,7 +257,9 @@ class Contracts(unittest.TestCase):
             self.assertEqual(result.stdout.splitlines(),
                              ['explore', '--world', 'simple_room', '--bundle', str(Path(folder)/'maps/gazebo_simple_room'),
                               '--initial-x', '0.0', '--initial-y', '0.0',
-                              '--initial-yaw', '1.5708', '--build'])
+                              '--initial-yaw', '1.5708', '--depth-source', 'lsm',
+                              '--lsm-config', str(Path(folder)/'src/LSM_depth_infer/config/config.yaml'),
+                              '--lsm-params', str(Path(folder)/'src/LSM_depth_infer/config/isaac_params.yaml'), '--build'])
 
     def test_pick_entrypoint_uses_main_manipulation_scene(self):
         with tempfile.TemporaryDirectory() as folder:

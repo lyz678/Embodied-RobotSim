@@ -25,6 +25,12 @@ fi
 INITIAL_X=0.0
 INITIAL_Y=0.0
 INITIAL_YAW=""
+DEPTH_SOURCE=isaac
+[[ "$MODE" == explore ]] && DEPTH_SOURCE=lsm
+LSM_CONFIG_FILE="$ROOT_DIR/src/LSM_depth_infer/config/config.yaml"
+LSM_PARAMS_FILE="$ROOT_DIR/src/LSM_depth_infer/config/isaac_params.yaml"
+DEPTH_IMAGE_TOPIC=""
+OCTOMAP_CLOUD_TOPIC=""
 while (($#)); do
     case "$1" in
         --headless) HEADLESS=true ;;
@@ -35,10 +41,33 @@ while (($#)); do
         --initial-x) shift; INITIAL_X="${1:?缺少 x}" ;;
         --initial-y) shift; INITIAL_Y="${1:?缺少 y}" ;;
         --initial-yaw) shift; INITIAL_YAW="${1:?缺少 yaw}" ;;
+        --depth-source) shift; DEPTH_SOURCE="${1:?缺少深度来源 lsm/isaac}" ;;
+        --lsm-config) shift; LSM_CONFIG_FILE="${1:?缺少 LSM 配置文件}" ;;
+        --lsm-params) shift; LSM_PARAMS_FILE="${1:?缺少 LSM ROS 参数文件}" ;;
+        --depth-image-topic) shift; DEPTH_IMAGE_TOPIC="${1:?缺少深度图话题}" ;;
+        --octomap-cloud-topic) shift; OCTOMAP_CLOUD_TOPIC="${1:?缺少 OctoMap 点云话题}" ;;
         *.yaml) echo "Isaac 定位需要配套 PCD 地图目录，请用 --bundle；不能只用旧二维 YAML 地图。" >&2; exit 2 ;;
         *) echo "未知参数：$1" >&2; exit 2 ;;
     esac
     shift
+done
+
+case "$DEPTH_SOURCE" in
+    lsm)
+        DEPTH_IMAGE_TOPIC="${DEPTH_IMAGE_TOPIC:-/x_bot/camera_left/nn_depth}"
+        OCTOMAP_CLOUD_TOPIC="${OCTOMAP_CLOUD_TOPIC:-/x_bot/camera_left/nn_pointcloud}"
+        for config_path in "$LSM_CONFIG_FILE" "$LSM_PARAMS_FILE"; do
+            [[ -f "$config_path" && "$config_path" != *"'"* && "$config_path" != *$'\n'* ]] || { echo "LSM 配置文件无效：$config_path" >&2; exit 2; }
+        done
+        ;;
+    isaac)
+        DEPTH_IMAGE_TOPIC="${DEPTH_IMAGE_TOPIC:-/x_bot/camera_left/depth/image_raw}"
+        OCTOMAP_CLOUD_TOPIC="${OCTOMAP_CLOUD_TOPIC:-/yoloe_multi_text_prompt/pointcloud_colored}"
+        ;;
+    *) echo "深度来源必须为 lsm 或 isaac" >&2; exit 2 ;;
+esac
+for topic in "$DEPTH_IMAGE_TOPIC" "$OCTOMAP_CLOUD_TOPIC"; do
+    [[ "$topic" =~ ^/[a-zA-Z0-9_/]+$ ]] || { echo "无效 ROS 话题：$topic" >&2; exit 2; }
 done
 
 cd "$ROOT_DIR"
@@ -88,6 +117,9 @@ for package in x_bot x_bot_localization livox_ros_driver2 fast_lio; do
         exit 1
     fi
 done
+if [[ "$DEPTH_SOURCE" == lsm ]]; then
+    ros2 pkg prefix stereo_matching >/dev/null 2>&1 || { echo "错误：缺少 stereo_matching，请先构建 LSM_depth_infer 或使用 --build。" >&2; exit 1; }
+fi
 if [[ "$MODE" == explore && "$AUTO_EXPLORE" == true ]]; then
     for package in explore_lite nav2_bringup nav2_regulated_pure_pursuit_controller; do
         ros2 pkg prefix "$package" >/dev/null 2>&1 || { echo "错误：缺少自动探索依赖 $package" >&2; exit 1; }
@@ -179,8 +211,13 @@ launch_navigation() {
 }
 
 launch_yoloe() {
-    launch_window "YOLOE Vision" "$ROS_ENV && ros2 run yoloe_infer ros2_trt_infer_text_prompt_multi_node --ros-args -p use_sim_time:=true -p config_path:='$ROOT_DIR/src/yoloe_infer/configs/config.yaml'"
+    launch_window "YOLOE Vision" "$ROS_ENV && ros2 run yoloe_infer ros2_trt_infer_text_prompt_multi_node --ros-args -p use_sim_time:=true -p config_path:='$ROOT_DIR/src/yoloe_infer/configs/config.yaml' -p depth_topic:='$DEPTH_IMAGE_TOPIC'"
 }
+
+if [[ "$DEPTH_SOURCE" == lsm ]]; then
+    echo "深度来源：LSM 双目推理；OctoMap 点云：$OCTOMAP_CLOUD_TOPIC"
+    launch_window "LSM Stereo Depth" "$ROS_ENV && ros2 launch stereo_matching stereo_matching.launch.py config_file:='$LSM_CONFIG_FILE' params_file:='$LSM_PARAMS_FILE' use_sim_time:=true use_rviz:=false"
+fi
 
 launch_manipulation_stack() {
     launch_window "MoveIt" "$ROS_ENV && ros2 launch x_bot move_group.launch.py use_sim_time:=true use_rviz:=true"
@@ -204,7 +241,7 @@ case "$MODE" in
         else
             echo "手动建图导航模式：在 RViz 中设置 Nav2 Goal。"
         fi
-        launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py"
+        launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py cloud_topic:='$OCTOMAP_CLOUD_TOPIC'"
         ;;
     navigation)
         launch_navigation

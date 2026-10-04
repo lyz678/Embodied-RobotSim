@@ -1,0 +1,109 @@
+{
+  "date": "2026-10-04",
+  "world": "main simple_room",
+  "map_source": "MID360 3D lidar -> FAST-LIO deskewed cloud -> height-filtered ray-cleared 2D occupancy grid",
+  "local_scan_source": "Same per-frame FAST-LIO deskewed cloud, projected into base_footprint LaserScan; no RGB-D input",
+  "changes": {
+    "local_layers": [
+      "obstacle_layer",
+      "inflation_layer"
+    ],
+    "global_layers": [
+      "static_layer",
+      "obstacle_layer",
+      "inflation_layer"
+    ],
+    "nav_radius_m": 0.42,
+    "footprint_padding_m": 0.01,
+    "stowed_collision_envelope_m": 0.3686,
+    "local_resolution_m": 0.04,
+    "lookahead_min_max_m": [
+      0.3,
+      0.8
+    ],
+    "max_forward_speed_m_s": 2.0
+  },
+  "offline_tests_passed": 61,
+  "successful_goals": [
+    "[INFO] [1791105107.510577298] [explore_node]: [CALLBACK] Goal SUCCEEDED for (-0.07, -2.83)",
+    "[INFO] [1791105175.537262897] [explore_node]: [CALLBACK] Goal SUCCEEDED for (4.91, 0.97)"
+  ],
+  "controller_collision_warnings": 12,
+  "controller_patience_exceeded": 0,
+  "local_obstacle_consistency_sample": {
+    "scan_min_range_m": 2.3930413722991943,
+    "lethal_cell_center_distance_m": 2.3705065457059664
+  },
+  "telemetry": [
+    {
+      "wall_seconds": 27.186196999002277,
+      "sim_seconds": 16.46,
+      "real_time_factor": 0.6054543046459965,
+      "localization_ready": true,
+      "path_m": 3.4912756087334387,
+      "mean_speed_wall_m_s": 0.12842088979424254,
+      "mean_speed_sim_m_s": 0.2121066590968067,
+      "peak_speed_sim_m_s": 0.7395437581152345,
+      "max_command_m_s": 1.5218505909746418,
+      "rates_per_sim_second": {
+        "imu": 200.546780072904,
+        "lidar": 10.08505467800729,
+        "camera": 21.14216281895504
+      },
+      "lidar_mean_points": 9725.83734939759,
+      "lidar_offset_range_ns": [
+        0,
+        95000000
+      ]
+    },
+    {
+      "wall_seconds": 27.28206387300088,
+      "sim_seconds": 16.405,
+      "real_time_factor": 0.6013108127143879,
+      "localization_ready": true,
+      "path_m": 2.4095205384017144,
+      "mean_speed_wall_m_s": 0.08831885115503471,
+      "mean_speed_sim_m_s": 0.14687720441339314,
+      "peak_speed_sim_m_s": 0.6941076438414324,
+      "max_command_m_s": 1.5250543673807788,
+      "rates_per_sim_second": {
+        "imu": 188.8448643706187,
+        "lidar": 9.448338921060651,
+        "camera": 20.054861322767447
+      },
+      "lidar_mean_points": 12567.122580645162,
+      "lidar_offset_range_ns": [
+        0,
+        95000000
+      ]
+    },
+    {
+      "wall_seconds": 27.039713311001833,
+      "sim_seconds": 16.325000000000017,
+      "real_time_factor": 0.6037416082129005,
+      "localization_ready": true,
+      "path_m": 1.200450657213151,
+      "mean_speed_wall_m_s": 0.044395835244477815,
+      "mean_speed_sim_m_s": 0.07353449661336292,
+      "peak_speed_sim_m_s": 0.20833625135294873,
+      "max_command_m_s": 0.31701937012933873,
+      "rates_per_sim_second": {
+        "imu": 200.85758039816213,
+        "lidar": 10.10719754977028,
+        "camera": 17.335375191424177
+      },
+      "lidar_mean_points": 9482.781818181818,
+      "lidar_offset_range_ns": [
+        0,
+        95000000
+      ]
+    }
+  ],
+  "limit": "Observed two successful exploration goals, automatic 2D map save and successful return on the first attempt. Independent room coverage validation and paired PCD/YAML bundle autosave are not established by this run.",
+  "returned_to_start": true,
+  "map_saved": true,
+  "explore_no_frontiers_reported": true,
+  "return_log": [
+    "[INFO] [1791105289.166128530] [explore_node]: \u2705 Successfully returned to initial pose!"
+  ]
+}

@@ -125,7 +125,7 @@ source install/setup.bash
 | `/livox/lidar` / `/livox/imu` | 外部转换节点的 Livox CustomMsg / Isaac 物理 IMU |
 | `/odom`、`/x_bot/odom`、`odom → base_footprint` | FAST-LIO 适配器，包含 IMU 到底盘的外参变换 |
 | `map → odom` | 建图时为配置原点；定位时仅 ICP 配准节点发布 |
-| `/map` / `/x_bot/scan` | 5 cm 射线清空占据栅格 / 去畸变三维点云派生二维扫描 |
+| `/map` / `/x_bot/scan` | FAST-LIO 三维点云的 5 cm 射线清空占据栅格 / 同一去畸变点云派生二维扫描 |
 | `/localization/ready` / `/localization/status` | 可运行状态 / 配准质量与失败原因 |
 | `/debug/ground_truth/odom` | 仅调试真值，无导航 TF，不参与定位 |
 
@@ -186,6 +186,10 @@ Isaac 导航的直行目标速度为 **2 m/s（按仿真时间）**，Nav2 平�
 
 本机 Office 实测：原 Python 逐射线版本实时倍率约 0.20，原生 C++ 批量雷达约 0.51（约 2.5 倍）。物理、轮控制和 IMU 仍为 200 Hz，雷达仍为每步 1000 条射线、10 Hz 点云，采样时间偏移为 0–95 ms。渲染目标频率为 30 Hz；GPU 物理与当前 ros2_control 的 CPU 张量接口不兼容，因此保留 CPU 物理。倍率会随视野、探索路径和其他进程负载变化，未达到实时运行。更快的无界面运行可将入口顶部 `HEADLESS=true`，相机与 ROS 感知仍运行，停用额外的观察视口。
 
+探索入口默认使用 `src/LSM_depth_infer`（ROS 包 `stereo_matching`）进行双目深度推理。OctoMap 订阅 `/x_bot/camera_left/nn_pointcloud`，YOLOE 使用 `/x_bot/camera_left/nn_depth`；二维 `/map` 和 FAST-LIO 定位仍使用 MID360。脚本顶部暴露 `DEPTH_SOURCE`、`LSM_CONFIG_FILE`、`LSM_PARAMS_FILE` 和下游输入话题。引擎/相机/话题设置在 `config/config.yaml`，深度范围和滤波的 ROS 参数覆盖在 `config/isaac_params.yaml`；修改后重启。详见 [LSM 配置接口](src/LSM_depth_infer/README.md)。
+
+RViz 定位窗口默认显示橙色 `/plan` 全局导航路径和青色 `/received_global_plan` 控制器路径；收到导航目标并规划成功后出现。手动速度指令可发送到 `/cmd_vel` 或 `/x_bot/cmd_vel`，优先于自动导航。停止发送 0.5 秒后底盘停下，最后一次手动指令 2 秒后恢复自动导航；定位未就绪时两种输入均停止。自动导航经过接近障碍减速，再经定位安全节点输出到 `/x_bot/cmd_vel_safe`，避免自动零速度覆盖手动指令。
+
 测量当前运行性能（系统 ROS Python）：
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -193,7 +197,7 @@ python3 scripts/measure_isaac_performance.py --seconds 30 --output /tmp/isaac_pe
 ```
 输出仿真实时倍率、按仿真时间计的 IMU/雷达/相机消息频率、指令速度和真实位移速度。`ISAAC_PROFILE_SECONDS=20 ./start_explore_and_mapping.sh` 可生成 `/tmp/isaac_performance_profile.txt`；性能采样本身会增加开销，比较速度时应关闭采样。内部运行脚本支持 `--lidar-backend python` 对比参考算法。优化依据：[NVIDIA 性能手册](https://docs.isaacsim.omniverse.nvidia.com/latest/reference_material/sim_performance_optimization_handbook.html)。
 
-底盘和顶板的 Isaac 视觉/碰撞轮廓统一为 96 段圆形，底盘半径 0.35 m，收拢机械臂后的碰撞包络约 0.369 m；Nav2 保留 0.45 m 安全半径。RViz 的 `Navigation Safety Footprint` 以绿色显示真实规划足迹。`/x_bot/scan` 是已做高度筛选的二维虚拟激光，因此局部地图使用 ObstacleLayer，避免 FAST-LIO 的小幅负 z 漂移使 VoxelLayer 无法清除旧障碍。
+底盘和顶板的 Isaac 视觉/碰撞轮廓统一为 96 段圆形，底盘半径 0.35 m，收拢机械臂后的碰撞包络约 0.369 m；Nav2 全局/局部安全半径均为 0.42 m，另加 0.01 m 足迹 padding，保留约 6 cm 的径向余量。RViz 的 `Navigation Safety Footprint` 以绿色显示真实规划足迹。`/x_bot/scan` 是已做高度筛选的二维虚拟激光，因此局部地图仅使用最新虚拟扫描的 ObstacleLayer 和 InflationLayer，分辨率为 4 cm；历史 `/map` 保留在全局规划地图，避免历史占据格重新覆盖局部清除结果。扫描未观测方向不当作空闲射线清除。
 
 导航抓取/LLM 的既有任务包含硬编码地图坐标，换地图或原点后必须检查/修改目标点；定位 ready 不代表目标点在新地图中有效。
 

@@ -183,6 +183,10 @@ Isaac navigation targets **2 m/s in simulation time** on straight paths. Nav2 sm
 
 On this machine in Office, the original Python per-ray implementation measured about 0.20 real-time factor versus about 0.51 with native C++ batched raycasting (roughly 2.5x). Physics, wheel control and IMU remain at 200 Hz; lidar retains 1000 rays per physics step, 10 Hz clouds, and real sample offsets of 0–95 ms. Rendering targets 30 Hz. GPU physics was incompatible with the current ros2_control CPU tensor interface, so physics remains on CPU. These results depend on view, path and process load and are still below real time. Set `HEADLESS=true` in an entry point to disable the additional observer viewport while keeping cameras and ROS perception active.
 
+Exploration defaults to LSM stereo depth (`src/LSM_depth_infer`, ROS package `stereo_matching`). OctoMap consumes `/x_bot/camera_left/nn_pointcloud` and YOLOE consumes `/x_bot/camera_left/nn_depth`; FAST-LIO and `/map` still use MID360. The entry script exposes depth source, base YAML, ROS parameter overrides and downstream topic names. Configure the engine/calibration/topics in `config/config.yaml` and depth/filter overrides in `config/isaac_params.yaml`, then restart. See [LSM configuration](src/LSM_depth_infer/README.md).
+
+The localization RViz window displays the orange global `/plan` and cyan controller `/received_global_plan` once a navigation goal produces a path. Manual velocity commands on `/cmd_vel` or `/x_bot/cmd_vel` take priority over navigation. After 0.5 seconds without manual input, the base stops; navigation resumes 2 seconds after the last manual command. Both inputs stop when localization is not ready. Automatic commands pass through obstacle-approach slowdown before the localization safety gate publishes `/x_bot/cmd_vel_safe`.
+
 Read-only telemetry using system ROS Python:
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -190,7 +194,7 @@ python3 scripts/measure_isaac_performance.py --seconds 30 --output /tmp/isaac_pe
 ```
 This reports real-time factor, sensor message rates per simulation second, commands, and actual travel speed. `ISAAC_PROFILE_SECONDS=20 ./start_explore_and_mapping.sh` writes `/tmp/isaac_performance_profile.txt`; profiling adds overhead, so disable it for speed measurements. The internal runtime accepts `--lidar-backend python` for reference comparisons. See the [NVIDIA performance handbook](https://docs.isaacsim.omniverse.nvidia.com/latest/reference_material/sim_performance_optimization_handbook.html).
 
-Isaac chassis/roof visuals and colliders share 96-segment circular rings. The chassis radius is 0.35 m and the stowed-arm collision envelope is about 0.369 m; Nav2 retains a 0.45 m safety radius. RViz displays the planning footprint in green under `Navigation Safety Footprint`. Since `/x_bot/scan` is a height-filtered 2D virtual scan, the local costmap uses ObstacleLayer to avoid failed VoxelLayer clearing when FAST-LIO z drifts slightly below zero.
+Isaac chassis/roof visuals and colliders share 96-segment circular rings. The chassis radius is 0.35 m and the stowed-arm collision envelope is about 0.369 m; Both Nav2 costmaps use a 0.42 m safety radius plus 0.01 m footprint padding, retaining about 6 cm of radial clearance. RViz displays the planning footprint in green under `Navigation Safety Footprint`. Since `/x_bot/scan` is a height-filtered 2D virtual scan, the 4 cm local costmap uses only current scan obstacles and inflation; historical `/map` occupancy remains in the global planner, preventing stale static cells from overwriting local clearing. Unobserved scan directions are not treated as free rays.
 
 Existing navigation-and-pick/LLM tasks include hardcoded map goals: review them after changing maps/origins. Localization readiness does not establish that a task goal is valid for the new map.
 

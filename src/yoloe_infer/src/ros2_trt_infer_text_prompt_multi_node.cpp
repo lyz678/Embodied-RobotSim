@@ -53,7 +53,7 @@ YoloeMultiTextPromptNode::YoloeMultiTextPromptNode()
     float mad_threshold = config["mad_threshold"].as<float>();
     bool use_mad_filter = config["use_mad_filter"].as<bool>(true);
     std::string image_topic = config["image_topic"].as<std::string>();
-    std::string depth_topic = config["depth_topic"].as<std::string>();
+    std::string depth_topic = this->declare_parameter<std::string>("depth_topic", config["depth_topic"].as<std::string>());
     std::string info_topic = config["camera_info_topic"].as<std::string>();
     int num_classes = config["num_classes"].as<int>();
     float min_depth = config["min_depth"].as<float>(0.0f);

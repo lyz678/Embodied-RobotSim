@@ -1,0 +1,12 @@
+# Startup ROS overrides; the base config.yaml supplies engine, calibration,
+# image size, CUDA device and topics. Change either file, then restart the node.
+stereo_matching_node:
+  ros__parameters:
+    min_depth: 0.2
+    max_depth: 8.0
+    enable_pointcloud: true
+    use_confidence_filter: true
+    filter_percentile: 20.0
+    use_gradient_filter: true
+    gradient_threshold: 2.0
+    gradient_dilation_size: 0

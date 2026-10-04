@@ -6,6 +6,7 @@ This maintains a persistent 3D occupancy map in the global coordinate frame (odo
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -43,7 +44,7 @@ def generate_launch_description():
         remappings=[
             # Remap point cloud topic to camera depth points
             # ('cloud_in', '/x_bot/camera_left/depth/points'),
-            ('cloud_in', '/yoloe_multi_text_prompt/pointcloud_colored'),
+            ('cloud_in', LaunchConfiguration('cloud_topic')),
         ],
     )
     
@@ -52,12 +53,15 @@ def generate_launch_description():
         package='rviz2',
         executable='rviz2',
         name='rviz2_octomap',
+        condition=IfCondition(use_rviz),
         output='screen',
         arguments=['-d', rviz_config],
         parameters=[{'use_sim_time': use_sim_time}],
     )
     
     return LaunchDescription([
+        DeclareLaunchArgument('cloud_topic', default_value='/yoloe_multi_text_prompt/pointcloud_colored',
+                              description='Colored PointCloud2 input; exploration defaults to LSM nn_pointcloud'),
         DeclareLaunchArgument(
             'use_sim_time',
             default_value='true',
