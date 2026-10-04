@@ -13,7 +13,7 @@ from isaacsim import SimulationApp
 
 def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--world", choices=("simple_room", "manipulation_test"), default="simple_room")
+    parser.add_argument("--world", choices=("office", "simple_room", "legacy_room", "manipulation_test"), default="office")
     parser.add_argument("--package-share", type=Path, required=True)
     parser.add_argument("--franka-share", type=Path, required=True)
     parser.add_argument("--controller-config", type=Path, required=True)
@@ -90,7 +90,8 @@ def main() -> int:
         # physics and the robot reference all use the same active stage.
         stage = stage_utils.create_new_stage()
         build_scene(stage, args.world, args.package_share.resolve())
-        add_robot_reference(stage, robot_usd, args.x, args.y, args.yaw)
+        add_robot_reference(stage, robot_usd, args.x, args.y, args.yaw,
+                            z=0.01 if args.world == "office" else 0.0)
         simulation_app.update()
         while omni.usd.get_context().get_stage_loading_status()[2] > 0:
             simulation_app.update()

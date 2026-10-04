@@ -85,7 +85,7 @@ def import_robot_asset(urdf_path: Path, output_dir: Path, package_paths: dict[st
     return Path(str(output))
 
 
-def add_robot_reference(stage: Usd.Stage, usd_path: Path, x: float, y: float, yaw: float) -> Usd.Prim:
+def add_robot_reference(stage: Usd.Stage, usd_path: Path, x: float, y: float, yaw: float, z: float = 0.0) -> Usd.Prim:
     robot = stage.DefinePrim(ROBOT_PRIM_PATH, "Xform")
     robot.GetReferences().AddReference(str(usd_path))
     # Isaac Sim 6.1's asset transformer separates physics into variants and
@@ -99,7 +99,7 @@ def add_robot_reference(stage: Usd.Stage, usd_path: Path, x: float, y: float, ya
         robot.Load()
     xform = UsdGeom.XformCommonAPI(robot)
     # The Isaac URDF places base_footprint at the wheel contact plane.
-    xform.SetTranslate(Gf.Vec3d(x, y, 0.0))
+    xform.SetTranslate(Gf.Vec3d(x, y, z))
     xform.SetRotate((0.0, 0.0, yaw * 180.0 / 3.141592653589793), UsdGeom.XformCommonAPI.RotationOrderXYZ)
     return robot
 

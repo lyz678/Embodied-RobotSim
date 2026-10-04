@@ -217,9 +217,19 @@ class Contracts(unittest.TestCase):
             result = subprocess.run(['bash', str(entry)], env=environment,
                                     check=True, capture_output=True, text=True)
             self.assertEqual(result.stdout.splitlines(),
-                             ['explore', '--bundle', str(Path(folder)/'maps/room_a'),
+                             ['explore', '--world', 'office', '--bundle', str(Path(folder)/'maps/office'),
                               '--initial-x', '0.0', '--initial-y', '0.0',
                               '--initial-yaw', '1.5708'])
+
+    def test_pick_entrypoint_uses_downloaded_simple_room(self):
+        with tempfile.TemporaryDirectory() as folder:
+            entry = Path(folder)/'start_pick_and_place_demo.sh'
+            entry.write_text((ROOT/'start_pick_and_place_demo.sh').read_text())
+            (Path(folder)/'start_isaac_demo.sh').write_text('printf "%s\\n" "$@"\n')
+            result = subprocess.run(['bash', str(entry)], check=True, capture_output=True, text=True)
+            self.assertEqual(result.stdout.splitlines(),
+                             ['pick', '--world', 'simple_room', '--bundle', str(Path(folder)/'maps/simple_room_pick'),
+                              '--initial-x', '0.0', '--initial-y', '0.0', '--initial-yaw', '0.0'])
 
     def test_python_syntax(self):
         paths=list((ROOT/'src/x_bot/isaac_sim').glob('*.py'))+list((ROOT/'src/x_bot_localization').rglob('*.py'))

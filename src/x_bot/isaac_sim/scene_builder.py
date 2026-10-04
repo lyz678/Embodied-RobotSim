@@ -7,6 +7,7 @@ large Gazebo model library is intentionally not required by this backend.
 from __future__ import annotations
 
 import math
+import os
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -205,6 +206,67 @@ def build_manipulation_test(stage: Usd.Stage, _package_share: Path) -> None:
     add_cylinder(stage, "/World/Scene/furniture/trash_bin", 0.22, 0.55, (0.0, -0.81, 0.275), (0.12, 0.12, 0.12), semantic_class="trash bin")
 
 
+def _assets_root() -> Path:
+    return Path(os.environ.get("ISAAC_ASSETS_PATH", str(Path.home() / "isaacsim_assets/6.1")))
+
+
+def _reference_environment(stage: Usd.Stage, folder: str, filename: str) -> Usd.Prim:
+    asset = _assets_root() / folder / filename
+    if not asset.is_file():
+        raise FileNotFoundError(f"Missing downloaded Isaac environment: {asset}; run scripts/download_isaac_environments.py with Isaac python.sh")
+    prim = UsdGeom.Xform.Define(stage, "/World/Scene/Environment").GetPrim()
+    prim.GetReferences().AddReference(str(asset))
+    return prim
+
+
+def _main_grasp_object(stage: Usd.Stage, name: str, xy: tuple[float, float], floor: float, yaw: float, mass: float) -> None:
+    asset = _assets_root() / "PickObjects" / f"{name}.usd"
+    if not asset.is_file():
+        raise FileNotFoundError(f"Missing converted main-branch grasp object: {asset}")
+    body = UsdGeom.Xform.Define(stage, f"/World/Scene/objects/{name}").GetPrim()
+    _set_transform(body, (xy[0], xy[1], floor), (0.0, 0.0, yaw))
+    UsdPhysics.RigidBodyAPI.Apply(body)
+    UsdPhysics.MassAPI.Apply(body).CreateMassAttr(mass)
+    body.CreateAttribute("semantic:class", Sdf.ValueTypeNames.String).Set(name)
+    visual = UsdGeom.Xform.Define(stage, f"{body.GetPath()}/model").GetPrim()
+    visual.GetReferences().AddReference(str(asset))
+    for prim in Usd.PrimRange(visual):
+        if prim.IsA(UsdGeom.Mesh):
+            UsdPhysics.CollisionAPI.Apply(prim)
+            UsdPhysics.MeshCollisionAPI.Apply(prim).CreateApproximationAttr("convexHull")
+
+
+def build_office(stage: Usd.Stage) -> None:
+    _reference_environment(stage, "Office", "office.usd")
+
+
+def build_official_simple_room(stage: Usd.Stage) -> None:
+    environment = _reference_environment(stage, "Simple_Room", "simple_room.usd")
+    # The official scene's floor is at -0.7695 m. Normalize it to z=0.
+    _set_transform(environment, (0.0, 0.0, 0.7695))
+    table = stage.GetPrimAtPath(f"{environment.GetPath()}/table_low_327")
+    if not table:
+        raise RuntimeError("Downloaded Simple Room is missing its expected table")
+    # Reuse its textured table, orienting it like main's manipulation_test.
+    table.GetAttribute("xformOp:translate").Set(Gf.Vec3d(0.801, 0.0, -0.7695))
+    table.GetAttribute("xformOp:rotateZYX").Set(Gf.Vec3d(0.0, 0.0, 90.0))
+    table.GetAttribute("xformOp:scale").Set(Gf.Vec3d(0.5, 0.8, 1.15))
+    top = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default", "render"]).ComputeWorldBound(table).ComputeAlignedRange().GetMax()[2]
+    # Same meshes, xy positions and yaw as main's grasping test.
+    _main_grasp_object(stage, "coke", (0.710, -0.224), top + 0.002, 2.77149, 0.35)
+    _main_grasp_object(stage, "cup", (0.654, 0.038), top + 0.002, -1.01751, 0.25)
+    _main_grasp_object(stage, "book", (0.641, 0.304), top + 0.002, -0.10202, 0.4)
+    # Open bin under main's place pose; no solid top blocking released objects.
+    center = (-0.02, -0.81)
+    add_cylinder(stage, "/World/Scene/furniture/trash_bin/bottom", 0.22, 0.02,
+                 (center[0], center[1], 0.01), (0.12, 0.12, 0.12))
+    for i in range(24):
+        angle = i * 2.0 * math.pi / 24
+        add_box(stage, f"/World/Scene/furniture/trash_bin/wall_{i}", (0.06, 0.02, 0.55),
+                (center[0] + 0.22*math.cos(angle), center[1] + 0.22*math.sin(angle), 0.275),
+                (0.12, 0.12, 0.12), (0.0, 0.0, angle + math.pi/2))
+
+
 def build_scene(stage: Usd.Stage, world_name: str, package_share: Path) -> None:
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
@@ -212,12 +274,16 @@ def build_scene(stage: Usd.Stage, world_name: str, package_share: Path) -> None:
     stage.SetDefaultPrim(world.GetPrim())
     UsdGeom.Xform.Define(stage, "/World/Scene")
     UsdGeom.Xform.Define(stage, "/World/Lights")
-    if world_name == "simple_room":
+    if world_name == "office":
+        build_office(stage)
+    elif world_name == "simple_room":
+        build_official_simple_room(stage)
+    elif world_name == "legacy_room":
         build_simple_room(stage, package_share)
     elif world_name == "manipulation_test":
         build_manipulation_test(stage, package_share)
     else:
         raise ValueError(
             f"Unsupported Isaac Sim world '{world_name}'. "
-            "Supported worlds: simple_room, manipulation_test"
+            "Supported worlds: office, simple_room, legacy_room, manipulation_test"
         )

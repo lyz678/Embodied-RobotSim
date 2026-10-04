@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 直接运行时的默认场景；演示入口会用自身配置覆盖这些值。
-WORLD=simple_room
+WORLD=office
 INITIAL_X=0.0
 INITIAL_Y=0.0
 INITIAL_YAW=0.0

@@ -8,7 +8,7 @@ if (($#)); then shift; fi
 case "$MODE" in
     explore|navigation|pick|navigation_pick|llm) ;;
     *)
-        echo "用法：$0 {explore|navigation|pick|navigation_pick|llm} [--headless] [--build] [--no-explore] [--bundle 地图目录] [--initial-x X --initial-y Y --initial-yaw RAD]" >&2
+        echo "用法：$0 {explore|navigation|pick|navigation_pick|llm} [--world 场景] [--headless] [--build] [--no-explore] [--bundle 地图目录] [--initial-x X --initial-y Y --initial-yaw RAD]" >&2
         exit 2
         ;;
 esac
@@ -17,7 +17,14 @@ HEADLESS=false
 BUILD=false
 AUTO_EXPLORE=true
 BUNDLE="$ROOT_DIR/maps/room_a"
-[[ "$MODE" == pick ]] && BUNDLE="$ROOT_DIR/maps/manipulation_test"
+WORLD=legacy_room
+if [[ "$MODE" == explore ]]; then
+    WORLD=office
+    BUNDLE="$ROOT_DIR/maps/office"
+elif [[ "$MODE" == pick ]]; then
+    WORLD=simple_room
+    BUNDLE="$ROOT_DIR/maps/simple_room_pick"
+fi
 INITIAL_X=0.0
 INITIAL_Y=0.0
 INITIAL_YAW=""
@@ -27,6 +34,7 @@ while (($#)); do
         --build) BUILD=true ;;
         --no-explore) AUTO_EXPLORE=false ;;
         --bundle) shift; BUNDLE="${1:?--bundle 缺少目录}" ;;
+        --world) shift; WORLD="${1:?--world 缺少场景}" ;;
         --initial-x) shift; INITIAL_X="${1:?缺少 x}" ;;
         --initial-y) shift; INITIAL_Y="${1:?缺少 y}" ;;
         --initial-yaw) shift; INITIAL_YAW="${1:?缺少 yaw}" ;;
@@ -122,16 +130,28 @@ launch_window() {
     fi
 }
 
-WORLD="simple_room"
 YAW="0.0"
 if [[ "$MODE" == "pick" ]]; then
-    WORLD="manipulation_test"
+    YAW="0.0"
 elif [[ "$MODE" == "explore" ]]; then
     YAW="1.5708"
 elif [[ "$MODE" == "llm" ]]; then
     YAW="1.5708"
 fi
 INITIAL_YAW="${INITIAL_YAW:-$YAW}"
+case "$WORLD" in
+    office|simple_room|legacy_room|manipulation_test) ;;
+    *) echo "不支持的 Isaac 场景：$WORLD" >&2; exit 2 ;;
+esac
+ASSETS_PATH="${ISAAC_ASSETS_PATH:-$HOME/isaacsim_assets/6.1}"
+if [[ "$WORLD" == office || "$WORLD" == simple_room ]]; then
+    ASSET_FILE="$ASSETS_PATH/Office/office.usd"
+    [[ "$WORLD" == simple_room ]] && ASSET_FILE="$ASSETS_PATH/Simple_Room/simple_room.usd"
+    if [[ ! -f "$ASSET_FILE" ]]; then
+        echo "缺少本地场景资产：$ASSET_FILE；请用 Isaac python.sh 执行 scripts/download_isaac_environments.py。" >&2
+        exit 1
+    fi
+fi
 for coordinate in "$INITIAL_X" "$INITIAL_Y" "$INITIAL_YAW"; do
     [[ "$coordinate" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || { echo "初始位姿必须为有限十进制数" >&2; exit 2; }
 done
