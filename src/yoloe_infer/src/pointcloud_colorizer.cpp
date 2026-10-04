@@ -3,6 +3,7 @@
 #include <cmath>
 #include <numeric>
 #include <algorithm>
+#include <cstring>
 #include <tf2/LinearMath/Quaternion.h>
 
 namespace yoloe_infer {
@@ -32,6 +33,46 @@ void PointCloudColorizer::process(
 
     // 3. Generate Point Cloud
     generate_pointcloud(depth_image, color_image, info_msg, cloud);
+}
+
+sensor_msgs::msg::PointCloud2 PointCloudColorizer::semantic_cloud(
+    const cv::Mat& depth, const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info,
+    const std::vector<Detection>& detections, const std_msgs::msg::Header& header) {
+    cv::Mat colors(depth.size(), CV_8UC3, default_color_);
+    cv::Mat scores = cv::Mat::zeros(depth.size(), CV_32F);
+    for (const auto& det : detections) {
+        if (!std::isfinite(det.conf) || det.conf <= 0 || !color_mapping_.count(det.class_id)) continue;
+        FilteredDepthData filtered;
+        if (!extract_filtered_depth(det, depth, filtered)) continue;
+        const float k = .6745f / (filtered.mad + 1e-6f);
+        for (int y=0; y<filtered.roi.height; ++y) for (int x=0; x<filtered.roi.width; ++x) {
+            int u=filtered.roi.x+x, v=filtered.roi.y+y;
+            float d=depth.at<float>(v,u);
+            if (det.mask.at<uint8_t>(y,x) && std::isfinite(d) && d>min_depth_ &&
+                (!use_mad_filter_ || std::abs(d-filtered.median_depth)*k<mad_threshold_) &&
+                det.conf>scores.at<float>(v,u)) {
+                colors.at<cv::Vec3b>(v,u)=color_mapping_.at(det.class_id);
+                scores.at<float>(v,u)=det.conf;
+            }
+        }
+    }
+    image_geometry::PinholeCameraModel camera; camera.fromCameraInfo(info);
+    sensor_msgs::msg::PointCloud2 cloud; cloud.header=header; cloud.height=1; cloud.is_bigendian=false; cloud.is_dense=true;
+    for (const auto& entry : std::vector<std::pair<std::string,uint8_t>>{
+        {"x",7},{"y",7},{"z",7},{"rgb",6},{"confidence",7}}) {
+        sensor_msgs::msg::PointField field; field.name=entry.first; field.offset=cloud.fields.size()*4;
+        field.datatype=entry.second; field.count=1; cloud.fields.push_back(field);
+    }
+    cloud.point_step=20; cloud.data.reserve(depth.total()*20);
+    for (int v=0;v<depth.rows;++v) for(int u=0;u<depth.cols;++u) {
+        float d=depth.at<float>(v,u); if(!std::isfinite(d)||d<=min_depth_)continue;
+        auto ray=camera.projectPixelTo3dRay(cv::Point2d(u,v));
+        float values[5]={float(ray.x*d),float(ray.y*d),float(ray.z*d),0,scores.at<float>(v,u)};
+        auto c=colors.at<cv::Vec3b>(v,u);uint32_t rgb=(uint32_t(c[2])<<16)|(uint32_t(c[1])<<8)|c[0];
+        std::memcpy(&values[3],&rgb,4);auto offset=cloud.data.size();cloud.data.resize(offset+20);
+        std::memcpy(cloud.data.data()+offset,values,20);
+    }
+    cloud.width=cloud.data.size()/20;cloud.row_step=cloud.data.size();return cloud;
 }
 
 bool PointCloudColorizer::extract_filtered_depth(

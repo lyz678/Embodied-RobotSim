@@ -1,0 +1,146 @@
+{
+  "scene": "simple_room (main Gazebo room migrated to Isaac Sim)",
+  "depth_source": "isaac",
+  "map_frame": "odom",
+  "resolution_m": 0.1,
+  "runtime": {
+    "messages": {
+      "/semantic_map/voxels": 23,
+      "/octomap_full": 24,
+      "/semantic_map/diagnostics": 32,
+      "/yoloe_multi_text_prompt/pointcloud_semantic": 52
+    },
+    "voxel_samples": [
+      {
+        "occupied_voxels": 11751,
+        "colors": {
+          "0x8080": 132,
+          "0xff8080": 140,
+          "0xffa500": 243,
+          "0xffffff": 11236
+        }
+      },
+      {
+        "occupied_voxels": 12435,
+        "colors": {
+          "0x8080": 132,
+          "0xff8080": 140,
+          "0xffa500": 243,
+          "0xffffff": 11920
+        }
+      },
+      {
+        "occupied_voxels": 12407,
+        "colors": {
+          "0x8080": 132,
+          "0xff8080": 140,
+          "0xffa500": 243,
+          "0xffffff": 11892
+        }
+      },
+      {
+        "occupied_voxels": 11994,
+        "colors": {
+          "0x8080": 132,
+          "0xff8080": 140,
+          "0xffa500": 243,
+          "0xffffff": 11479
+        }
+      },
+      {
+        "occupied_voxels": 11772,
+        "colors": {
+          "0x8080": 132,
+          "0xff8080": 140,
+          "0xffa500": 243,
+          "0xffffff": 11257
+        }
+      },
+      {
+        "occupied_voxels": 11581,
+        "colors": {
+          "0x8080": 132,
+          "0xff8080": 140,
+          "0xffa500": 243,
+          "0xffffff": 11066
+        }
+      },
+      {
+        "occupied_voxels": 0,
+        "colors": {}
+      },
+      {
+        "occupied_voxels": 11581,
+        "colors": {
+          "0x8080": 132,
+          "0xff8080": 140,
+          "0xffa500": 243,
+          "0xffffff": 11066
+        }
+      }
+    ],
+    "octomap_export": {
+      "id": "ColorOcTree",
+      "binary": false,
+      "bytes": 1729896,
+      "resolution": 0.1,
+      "frame": "odom"
+    },
+    "diagnostics": {
+      "integrated_frames": "75",
+      "dropped_frames": "50",
+      "errors": "1",
+      "voxels": "185607",
+      "gpu_ms": "38.212736",
+      "integration_ms": "88.373385",
+      "scratch_bytes_upper_bound": "40763400"
+    },
+    "diagnostic_level": 0,
+    "input_fields": [
+      "x",
+      "y",
+      "z",
+      "rgb",
+      "confidence"
+    ],
+    "input_points": 370172,
+    "real_rays_recorded": 370172,
+    "save_clear_load_equal": true,
+    "cloud_subscribers": [
+      "validate_semantic_cuda_map",
+      "semantic_voxel_map"
+    ]
+  },
+  "raycast_real_cloud": {
+    "rays": 370172,
+    "free_voxels": 33687,
+    "cpu_ms": 240.304,
+    "gpu_ms": 62.0328,
+    "scratch_bytes_upper_bound": 41943048,
+    "equal": true
+  },
+  "raycast_synthetic": {
+    "rays": 40007,
+    "free_voxels": 182609,
+    "cpu_ms": 89.639,
+    "gpu_ms": 14.27,
+    "scratch_bytes_upper_bound": 58064904,
+    "equal": true
+  },
+  "checks": {
+    "workspace_packages_built": 14,
+    "offline_tests_passed": 61,
+    "semantic_core_ctest_passed": true,
+    "shell_syntax_passed": true,
+    "git_diff_check_passed": true
+  },
+  "notes": [
+    "Single benchmark runs on a running simulator; timing varies with GPU load.",
+    "CPU and CUDA free voxel sets match exactly, including real timestamped TF-transformed cloud.",
+    "Runtime verifies confirmed class colors, ColorOcTree output, clear to zero occupied voxels and exact save/load round trip of occupied voxel coordinates, colors, semantic confidence and occupancy.",
+    "Core test verifies full saved histories, occasional wrong detections, history replacement, unknown/tie abstention, occupancy clearing and transaction limits.",
+    "Runtime diagnostic reported one rejected/error frame; current status was OK. Rate-limited/duplicate inputs contribute separately to dropped_frames.",
+    "Raycast timing is not total fusion time or simulator real-time factor.",
+    "Runtime save uses maps/semantic_map.svm; validation resumes YOLOE inference and exploration afterward."
+  ]
+}

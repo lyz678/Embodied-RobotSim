@@ -82,6 +82,7 @@ private:
     std::shared_ptr<message_filters::Synchronizer<SyncPolicy>> sync_;
     
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_pointcloud_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_semantic_cloud_;
     
     // Publisher for 3D detections with class ID and position
     rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr pub_detections_3d_;

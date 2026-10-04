@@ -97,6 +97,7 @@ YoloeMultiTextPromptNode::YoloeMultiTextPromptNode()
 
     pub_image_ = this->create_publisher<sensor_msgs::msg::Image>(image_result_topic, 10);
     pub_pointcloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(pointcloud_colored_topic, 10);
+    pub_semantic_cloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("~/pointcloud_semantic", rclcpp::SensorDataQoS().keep_last(2));
     pub_detections_3d_ = this->create_publisher<vision_msgs::msg::Detection3DArray>(detections_3d_topic, 10);
 
     // Initialize TF buffer and listener
@@ -165,6 +166,10 @@ void YoloeMultiTextPromptNode::sync_callback(
     // PointCloud Colorization
     cv_bridge::CvImagePtr depth_ptr;
     depth_ptr = cv_bridge::toCvCopy(depth_msg, sensor_msgs::image_encodings::TYPE_32FC1);
+    // Publish independent geometry before legacy depth/mask processing. A bad
+    // semantic detection must not remove a measured obstacle or shorten a ray.
+    pub_semantic_cloud_->publish(pointcloud_colorizer_->semantic_cloud(
+        depth_ptr->image, info_msg, detections, depth_msg->header));
 
     // PointCloud Generation Part 1: RAW Point Cloud (for GraspNet / Perception)
     // We generate this using the UNMODIFIED depth image

@@ -1,16 +1,16 @@
 # LSM 双目深度
 
-ROS 包名是 `stereo_matching`。`start_explore_and_mapping.sh` 默认启动本节点：左右 RGB → TensorRT 视差 → 深度图和彩色点云。OctoMap 输入 `/x_bot/camera_left/nn_pointcloud`；YOLOE 深度输入 `/x_bot/camera_left/nn_depth`。FAST-LIO、`/map` 和导航虚拟扫描继续来自 MID360。
+ROS 包名是 `stereo_matching`。探索入口设置 `DEPTH_SOURCE=lsm` 时启动本节点：左右 RGB → TensorRT 视差 → 深度图和彩色点云。YOLOE 深度输入 `/x_bot/camera_left/nn_depth`；新语义后端融合 YOLOE 输出的 `/yoloe_multi_text_prompt/pointcloud_semantic`。旧 OctoMap 后端输入 `/x_bot/camera_left/nn_pointcloud`。FAST-LIO、`/map` 和导航虚拟扫描继续来自 MID360。
 
 直接运行探索脚本即可，无需参数。脚本顶部暴露：
 
 | 配置 | 用途 |
 |---|---|
-| `DEPTH_SOURCE` | `lsm`（默认）或 `isaac` |
+| `DEPTH_SOURCE` | `lsm` 或 `isaac`（当前入口默认） |
 | `LSM_CONFIG_FILE` | 基础配置 YAML：引擎、CUDA 设备、输入尺寸、内参、基线、话题 |
 | `LSM_PARAMS_FILE` | 标准 ROS 参数 YAML，覆盖基础配置 |
 | `DEPTH_IMAGE_TOPIC` | YOLOE 深度输入；空值按来源选择默认话题 |
-| `OCTOMAP_CLOUD_TOPIC` | OctoMap 点云输入；空值按来源选择默认话题 |
+| `OCTOMAP_CLOUD_TOPIC` | 仅旧后端的点云输入；空值按来源选择默认话题 |
 
 `config/isaac_params.yaml` 是探索默认使用的参数接口：
 

@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="3">
+ <name>semantic_voxel_mapping</name><version>0.1.0</version>
+ <description>CUDA raycast sparse occupancy and temporal semantic majority voting.</description>
+ <maintainer email="lyz@example.com">lyz</maintainer><license>MIT</license>
+ <buildtool_depend>ament_cmake</buildtool_depend>
+ <depend>ament_index_cpp</depend><depend>rclcpp</depend><depend>sensor_msgs</depend><depend>nav_msgs</depend>
+ <depend>visualization_msgs</depend><depend>diagnostic_msgs</depend><depend>std_srvs</depend>
+ <depend>tf2_ros</depend><depend>tf2_geometry_msgs</depend><depend>octomap_msgs</depend>
+ <depend>octomap</depend><depend>yaml-cpp</depend>
+ <exec_depend>launch_ros</exec_depend><exec_depend>ament_index_python</exec_depend>
+ <export><build_type>ament_cmake</build_type></export>
+</package>

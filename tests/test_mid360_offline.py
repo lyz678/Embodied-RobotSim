@@ -257,9 +257,11 @@ class Contracts(unittest.TestCase):
             self.assertEqual(result.stdout.splitlines(),
                              ['explore', '--world', 'simple_room', '--bundle', str(Path(folder)/'maps/gazebo_simple_room'),
                               '--initial-x', '0.0', '--initial-y', '0.0',
-                              '--initial-yaw', '1.5708', '--depth-source', 'lsm',
+                              '--initial-yaw', '1.5708', '--depth-source', 'isaac',
                               '--lsm-config', str(Path(folder)/'src/LSM_depth_infer/config/config.yaml'),
-                              '--lsm-params', str(Path(folder)/'src/LSM_depth_infer/config/isaac_params.yaml'), '--build'])
+                              '--lsm-params', str(Path(folder)/'src/LSM_depth_infer/config/isaac_params.yaml'),
+                              '--octomap-backend', 'semantic_cuda', '--semantic-map-config',
+                              str(Path(folder)/'src/semantic_voxel_mapping/config/map.yaml'), '--build'])
 
     def test_pick_entrypoint_uses_main_manipulation_scene(self):
         with tempfile.TemporaryDirectory() as folder:

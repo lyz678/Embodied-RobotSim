@@ -15,14 +15,17 @@ AUTO_EXPLORE=true
 DEPTH_SOURCE=isaac #lsm
 LSM_CONFIG_FILE="$ROOT_DIR/src/LSM_depth_infer/config/config.yaml"
 LSM_PARAMS_FILE="$ROOT_DIR/src/LSM_depth_infer/config/isaac_params.yaml"
-# 空值按 DEPTH_SOURCE 选择：lsm 默认 nn_depth / nn_pointcloud。
-# 自定义 LSM 输出话题时在这里填写对应话题。
+# 深度输入空值按 DEPTH_SOURCE 选择，lsm 默认 nn_depth。
+# OCTOMAP_CLOUD_TOPIC 仅用于 legacy；新后端输入在 SEMANTIC_MAP_CONFIG 配置。
 DEPTH_IMAGE_TOPIC=""
 OCTOMAP_CLOUD_TOPIC=""
+OCTOMAP_BACKEND=semantic_cuda
+SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/semantic_voxel_mapping/config/map.yaml"
 
 DEFAULT_ARGS=(--world "$WORLD" --bundle "$MAP_BUNDLE"
     --initial-x "$INITIAL_X" --initial-y "$INITIAL_Y" --initial-yaw "$INITIAL_YAW"
-    --depth-source "$DEPTH_SOURCE" --lsm-config "$LSM_CONFIG_FILE" --lsm-params "$LSM_PARAMS_FILE")
+    --depth-source "$DEPTH_SOURCE" --lsm-config "$LSM_CONFIG_FILE" --lsm-params "$LSM_PARAMS_FILE"
+    --octomap-backend "$OCTOMAP_BACKEND" --semantic-map-config "$SEMANTIC_MAP_CONFIG")
 [[ -n "$DEPTH_IMAGE_TOPIC" ]] && DEFAULT_ARGS+=(--depth-image-topic "$DEPTH_IMAGE_TOPIC")
 [[ -n "$OCTOMAP_CLOUD_TOPIC" ]] && DEFAULT_ARGS+=(--octomap-cloud-topic "$OCTOMAP_CLOUD_TOPIC")
 [[ "$HEADLESS" == true ]] && DEFAULT_ARGS+=(--headless)

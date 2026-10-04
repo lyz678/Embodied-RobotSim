@@ -31,6 +31,9 @@ LSM_CONFIG_FILE="$ROOT_DIR/src/LSM_depth_infer/config/config.yaml"
 LSM_PARAMS_FILE="$ROOT_DIR/src/LSM_depth_infer/config/isaac_params.yaml"
 DEPTH_IMAGE_TOPIC=""
 OCTOMAP_CLOUD_TOPIC=""
+OCTOMAP_BACKEND=legacy
+[[ "$MODE" == explore ]] && OCTOMAP_BACKEND=semantic_cuda
+SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/semantic_voxel_mapping/config/map.yaml"
 while (($#)); do
     case "$1" in
         --headless) HEADLESS=true ;;
@@ -46,11 +49,23 @@ while (($#)); do
         --lsm-params) shift; LSM_PARAMS_FILE="${1:?缺少 LSM ROS 参数文件}" ;;
         --depth-image-topic) shift; DEPTH_IMAGE_TOPIC="${1:?缺少深度图话题}" ;;
         --octomap-cloud-topic) shift; OCTOMAP_CLOUD_TOPIC="${1:?缺少 OctoMap 点云话题}" ;;
+        --octomap-backend) shift; OCTOMAP_BACKEND="${1:?缺少 semantic_cuda/legacy}" ;;
+        --semantic-map-config) shift; SEMANTIC_MAP_CONFIG="${1:?缺少语义地图配置}" ;;
         *.yaml) echo "Isaac 定位需要配套 PCD 地图目录，请用 --bundle；不能只用旧二维 YAML 地图。" >&2; exit 2 ;;
         *) echo "未知参数：$1" >&2; exit 2 ;;
     esac
     shift
 done
+
+case "$OCTOMAP_BACKEND" in
+    semantic_cuda)
+        [[ "$MODE" == explore ]] || { echo "语义 CUDA 后端首版仅支持探索模式" >&2; exit 2; }
+        [[ -f "$SEMANTIC_MAP_CONFIG" && "$SEMANTIC_MAP_CONFIG" != *"'"* && "$SEMANTIC_MAP_CONFIG" != *$'\n'* ]] || { echo "语义地图配置无效：$SEMANTIC_MAP_CONFIG" >&2; exit 2; }
+        [[ -z "$OCTOMAP_CLOUD_TOPIC" ]] || { echo "语义后端的输入话题请在 SEMANTIC_MAP_CONFIG 中设置；OCTOMAP_CLOUD_TOPIC 仅用于 legacy 后端" >&2; exit 2; }
+        ;;
+    legacy) ;;
+    *) echo "OctoMap 后端必须为 semantic_cuda 或 legacy" >&2; exit 2 ;;
+esac
 
 case "$DEPTH_SOURCE" in
     lsm)
@@ -119,6 +134,9 @@ for package in x_bot x_bot_localization livox_ros_driver2 fast_lio; do
 done
 if [[ "$DEPTH_SOURCE" == lsm ]]; then
     ros2 pkg prefix stereo_matching >/dev/null 2>&1 || { echo "错误：缺少 stereo_matching，请先构建 LSM_depth_infer 或使用 --build。" >&2; exit 1; }
+fi
+if [[ "$OCTOMAP_BACKEND" == semantic_cuda ]]; then
+    ros2 pkg prefix semantic_voxel_mapping >/dev/null 2>&1 || { echo "错误：缺少 semantic_voxel_mapping，请使用 --build。" >&2; exit 1; }
 fi
 if [[ "$MODE" == explore && "$AUTO_EXPLORE" == true ]]; then
     for package in explore_lite nav2_bringup nav2_regulated_pure_pursuit_controller; do
@@ -241,7 +259,7 @@ case "$MODE" in
         else
             echo "手动建图导航模式：在 RViz 中设置 Nav2 Goal。"
         fi
-        launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py cloud_topic:='$OCTOMAP_CLOUD_TOPIC'"
+        launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py backend:='$OCTOMAP_BACKEND' semantic_config:='$SEMANTIC_MAP_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC'"
         ;;
     navigation)
         launch_navigation
