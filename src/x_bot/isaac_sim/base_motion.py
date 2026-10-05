@@ -9,7 +9,7 @@ WHEEL_NAMES = ('front_left_wheel_joint', 'front_right_wheel_joint',
                'back_left_wheel_joint', 'back_right_wheel_joint')
 RADIUS = .06
 TRACK = .45
-MAX_FORWARD = 2.0
+MAX_FORWARD = 1.0
 MAX_REVERSE = .2
 LINEAR_ACCEL = 1.0
 LINEAR_DECEL = 2.0

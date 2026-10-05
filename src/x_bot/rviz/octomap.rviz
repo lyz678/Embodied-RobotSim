@@ -3,12 +3,9 @@ Panels:
     Help Height: 0
     Name: Displays
     Property Tree Widget:
-      Expanded:
-        - /Global Options1
-        - /FAST-LIO Point Cloud1
-        - /Nav2 Global Plan1
+      Expanded: ~
       Splitter Ratio: 0.5
-    Tree Height: 1213
+    Tree Height: 492
   - Class: rviz_common/Views
     Expanded:
       - /Current View1
@@ -332,8 +329,8 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 2.537058115005493
-        Min Value: 0.0124437240883708
+        Max Value: 2.526521921157837
+        Min Value: 0.005581632722169161
         Value: true
       Axis: Z
       Channel Name: intensity
@@ -577,6 +574,20 @@ Visualization Manager:
           Value: true
       Enabled: false
       Name: Grasp Debug
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /yoloe_multi_text_prompt/image_result
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -631,9 +642,11 @@ Window Geometry:
   Height: 1371
   Hide Left Dock: false
   Hide Right Dock: false
+  Image:
+    collapsed: false
   Navigation 2:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000200000000000001af000004fdfc0200000001fb000000100044006900730070006c006100790073010000003f000004fd000000cc00ffffff00000001000001c9000004fdfc0200000002fb0000000a00560069006500770073010000003f0000017d000000a900fffffffb00000018004e0061007600690067006100740069006f006e0020003201000001c20000037a000001e300ffffff0000063a000004fd00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd000000020000000000000284000004fdfc0200000002fb000000100044006900730070006c006100790073010000003f0000022c000000cc00fffffffb0000000a0049006d0061006700650100000271000002cb0000001700ffffff00000001000001c9000004fdfc0200000002fb0000000a00560069006500770073010000003f0000017d000000a900fffffffb00000018004e0061007600690067006100740069006f006e0020003201000001c20000037a000001e300ffffff00000565000004fd00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
   Width: 2494

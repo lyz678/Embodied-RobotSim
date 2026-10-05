@@ -44,8 +44,8 @@ class BaseMotionTests(unittest.TestCase):
     def test_saturation_preserves_curvature(self):
         motion=BaseMotion()
         for _ in range(500): motion.advance(4.,1.,.005)
-        self.assertAlmostEqual(motion.linear,2.)
-        self.assertAlmostEqual(motion.angular,.5)
+        self.assertAlmostEqual(motion.linear,1.)
+        self.assertAlmostEqual(motion.angular,.25)
 
     def test_immediate_stop_and_timeout(self):
         motion=BaseMotion()
@@ -54,15 +54,15 @@ class BaseMotionTests(unittest.TestCase):
         motion.advance(.4,.7,.05)
         self.assertEqual(motion.advance(.4,.7,.005,enabled=False),[0]*4)
 
-    def test_two_meters_per_second_and_braking(self):
+    def test_forward_speed_limit_and_braking(self):
         motion = BaseMotion()
         for _ in range(400):
             wheels = motion.advance(2., 0., .005)
-        self.assertAlmostEqual(motion.linear, 2.)
+        self.assertAlmostEqual(motion.linear, 1.)
         for velocity in wheels:
-            self.assertAlmostEqual(velocity * RADIUS, 2.)
+            self.assertAlmostEqual(velocity * RADIUS, 1.)
         motion.advance(.1, 0., .005)
-        self.assertAlmostEqual(motion.linear, 1.99)
+        self.assertAlmostEqual(motion.linear, .99)
 
     def test_invalid_and_rewind_fail_closed(self):
         for cmd in [(math.nan,0,.01),(0,math.inf,.01),(.1,.1,-.1)]:

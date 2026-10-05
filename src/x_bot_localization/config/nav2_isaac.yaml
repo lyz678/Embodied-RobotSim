@@ -48,18 +48,25 @@ controller_server:
       required_movement_radius: 0.5         # 所需移动半径
       movement_time_allowance: 10.0         # 允许移动时间
 
+    # Installed Jazzy RotationShim initializes its private checker before assigning the plugin name.
+    # Re-evaluate XY after skid/coasting rather than latching heading-only control outside tolerance.
+    ".position_checker.stateful": false
+
     # 通用目标检查器配置
     general_goal_checker:
       stateful: true                        # 是否有状态
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.25               # XY目标容忍度（米）
-      yaw_goal_tolerance: 0.25              # 偏航角目标容忍度（弧度）
+      yaw_goal_tolerance: 0.4               # About 23 degrees; avoid unnecessary final heading corrections.
     FollowPath:
       plugin: "nav2_rotation_shim_controller::RotationShimController"
       primary_controller: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
-      # Hysteresis: enter alignment above 29 degrees, leave below 9 degrees.
-      angular_dist_threshold: 0.5
-      angular_disengage_threshold: 0.15
+      position_checker:
+        stateful: false # Also cover builds that correctly namespace the private checker.
+      # Let RPP steer while moving for ordinary turns; reserve a spin for large heading errors.
+      # Hysteresis: start alignment above 69 degrees, resume motion below 17 degrees.
+      angular_dist_threshold: 1.2
+      angular_disengage_threshold: 0.3
       forward_sampling_distance: 0.5
       rotate_to_goal_heading: true
       rotate_to_heading_once: false
@@ -67,7 +74,7 @@ controller_server:
       # pin the first command below static-friction breakaway indefinitely.
       closed_loop: false
       simulate_ahead_time: 1.5
-      desired_linear_vel: 2.0
+      desired_linear_vel: 1.0
       # Shorter carrots reduce corner cutting in the original room's doors.
       lookahead_dist: 0.4
       min_lookahead_dist: 0.3
@@ -83,12 +90,12 @@ controller_server:
       use_collision_detection: true
       max_allowed_time_to_collision_up_to_carrot: 1.5
       use_regulated_linear_velocity_scaling: true
-      regulated_linear_scaling_min_radius: 2.5 # Regulate tight-curve yaw to about 0.8 rad/s at 2 m/s.
+      regulated_linear_scaling_min_radius: 2.5 # Regulate tight-curve yaw to about 0.4 rad/s at 1 m/s.
       regulated_linear_scaling_min_speed: 0.08
       use_cost_regulated_linear_velocity_scaling: true
       cost_scaling_dist: 1.0
       cost_scaling_gain: 1.0
-      inflation_cost_scaling_factor: 3.0
+      inflation_cost_scaling_factor: 1.8 # Must match the local inflation layer.
       min_approach_linear_velocity: 0.05
       approach_velocity_scaling_dist: 2.0
 
@@ -118,8 +125,8 @@ local_costmap:
       plugins: ["obstacle_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 1.2
+        cost_scaling_factor: 1.8
+        inflation_radius: 1.5
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
@@ -189,8 +196,8 @@ global_costmap:
           inf_is_valid: false
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.58             # 降低衰减速度
-        inflation_radius: 0.6                 # 保留窄通道和自动探索边界的可达性
+        cost_scaling_factor: 1.8             # Broad gradient prefers clearance over wall-hugging shortcuts.
+        inflation_radius: 1.5                 # Soft costs; retain the existing inscribed collision radius.
       always_send_full_costmap: true
 
 # Nav2路径规划服务器配置
@@ -267,7 +274,7 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [2.0, 0.0, 1.2]
+    max_velocity: [1.0, 0.0, 1.2]
     min_velocity: [-0.2, 0.0, -1.2]
     max_accel: [1.0, 0.0, 1.5]
     max_decel: [-2.0, 0.0, -2.0]

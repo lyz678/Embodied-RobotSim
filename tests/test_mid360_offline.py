@@ -297,7 +297,7 @@ class Contracts(unittest.TestCase):
         limits=params['velocity_smoother']['ros__parameters']['max_velocity']
         self.assertLessEqual(controller['desired_linear_vel'], limits[0])
         self.assertLessEqual(controller['rotate_to_heading_angular_vel'], limits[2])
-        self.assertEqual(params['velocity_smoother']['ros__parameters']['max_velocity'],[2.,0,1.2])
+        self.assertEqual(params['velocity_smoother']['ros__parameters']['max_velocity'],[1.,0,1.2])
 
     def test_rviz_goal_tool_has_navigation_panel(self):
         # GoalTool updates GoalUpdater; Navigation 2 consumes that event and
