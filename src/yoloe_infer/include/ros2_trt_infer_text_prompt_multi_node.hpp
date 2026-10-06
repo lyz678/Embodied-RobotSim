@@ -109,6 +109,8 @@ private:
     
     // Inference control
     bool enable_inference_;
+    bool enable_pointcloud_;
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr srv_enable_pointcloud_;
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr srv_enable_inference_;
     void enable_inference_callback(
         const std::shared_ptr<std_srvs::srv::SetBool::Request> request,

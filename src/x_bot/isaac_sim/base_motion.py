@@ -7,20 +7,15 @@ import math
 
 WHEEL_NAMES = ('front_left_wheel_joint', 'front_right_wheel_joint',
                'back_left_wheel_joint', 'back_right_wheel_joint')
-RADIUS = .06
-TRACK = .45
-MAX_FORWARD = 1.0
-MAX_REVERSE = .2
-LINEAR_ACCEL = 1.0
-LINEAR_DECEL = 2.0
-MAX_ANGULAR = 1.2
-ANGULAR_ACCEL = 1.5
-ANGULAR_DECEL = 2.0
-YAW_FEED_FORWARD = 1.0
-YAW_KP = 2.0
-YAW_KI = 2.0
-YAW_INTEGRAL_LIMIT = 2.5
-MAX_WHEEL_YAW_DEMAND = 3.5
+# One parameter source for both simulation backends; baseline values unchanged.
+from pathlib import Path
+import yaml
+with (Path(__file__).resolve().parents[1]/'config/base_motion.yaml').open() as stream:
+    _parameters = yaml.safe_load(stream)
+for _name, _value in _parameters.items():
+    if not math.isfinite(_value) or _value < 0:
+        raise ValueError(f'Invalid base motion parameter: {_name}')
+    globals()[_name.upper()] = float(_value)
 
 
 def wheel_velocities(linear, angular):

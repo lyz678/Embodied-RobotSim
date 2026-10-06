@@ -1,0 +1,4 @@
+# Backend interface override; arm/gripper defaults stay in isaac_controllers.yaml.
+joint_state_broadcaster:
+  ros__parameters:
+    use_local_topics: true # Gazebo native JointStatePublisher provides ALL joints.

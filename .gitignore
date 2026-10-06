@@ -55,6 +55,7 @@ venv/
 
 # Isaac vendor dependencies and local asset/import caches
 /src/isaac_vendor/
+/src/LSM_depth_infer/
 /isaacsim_assets/
 .cache/
 

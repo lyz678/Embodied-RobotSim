@@ -77,7 +77,7 @@ class PickAndPlaceDemo(Node):
         self.scan_client = self.create_client(Trigger, '/robot_actions/scan')
         
         # 推理控制服务客户端
-        self.yoloe_inference_client = self.create_client(SetBool, '/yoloe_multi_text_prompt/enable_inference')
+        self.yoloe_cloud_client = self.create_client(SetBool, '/yoloe_multi_text_prompt/enable_pointcloud')
         self.graspnet_inference_client = self.create_client(SetBool, '/graspnet_node/enable_inference')
         self.depth_inference_client = self.create_client(SetBool, '/stereo_matching_node/enable_inference')
         
@@ -145,7 +145,8 @@ class PickAndPlaceDemo(Node):
         self.completed_classes = set()
         self.scene_client = self.create_client(ApplyPlanningScene, '/apply_planning_scene')
         self.pub_target_bounds = self.create_publisher(CollisionObject, '/pick_target_bounds', 10)
-        self.create_subscription(String, '/isaac/debug/object_states', self.truth_callback, 10)
+        self.declare_parameter('physical_state_topic', '/simulation/debug/object_states')
+        self.create_subscription(String, self.get_parameter('physical_state_topic').value, self.truth_callback, 10)
 
         # 启动逻辑线程
         self.logic_thread = threading.Thread(target=self.run_logic_loop, daemon=True)
@@ -579,7 +580,7 @@ class PickAndPlaceDemo(Node):
             return False
     
     def control_inference(self, enable: bool) -> bool:
-        """Pause object/grasp recognition while keeping measured depth available."""
+        """Gate YOLOE clouds and GraspNet while keeping YOLOE and depth inference active."""
         success = True
         request = SetBool.Request()
         request.data = enable
@@ -589,12 +590,12 @@ class PickAndPlaceDemo(Node):
                 self.latest_detections = []
                 self.detection_received_at = 0.0
         action = "Enabling" if enable else "Disabling"
-        self.get_logger().info(f">>> {action} inference nodes...")
+        self.get_logger().info(f">>> {action} YOLOE point clouds and GraspNet inference...")
         
-        # 控制 YOLOE
-        if self.yoloe_inference_client.wait_for_service(timeout_sec=1.0):
+        # YOLOE keeps detecting and rendering; only its cloud outputs are gated.
+        if self.yoloe_cloud_client.wait_for_service(timeout_sec=1.0):
             try:
-                future = self.yoloe_inference_client.call_async(request)
+                future = self.yoloe_cloud_client.call_async(request)
                 while not future.done():
                     time.sleep(0.05)
                 response = future.result()
@@ -607,7 +608,7 @@ class PickAndPlaceDemo(Node):
                 self.get_logger().error(f"YOLOE control error: {e}")
                 success = False
         else:
-            self.get_logger().warn("YOLOE inference control service not available")
+            self.get_logger().warn("YOLOE point cloud control service not available")
         
         # 控制 GraspNet
         if self.graspnet_inference_client.wait_for_service(timeout_sec=1.0):
@@ -734,7 +735,7 @@ class PickAndPlaceDemo(Node):
         payload = None
         payload_installed = False
         
-        # 禁用推理节点，节省计算资源
+        # 暂停 YOLOE 点云和 GraspNet；YOLOE 检测与画面继续输出
         self.control_inference(False)
         
         # 设置点云过滤，避免与目标物体碰撞
@@ -808,18 +809,19 @@ class PickAndPlaceDemo(Node):
                 retreat_x = pose.position.x + dx * 0.8
                 retreat_y = pose.position.y + dy * 0.8
                 
-                # Z轴固定为1m
-                retreat_z = 1.0
+                # Preserve the achieved vertical clearance during retraction.
+                # Lowering a high table grasp back to 1 m loses its lift margin.
+                retreat_z = max(1.0, pose.position.z + .15)
                 
-                self.get_logger().info(f"Retreating 80% towards base at Z=1m: ({retreat_x:.3f}, {retreat_y:.3f}, {retreat_z:.3f})")
+                self.get_logger().info(f"Retreating 80% towards base without lowering payload: ({retreat_x:.3f}, {retreat_y:.3f}, {retreat_z:.3f})")
                 
                 if not self.send_arm_pose(retreat_x, retreat_y, retreat_z, pose.orientation):
                     self.get_logger().error("Failed to lift object")
                     return False
             except Exception as e:
                 self.get_logger().error(f"Failed to get base_footprint transform: {e}")
-                # Fallback: Z轴固定1m
-                if not self.send_arm_pose(pose.position.x, pose.position.y, 1.0, pose.orientation):
+                # Keep the same lift clearance if base TF is unavailable.
+                if not self.send_arm_pose(pose.position.x, pose.position.y, max(1.0, pose.position.z + .15), pose.orientation):
                     self.get_logger().error("Failed to lift object (fallback)")
                     return False
             
@@ -918,7 +920,7 @@ class PickAndPlaceDemo(Node):
             self.pub_cloud_filter.publish(Int32(data=-1))
             # 确保移除collision object
             self.remove_collision_object(class_id)
-            # 重新启用推理节点
+            # 恢复 YOLOE 点云发布和 GraspNet 推理
             self.control_inference(True)
     
     def remove_collision_object(self, class_id: int):
@@ -1051,6 +1053,13 @@ class PickAndPlaceDemo(Node):
             if zone_name == "Floor" and class_id in self.get_parameter('top_grasp_classes').value and class_id in self.floor_axes:
                 observed_at, long_axis = self.floor_axes[class_id]
                 if time.monotonic() - observed_at <= self.detection_timeout:
+                    geometry = self.object_boxes.get(class_id)
+                    if geometry is None or time.monotonic() - geometry[0] > self.detection_timeout:
+                        self.get_logger().warn("No fresh depth center for top grasp")
+                        continue
+                    # A PCA top approach requires its corresponding depth center;
+                    # the original GraspNet position belongs to a different pose.
+                    grasp_pose.position.x, grasp_pose.position.y, grasp_pose.position.z = geometry[1]
                     base = self.tf_buffer.lookup_transform('odom', 'base_footprint', rclpy.time.Time()).transform.translation
                     radial = np.array([grasp_pose.position.x-base.x, grasp_pose.position.y-base.y])
                     if long_axis @ radial < 0:

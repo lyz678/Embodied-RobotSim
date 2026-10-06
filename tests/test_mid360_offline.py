@@ -255,9 +255,9 @@ class Contracts(unittest.TestCase):
             result = subprocess.run(['bash', str(entry)], env=environment,
                                     check=True, capture_output=True, text=True)
             self.assertEqual(result.stdout.splitlines(),
-                             ['explore', '--world', 'simple_room', '--bundle', str(Path(folder)/'maps/gazebo_simple_room'),
+                             ['explore', '--sim', 'isaac', '--world', 'simple_room', '--bundle', str(Path(folder)/'maps/gazebo_simple_room'),
                               '--initial-x', '0.0', '--initial-y', '0.0',
-                              '--initial-yaw', '1.5708', '--depth-source', 'isaac',
+                              '--initial-yaw', '1.5708', '--depth-source', 'sim',
                               '--lsm-config', str(Path(folder)/'src/LSM_depth_infer/config/config.yaml'),
                               '--lsm-params', str(Path(folder)/'src/LSM_depth_infer/config/isaac_params.yaml'),
                               '--semantic-cloud-source', 'fastlio',
@@ -272,10 +272,10 @@ class Contracts(unittest.TestCase):
             (Path(folder)/'scripts/robot_services.sh').write_text('printf "%s\\n" "$@"\n')
             result = subprocess.run(['bash', str(entry)], check=True, capture_output=True, text=True)
             self.assertEqual(result.stdout.splitlines(),
-                             ['pick', '--world', 'manipulation_test', '--bundle', str(Path(folder)/'maps/manipulation_test'),
+                             ['pick', '--sim', 'isaac', '--world', 'manipulation_test', '--bundle', str(Path(folder)/'maps/manipulation_test'),
                               '--initial-x', '0.0', '--initial-y', '0.0', '--initial-yaw', '0.0',
                               '--yoloe-config', str(Path(folder)/'src/yoloe_infer/configs/manipulation.yaml'),
-                              '--depth-source', 'isaac', '--semantic-cloud-source', 'depth',
+                              '--depth-source', 'sim', '--semantic-cloud-source', 'depth',
                               '--octomap-resolution', '0.02', '--semantic-map-config',
                               str(Path(folder)/'src/semantic_voxel_mapping/config/manipulation.yaml'),
                               '--lsm-config', str(Path(folder)/'src/LSM_depth_infer/config/config.yaml'),

@@ -45,6 +45,7 @@
     <xacro:arg name="sim_gazebo" default="false" />
     <xacro:arg name="sim_ign" default="false" />
     <xacro:arg name="sim_gz" default="false" />
+    <xacro:arg name="mid360_enabled" default="false" />
     <xacro:arg name="sim_isaac" default="false" />
     <xacro:arg name="mid360_xyz" default="0.25 0 0.0875" />
     <xacro:arg name="mid360_rpy" default="0 0 0" />
@@ -89,10 +90,10 @@
         <child link="base_link"/>
         <!-- Isaac spawns base_footprint on z=0: wheel centres must be one
              radius above that plane (wheel joints are 0.09 m below base_link). -->
-        <xacro:if value="$(arg sim_isaac)">
+        <xacro:if value="${'$(arg sim_isaac)' == 'true' or '$(arg mid360_enabled)' == 'true'}">
             <origin xyz="0 0 ${chassis_height/2 + 1.5*traction_wheel_radius}" rpy="0 0 0"/>
         </xacro:if>
-        <xacro:unless value="$(arg sim_isaac)">
+        <xacro:unless value="${'$(arg sim_isaac)' == 'true' or '$(arg mid360_enabled)' == 'true'}">
             <origin xyz="0.0 0 ${chassis_height/2 + traction_wheel_radius}" rpy="0 0 0.0" />
         </xacro:unless>
     </joint>
@@ -184,8 +185,8 @@
 
     </xacro:unless>
 
-    <!-- Isaac-only roof sensor. IMU and optical origin are colocated in simulation. -->
-    <xacro:if value="$(arg sim_isaac)">
+    <!-- Shared roof sensor; Gazebo explicitly enables it. -->
+    <xacro:if value="${'$(arg sim_isaac)' == 'true' or '$(arg mid360_enabled)' == 'true'}">
         <link name="mid360_link">
             <visual><geometry><box size="0.065 0.065 0.060"/></geometry><material name="black"/></visual>
             <collision><geometry><box size="0.065 0.065 0.060"/></geometry></collision>

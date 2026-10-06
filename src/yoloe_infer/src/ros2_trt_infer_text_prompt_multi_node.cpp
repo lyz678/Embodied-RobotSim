@@ -147,6 +147,19 @@ YoloeMultiTextPromptNode::YoloeMultiTextPromptNode()
     // Initialize inference control
     this->declare_parameter("enable_inference", true);
     enable_inference_ = this->get_parameter("enable_inference").as_bool();
+    this->declare_parameter("enable_pointcloud", true);
+    enable_pointcloud_ = this->get_parameter("enable_pointcloud").as_bool();
+    srv_enable_pointcloud_ = this->create_service<std_srvs::srv::SetBool>(
+        "~/enable_pointcloud",
+        [this](const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+               std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
+            enable_pointcloud_ = request->data;
+            response->success = true;
+            response->message = enable_pointcloud_ ? "Point cloud publishing enabled" :
+                "Point cloud publishing disabled; inference and images remain active";
+            RCLCPP_INFO(get_logger(), "%s", response->message.c_str());
+        });
+
     
     // Create service to control inference
     srv_enable_inference_ = this->create_service<std_srvs::srv::SetBool>(
@@ -203,6 +216,10 @@ void YoloeMultiTextPromptNode::lidar_sync_callback(
     const sensor_msgs::msg::PointCloud2::ConstSharedPtr& cloud_msg,
     const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info_msg) {
     try {
+        if (!enable_pointcloud_) {
+            if (enable_inference_) infer_image(image_msg);
+            return;
+        }
         if (image_msg->header.frame_id.empty() || cloud_msg->header.frame_id.empty() ||
             image_msg->header.frame_id != info_msg->header.frame_id ||
             image_msg->width != info_msg->width || image_msg->height != info_msg->height) {
@@ -251,6 +268,7 @@ void YoloeMultiTextPromptNode::sync_callback(
     // Suspend classification, not measured geometry. Raycasting still needs
     // background returns to clear voxels after an object has moved away.
     if (!enable_inference_) {
+        if (!enable_pointcloud_) return;
         try {
             auto depth = cv_bridge::toCvShare(depth_msg, sensor_msgs::image_encodings::TYPE_32FC1);
             pub_semantic_cloud_->publish(pointcloud_colorizer_->semantic_cloud(
@@ -277,8 +295,10 @@ void YoloeMultiTextPromptNode::sync_callback(
     depth_ptr = cv_bridge::toCvCopy(depth_msg, sensor_msgs::image_encodings::TYPE_32FC1);
     // Publish independent geometry before legacy depth/mask processing. A bad
     // semantic detection must not remove a measured obstacle or shorten a ray.
-    pub_semantic_cloud_->publish(pointcloud_colorizer_->semantic_cloud(
-        depth_ptr->image, info_msg, detections, depth_msg->header, semantic_depth_stride_));
+    if (enable_pointcloud_) {
+        pub_semantic_cloud_->publish(pointcloud_colorizer_->semantic_cloud(
+            depth_ptr->image, info_msg, detections, depth_msg->header, semantic_depth_stride_));
+    }
     const auto semantic_done = std::chrono::steady_clock::now();
 
     std::string source_frame = depth_msg->header.frame_id;            
@@ -319,6 +339,7 @@ void YoloeMultiTextPromptNode::sync_callback(
         
         pub_detections_3d_->publish(detections_3d_msg);
     }
+    if (!enable_pointcloud_) return; // Images and 3D detections still publish.
     const auto coordinates_done = std::chrono::steady_clock::now();
 
     // PointCloud Generation Part 2: FILTERED Point Cloud (for Octomap / Nav)

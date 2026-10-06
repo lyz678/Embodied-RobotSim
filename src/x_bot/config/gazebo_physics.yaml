@@ -1,0 +1,21 @@
+# Gazebo actuator/contact differences; task and Nav2 defaults remain shared.
+position_proportional_gain: 0.3
+finger_stiffness: 2000.0
+finger_damping: 20.0
+finger_joint_damping: 1.0
+finger_joint_friction: 0.1
+finger_integral_gain: 1000.0
+finger_integral_limit: 60.0
+gripper_max_effort: 100.0 # Maximum physical grip/opening force
+finger_friction: 1.2
+# Force drives release hard-stop contacts, unlike DART's velocity motor.
+arm_stiffness: [2000.0, 2000.0, 2000.0, 2000.0, 1200.0, 1200.0, 1200.0]
+arm_damping: [80.0, 80.0, 80.0, 80.0, 60.0, 60.0, 60.0]
+arm_effective_inertia: [0.5, 1.0, 0.3, 0.1, 0.01, 0.01, 0.003]
+arm_max_effort: 300.0
+# DART uses minimum pair friction; approximate Isaac grip material averaging.
+object_friction: 0.85
+bottle_friction: 0.9
+bottle_linear_damping: 1.0
+bottle_angular_damping: 2.0
+bin_friction: 0.5

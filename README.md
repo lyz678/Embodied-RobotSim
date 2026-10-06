@@ -4,13 +4,24 @@
 [![Isaac Sim](https://img.shields.io/badge/Isaac%20Sim-6.1-76B900.svg)](https://docs.isaacsim.omniverse.nvidia.com/6.1.0/)
 [English](README_en.md)
 
-基于 **ROS 2 Jazzy + Isaac Sim 6.1** 的移动抓取仿真项目。机器人搭载 Franka FR3、MID-360 近似雷达和双目 RGB-D 相机，支持 FAST-LIO 建图定位、Nav2 自动探索与导航、YOLOE 语义感知、CUDA 语义体素建图、GraspNet 抓取及 Qwen3 自然语言任务控制。
+基于 **ROS 2 Jazzy + Isaac Sim 6.1 / Gazebo Harmonic** 的移动抓取仿真项目。机器人搭载 Franka FR3、MID-360 近似雷达和双目 RGB-D 相机，支持 FAST-LIO 建图定位、Nav2 自动探索与导航、YOLOE 语义感知、CUDA 语义体素建图、GraspNet 抓取及 Qwen3 自然语言任务控制。
 
 ## 演示
 
 ### Isaac Sim 仿真与抓取
 
 ![Isaac Sim 仿真演示](assets/IssacSim.gif)
+
+### Gazebo Harmonic 仿真
+
+![Gazebo Harmonic 仿真演示](assets/GazeboSim.gif)
+
+两种仿真器共用启动入口：无参数默认 Isaac Sim，添加 `--sim gazebo` 切换到 Gazebo。
+
+```bash
+./start_explore_and_mapping.sh
+./start_explore_and_mapping.sh --sim gazebo
+```
 
 ### 大模型任务闭环
 
@@ -25,10 +36,11 @@
 | `scripts/assets/` | 场景下载、main 分支场景与贴图转 USD；首次启动会调用迁移工具 |
 | `scripts/diagnostics/` | 可选的只读性能测量工具 |
 | `src/x_bot/` | 机器人描述、Isaac 后端、MoveIt、抓取任务和统一 RViz |
+| `src/x_bot_gazebo/` | 可选 Gazebo Harmonic 后端、Embree 雷达射线查询和关节驱动 |
 | `src/x_bot_localization/` | Livox 消息桥接、FAST-LIO 适配、地图保存、ICP 定位、Nav2 配置 |
 | `src/semantic_voxel_mapping/` | CUDA raycast、hit/miss 占据融合及类别颜色多数投票 |
 | `src/yoloe_infer/`、`src/graspnet_infer/` | YOLOE / GraspNet TensorRT 推理 |
-| `src/LSM_depth_infer/` | 可选双目深度推理，ROS 包名为 `stereo_matching` |
+| `src/LSM_depth_infer/` | 本地可选双目深度模块，ROS 包名为 `stereo_matching`；已忽略，不随仓库提供 |
 | `src/isaac_vendor/FAST_LIO_ROS2/` | 安装脚本下载的外部依赖，不提交到仓库 |
 | `llm_agent/`、`web_ui/` | Qwen3 服务及 Web 控制界面 |
 | `tests/` | 底盘、定位、场景和抓取的离线回归测试，不参与仿真启动 |
@@ -51,7 +63,7 @@
 | TensorRT | 本机 10.14.1.48，包含开发头文件、库及 `trtexec` |
 | 系统 Python | Ubuntu 24.04 的 Python 3.12；避免用 Conda Python 构建 ROS 包 |
 
-按 [Isaac Sim 工作站安装说明](https://docs.isaacsim.omniverse.nvidia.com/6.1.0/installation/install_workstation.html) 安装；ROS 环境参见 [Isaac ROS 2 配置说明](https://docs.isaacsim.omniverse.nvidia.com/6.1.0/installation/install_ros.html)。项目启动代码会启用 URDF Importer、ROS 2 Bridge/Core、ros2_control 和 experimental physics sensors 扩展，无需逐次手动点击启用。必须使用包含这些扩展的 Isaac Sim 6.1 安装。
+按 [Isaac Sim 工作站安装说明](https://docs.isaacsim.omniverse.nvidia.com/6.1.0/installation/install_workstation.html) 安装；ROS 环境参见 [Isaac ROS 2 配置说明](https://docs.isaacsim.omniverse.nvidia.com/6.1.0/installation/install_ros.html)。Isaac 后端启动代码会启用 URDF Importer、ROS 2 Bridge/Core、ros2_control 和 experimental physics sensors 扩展，无需逐次手动点击启用。必须使用包含这些扩展的 Isaac Sim 6.1 安装。
 
 把以下配置追加到 `~/.zshrc`（Bash 用户使用 `~/.bashrc`）。路径按实际安装修改；TensorRT 的 tar 包安装还需将其 `bin`、`lib` 加入对应搜索路径。
 
@@ -140,7 +152,7 @@ git branch main origin/main  # 仅在本地 main 不存在时执行
   --worlds simple_room manipulation_test
 ```
 
-默认场景首次启动会自动转换缺失资产。转换结果放在 `$ISAAC_ASSETS_PATH/GazeboMain`，源码及许可证保留在缓存内。运行时仅使用 Isaac Sim；迁移工具名字中的 Gazebo 表示源格式。
+Isaac 默认场景首次启动会自动转换缺失资产。转换结果放在 `$ISAAC_ASSETS_PATH/GazeboMain`，源码及许可证保留在缓存内。Isaac 使用转换后的 USD；Gazebo 使用同一固定源提交提取的 SDF 和模型。迁移工具名字中的 Gazebo 表示源格式。
 
 使用 NVIDIA Office 或官方 Simple Room 时，额外执行：
 
@@ -150,9 +162,35 @@ git branch main origin/main  # 仅在本地 main 不存在时执行
 
 该工具同时下载官方场景和转换 main 中的抓取物体。`WORLD=office` 为 Office；`WORLD=isaac_simple_room` 为 NVIDIA Simple Room；`WORLD=simple_room` 为 main 的房间。Office 已配置室内补光。切换场景时同时换 `MAP_BUNDLE` 并重新建图，不能沿用其他场景的定位地图。
 
+## Gazebo Harmonic 配置与切换
+
+默认以 Isaac Sim 的抓取、建图、底盘和 Nav2 参数为基准，Gazebo 使用相同任务接口。仅切换仿真器不会恢复旧 main 的 Cartographer 或真值导航。
+
+```bash
+sudo apt install ros-jazzy-ros-gz ros-jazzy-gz-ros2-control \
+  ros-jazzy-gz-sim-vendor ros-jazzy-gz-common-vendor ros-jazzy-gz-plugin-vendor libembree-dev
+bash -c 'source /opt/ros/jazzy/setup.bash && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release'
+./start_explore_and_mapping.sh --sim gazebo
+./start_pick_and_place_demo.sh --sim gazebo
+```
+
+也可修改入口顶部的 `SIM_BACKEND=isaac` 为 `gazebo`，保持无参数启动。缺少 Gazebo 或 Embree 时，可选包 `x_bot_gazebo` 不构建插件，Isaac 仍可构建运行；Gazebo 启动会检查插件是否存在。底盘公共配置在 `src/x_bot/config/base_motion.yaml`，值沿用 Isaac 基线；机械臂和夹爪默认参数共享 `isaac_controllers.yaml`，Gazebo 的接口覆盖在 `gazebo_controllers.yaml`；Gazebo 原生位置伺服控制其他关节，第 2 关节的力驱动、夹爪驱动与接触摩擦配置在 `gazebo_physics.yaml`。
+
+Gazebo 首批支持 `simple_room`、`manipulation_test`，不支持 Office 或其他 USD 专属场景。Gazebo 默认地图目录分别为 `maps/gazebo/simple_room`、`maps/gazebo/manipulation_test`；Isaac 保留原路径；Gazebo 语义地图也保存到对应地图目录的 `semantic_map.svm`。Gazebo 自动探索结束时调用 `/localization/save_map`，保存完整地图包；已有目录会拒绝覆盖，重新建图时指定新的 `--bundle`。Gazebo 导航入口同样需要先保存完整地图包。
+
+`DEPTH_SOURCE=sim` 表示当前仿真器的深度图；Isaac 后端兼容旧值 `isaac`，Gazebo 使用 `sim`，两者继续支持 `lsm`。三维雷达和 IMU 输出共用 FAST-LIO，二维地图及扫描从去畸变点云派生。Gazebo 原生真值不发布导航 TF。
+
+Gazebo MID-360 插件在每个 5 ms 物理步采集 1,000 条真实碰撞几何射线，100 ms 组帧；扫描方向、范围、字段及真实采样偏移与当前 Isaac 近似算法一致。Embree 查询使用 Gazebo 原生网格加载器，动态物体和机械臂位姿持续更新；命中机器人自身的射线不进入输出。动态场景网格使用凸分解，物理引擎和 Embree 共用 Gazebo 的网格加载接口；瓶子阻尼通过真实力和力矩实现。两种物理引擎的接触与运行速度可能不同。
+
+源码资产固定来自提交 `92b0409ccf83549e74d03966bdde7f0f700ff927`，不依赖未来 main 的文件布局。浅克隆需获取包含该提交的完整历史；模型及许可证保留在缓存内。Gazebo 提取资产不需要 Isaac Python：
+
+```bash
+python3 scripts/assets/prepare_gazebo_scene.py --world simple_room
+```
+
 ## 直接运行
 
-所有入口的默认配置写在各脚本顶部，直接执行即可。每次仿真启动先运行 `stop_robot_sim.sh`，关闭上次项目服务窗口、清理 ROS / Isaac 进程与日志。统一只开一个 RViz：`src/x_bot/rviz/octomap.rviz`。
+所有入口的默认配置写在各脚本顶部，直接执行默认使用 Isaac Sim；增加 `--sim gazebo` 可切换。每次仿真启动先运行 `stop_robot_sim.sh`，关闭上次项目服务窗口、清理 ROS / Isaac / Gazebo 进程与日志。统一只开一个 RViz：`src/x_bot/rviz/octomap.rviz`。
 
 | 命令 | 默认场景 / 行为 |
 |---|---|
@@ -172,7 +210,7 @@ source install/setup.zsh
 ros2 service call /localization/save_map std_srvs/srv/Trigger '{}'
 ```
 
-探索默认输出 `maps/gazebo_simple_room`。导航类入口要求目录同时包含 `bundle.json`、`map.pcd`、`map.yaml`、`map.pgm`；只有二维地图无法启动当前 ICP 定位。保存不会覆盖已有目录。导航类任务含固定地图目标点，换地图后须检查任务坐标。
+Isaac 探索默认输出 `maps/gazebo_simple_room`，Gazebo 默认输出 `maps/gazebo/simple_room`。导航类入口要求目录同时包含 `bundle.json`、`map.pcd`、`map.yaml`、`map.pgm`；只有二维地图无法启动当前 ICP 定位。保存不会覆盖已有目录。导航类任务含固定地图目标点，换地图后须检查任务坐标。
 
 RViz 显示 FAST-LIO 点云、里程计轨迹、语义体素、导航地图及规划路径。导航服务器就绪后使用 **Nav2 Goal**。自动探索默认开启；手动设目标前可将脚本的 `AUTO_EXPLORE=false`，或暂停运行中的探索：
 
@@ -195,7 +233,7 @@ LLM 模式启动前设置 `DASHSCOPE_API_KEY`，接口配置见 `llm_agent/`；W
 | `src/yoloe_infer/configs/config.yaml` / `manipulation.yaml` | 文本类别、颜色、检测阈值、深度语义点云采样步长 |
 | `src/x_bot/config/isaac_controllers.yaml` | 控制器及夹爪停滞判定 |
 | `src/x_bot/config/pick_and_place_demo.yaml` | 抓取任务与物理验收参数 |
-| `src/LSM_depth_infer/config/isaac_params.yaml` | LSM ROS 输入与输出；详见 [LSM README](src/LSM_depth_infer/README.md) |
+| `src/LSM_depth_infer/config/isaac_params.yaml` | 可选本地 LSM 模块的 ROS 输入与输出，需自行提供模块及配置 |
 
 ### FAST-LIO 仿真配置
 
@@ -220,11 +258,13 @@ LLM 模式启动前设置 `DASHSCOPE_API_KEY`，接口配置见 `llm_agent/`；W
 
 探索默认 `SEMANTIC_CLOUD_SOURCE=fastlio`：同期 FAST-LIO 点云投影到相机图像，FOV 内命中 YOLOE mask 的点赋类别颜色，其他点保留未知几何。二维导航地图仍由 FAST-LIO 点云生成。
 
-抓取默认 `SEMANTIC_CLOUD_SOURCE=depth`、`DEPTH_SOURCE=isaac`，使用 `/x_bot/camera_left/depth/image_raw`；改为 `DEPTH_SOURCE=lsm` 使用 `/x_bot/camera_left/nn_depth`。FAST-LIO 模式无需运行 LSM。
+PCA 顶抓使用同帧分割深度的中心和方向；回收机械臂保持已完成的垂直抬升高度，1 m 仍作为最低回收高度。物理成功判定只读取中立状态话题，不提供运动目标。
 
-所有语义建图统一使用 `semantic_voxel_mapping`，输入 `/yoloe_multi_text_prompt/pointcloud_semantic`，CUDA raycast 更新 hit/miss，类别 RGB 跨帧多数投票。抓取地图分辨率 2 cm，融合上限 5 Hz、发布 2 Hz。语义深度点云默认 `semantic_depth_stride: 2`，GraspNet 点云仍为全密度。暂停识别时仍发布几何点云，使移走物体的位置能通过有效 miss 射线逐步清空。详见 [语义地图 README](src/semantic_voxel_mapping/README.md)。
+抓取默认 `SEMANTIC_CLOUD_SOURCE=depth`、`DEPTH_SOURCE=sim`，使用 `/x_bot/camera_left/depth/image_raw`；改为 `DEPTH_SOURCE=lsm` 使用 `/x_bot/camera_left/nn_depth`。FAST-LIO 模式无需运行 LSM。`src/LSM_depth_infer` 已从版本控制移除，现有本地文件保留；新克隆选择 `lsm` 前需自行提供该模块、配置和推理引擎并构建 `stereo_matching`。
 
-夹爪闭合接触可接受停滞，张开必须到位；动作成功不等同于抓住物体。默认物理校验检查抬升、搬运保持和入桶后停留，`/isaac/debug/object_states` 为只读验收数据，不参与检测、目标计算或物体移动。MoveIt 桌子碰撞配置在 `manipulation_fixture.yaml`，搬运物体边界来自分割深度点云。
+所有语义建图统一使用 `semantic_voxel_mapping`，输入 `/yoloe_multi_text_prompt/pointcloud_semantic`，CUDA raycast 更新 hit/miss，类别 RGB 跨帧多数投票。抓取地图分辨率 2 cm，融合上限 5 Hz、发布 2 Hz。语义深度点云默认 `semantic_depth_stride: 2`，GraspNet 点云仍为全密度。抓取过程中 YOLOE 保持推理和结果画面输出，仅通过 `/yoloe_multi_text_prompt/enable_pointcloud`（`std_srvs/srv/SetBool`）暂停彩色及语义点云；抓取结束或失败时自动恢复，建图继续通过有效 miss 射线清空移走物体的位置。详见 [语义地图 README](src/semantic_voxel_mapping/README.md)。
+
+夹爪闭合接触可接受停滞，张开必须到位；动作成功不等同于抓住物体。默认物理校验检查抬升、搬运保持和入桶后停留，`/simulation/debug/object_states` 为两种后端的只读验收数据（Isaac 保留 `/isaac/debug/object_states` 别名），不参与检测、目标计算或物体移动。MoveIt 桌子碰撞配置在 `manipulation_fixture.yaml`，搬运物体边界来自分割深度点云。
 
 ## 验证与排查
 
@@ -233,8 +273,8 @@ LLM 模式启动前设置 `DASHSCOPE_API_KEY`，接口配置见 `llm_agent/`；W
 python3 -m unittest discover -s tests -v
 
 # 已编译工作空间中的 C++ 回归
-bash -c 'source /opt/ros/jazzy/setup.bash && source install/setup.bash && colcon test --packages-select x_bot_localization semantic_voxel_mapping yoloe_infer'
-for package in x_bot_localization semantic_voxel_mapping yoloe_infer; do
+bash -c 'source /opt/ros/jazzy/setup.bash && source install/setup.bash && colcon test --packages-select x_bot_localization semantic_voxel_mapping yoloe_infer x_bot_gazebo'
+for package in x_bot_localization semantic_voxel_mapping yoloe_infer x_bot_gazebo; do
   colcon test-result --test-result-base "build/$package" --verbose
 done
 
@@ -248,7 +288,9 @@ python3 scripts/diagnostics/measure_isaac_performance.py --seconds 30 --output /
 
 性能工具输出实时倍率及按仿真时间统计的传感器频率。实际观看速度受实时倍率影响，配置 1 m/s 不代表墙钟时间内也移动 1 m。入口设置 `HEADLESS=true` 可关闭观察视口，相机和感知仍运行。完整 CPU/GPU 负载会影响帧率，测量工具也有额外开销。
 
-若 GNOME Terminal 报旧 screen object path 错误，当前公共启动脚本会清除继承的 `GNOME_TERMINAL_SCREEN` / `GNOME_TERMINAL_SERVICE`。没有桌面终端时服务写入 `log/isaac_sim`；有桌面时看各服务窗口及 ROS 日志。`Package ... not found` 时检查依赖安装、构建结果和当前终端的工作空间环境。
+首次启动可能需要数分钟编译 RTX 着色器或生成碰撞凸分解。控制器顺序加载以避免多个加载进程争抢锁；等待管理器最长 600 秒、单次服务调用最长 300 秒、激活切换最长 120 秒，适应初始化时的卡顿；可查看对应后端日志判断进度。
+
+若 GNOME Terminal 报旧 screen object path 错误，当前公共启动脚本会清除继承的 `GNOME_TERMINAL_SCREEN` / `GNOME_TERMINAL_SERVICE`。没有桌面终端时服务写入 `log/isaac` 或 `log/gazebo`；有桌面时看各服务窗口及 ROS 日志。`Package ... not found` 时检查依赖安装、构建结果和当前终端的工作空间环境。
 
 ## 致谢
 

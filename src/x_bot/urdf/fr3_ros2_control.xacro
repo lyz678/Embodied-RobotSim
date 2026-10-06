@@ -7,7 +7,7 @@
 
     <ros2_control name="FrankaHardwareInterface" type="system">
       <hardware>
-        <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+        <plugin>x_bot_gazebo/GazeboDriveSystem</plugin>
       </hardware>
 
       <joint name="${arm_id}_joint1">
@@ -80,7 +80,8 @@
 
     <gazebo>
       <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
-        <parameters>$(find x_bot)/config/fr3_controllers.yaml</parameters>
+        <parameters>$(find x_bot)/config/isaac_controllers.yaml</parameters>
+        <parameters>$(find x_bot)/config/gazebo_controllers.yaml</parameters>
       </plugin>
     </gazebo>
 

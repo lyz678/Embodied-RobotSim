@@ -20,44 +20,12 @@ sys.path.insert(0, str(REPOSITORY / 'src/x_bot/isaac_sim'))
 from sdf_scene import SdfAssets, WORLDS, numbers, safe_name, sdf_bool
 
 
-def extract_sources(destination, revision):
-    source = destination / 'source'
-    source.mkdir(parents=True, exist_ok=True)
-    commit = subprocess.check_output(['git', 'rev-parse', revision], cwd=REPOSITORY, text=True).strip()
-    marker = source / 'revision.txt'
-    if marker.exists() and marker.read_text().strip() == commit:
-        return source, commit
-    archive = subprocess.Popen(['git', 'archive', commit, 'src/x_bot/models', 'src/x_bot/worlds'],
-                               cwd=REPOSITORY, stdout=subprocess.PIPE)
-    with tarfile.open(fileobj=archive.stdout, mode='r|') as tar:
-        for member in tar:
-            if member.isfile():
-                relative = Path(member.name).relative_to('src/x_bot')
-                target = source / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(tar.extractfile(member).read())
-    if archive.wait() != 0:
-        raise RuntimeError('git archive failed')
-    # Google scanned OBJ materials refer to texture basenames even though
-    # Gazebo finds them in materials/textures. Supply that search path to Kit.
-    for mtl in source.rglob('*.mtl'):
-        for line in mtl.read_text(errors='replace').splitlines():
-            if line.startswith(('map_Kd ', 'map_Ks ', 'map_Bump ', 'bump ')):
-                name = line.split(maxsplit=1)[1].strip()
-                target = mtl.parent / name
-                if not target.exists():
-                    matches = list(mtl.parent.parent.rglob(Path(name).name))
-                    if len(matches) != 1:
-                        raise FileNotFoundError(f'Material texture {name}: {mtl}')
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(matches[0], target)
-    marker.write_text(commit + '\n')
-    return source, commit
+from scene_sources import SOURCE_REVISION, extract_sources
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--revision', default='main')
+    parser.add_argument('--revision', default=SOURCE_REVISION)
     parser.add_argument('--worlds', nargs='+', choices=WORLDS, default=list(WORLDS))
     parser.add_argument('--force', action='store_true')
     args = parser.parse_args()

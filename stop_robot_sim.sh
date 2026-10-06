@@ -12,7 +12,7 @@ ros2 daemon stop
 pkill --ignore-ancestors -9 -f "ros2-daemon"
 
 # 2. 核心组件清理
-echo "停止核心组件 (Launch, Isaac Sim, RViz)..."
+echo "停止核心组件 (Launch, Isaac Sim, Gazebo, RViz)..."
 # 先尝试正常停止
 pkill --ignore-ancestors -f "ros2 launch"
 sleep 1
@@ -50,6 +50,11 @@ patterns=(
     "stereo_matching"
     "semantic_voxel_node"
     "color_octomap_server_node"
+    # Gazebo backend
+    "gz sim"
+    "gz-sim-server"
+    "gz-sim-gui"
+    "gazebo_backend.launch.py"
     # Isaac Sim backend
     "src/x_bot/isaac_sim/run_sim.py"
     "isaac-sim"

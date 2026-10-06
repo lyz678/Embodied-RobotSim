@@ -1,11 +1,13 @@
 # x_bot
 
-ROS 2 Jazzy robot package for Embodied-RobotSim's Isaac Sim 6.1 backend.
+ROS 2 Jazzy robot package for Embodied-RobotSim's Isaac Sim 6.1 and optional Gazebo Harmonic backends.
 The robot combines a differential-drive base, Franka FR3, a simulated MID-360
 and stereo RGB-D cameras.
 
 Use the workspace's [setup and simulation guide](../../README.md).
-Run root `start_*.sh` entry points rather than legacy Gazebo launch files.
+Run root `start_*.sh` entry points; append `--sim gazebo` to select Gazebo.
+Shared base parameters live in `config/base_motion.yaml`; backend-specific
+Gazebo implementation lives in `../x_bot_gazebo`.
 
 | Directory | Purpose |
 |---|---|

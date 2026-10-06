@@ -2,11 +2,26 @@
 
 [中文完整配置指南](README.md)
 
-ROS 2 Jazzy and Isaac Sim 6.1 workspace for a differential-drive mobile robot with a Franka FR3 arm, simulated MID-360 lidar and stereo RGB-D cameras. FAST-LIO provides lidar-inertial odometry, Nav2 handles exploration/navigation, and YOLOE + GraspNet + MoveIt handle manipulation. CUDA semantic voxel mapping integrates geometry with hit/miss updates and semantic colors with voting. Qwen3 and the Web UI provide natural-language task control.
+ROS 2 Jazzy workspace with Isaac Sim 6.1 and Gazebo Harmonic backends for a differential-drive mobile robot with a Franka FR3 arm, simulated MID-360 lidar and stereo RGB-D cameras. FAST-LIO provides lidar-inertial odometry, Nav2 handles exploration/navigation, and YOLOE + GraspNet + MoveIt handle manipulation. CUDA semantic voxel mapping integrates geometry with hit/miss updates and semantic colors with voting. Qwen3 and the Web UI provide natural-language task control.
 
 ## Demos
 
-![Isaac Sim](assets/IssacSim.gif)
+### Isaac Sim
+
+![Isaac Sim simulation](assets/IssacSim.gif)
+
+### Gazebo Harmonic
+
+![Gazebo Harmonic simulation](assets/GazeboSim.gif)
+
+Both backends share the entry scripts. Isaac Sim is the default; add `--sim gazebo` to switch:
+
+```bash
+./start_explore_and_mapping.sh
+./start_explore_and_mapping.sh --sim gazebo
+```
+
+### LLM Agent
 
 ![LLM Agent](assets/Embodied_LLM.gif)
 
@@ -70,11 +85,29 @@ Default rooms are converted from the original `main` branch scenes, including te
 "$ISAAC_SIM_PATH/python.sh" scripts/assets/download_isaac_environments.py
 ```
 
-Assets are cached under `$ISAAC_ASSETS_PATH`. `WORLD=simple_room` uses main's room, `WORLD=isaac_simple_room` uses NVIDIA's room, and `WORLD=office` uses the downloaded Office with additional indoor lighting. Change the map bundle and rebuild maps when switching worlds. Gazebo in the migration tool's name refers to the source asset format; runtime uses Isaac Sim.
+Assets are cached under `$ISAAC_ASSETS_PATH`. `WORLD=simple_room` uses main's room, `WORLD=isaac_simple_room` uses NVIDIA's room, and `WORLD=office` uses the downloaded Office with additional indoor lighting. Change the map bundle and rebuild maps when switching worlds. Gazebo in the migration tool's name refers to the source asset format; Isaac runtime uses its converted USD; Gazebo uses the pinned SDF and source models.
+
+## Gazebo compatibility
+
+Gazebo uses the current Isaac-first task, mapping and motion defaults, FAST-LIO, ICP, Nav2 and the CUDA semantic mapper. Install optional dependencies and rebuild:
+
+```bash
+sudo apt install ros-jazzy-ros-gz ros-jazzy-gz-ros2-control \
+  ros-jazzy-gz-sim-vendor ros-jazzy-gz-common-vendor ros-jazzy-gz-plugin-vendor libembree-dev
+bash -c 'source /opt/ros/jazzy/setup.bash && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release'
+./start_explore_and_mapping.sh --sim gazebo
+./start_pick_and_place_demo.sh --sim gazebo
+```
+
+Set `SIM_BACKEND=gazebo` in an entry script for argument-free Gazebo startup. Supported worlds are `simple_room` and `manipulation_test`; USD-only worlds are rejected. Gazebo maps live under `maps/gazebo/<world>`; existing Isaac map paths remain compatible. Gazebo semantic maps are saved to `semantic_map.svm` in the selected bundle. On completion, Gazebo exploration calls `/localization/save_map` to save the complete paired PCD/2D bundle. Existing bundles are protected from overwrite; choose a new `--bundle` when remapping. Use `DEPTH_SOURCE=sim` for the selected simulator's depth, or `lsm` for inferred depth. The legacy `isaac` depth value remains accepted only by Isaac.
+
+Shared base parameters live in `src/x_bot/config/base_motion.yaml`; Gazebo controller interface overrides live in `gazebo_controllers.yaml`, layered over the existing Isaac controller defaults. Gazebo joint-2 effort-drive gains, finger drives and friction live in `gazebo_physics.yaml`. Controllers load sequentially: manager discovery allows 600 s, each service call 300 s, and activation 120 s, including cold shader compilation and collision decomposition. The optional C++ backend uses Embree and Gazebo's native mesh loader for collision rays: 1,000 actual rays per 5 ms step, 100 ms packets, identical approximate nonrepeating directions and timestamps to Isaac. Dynamic scene meshes use convex decomposition shared by physics and Embree. Bottle damping uses physical forces and torques. Its ground truth never supplies navigation TF. Physical verification uses the neutral telemetry topic on both backends. PCA top grasps pair the depth-derived center and direction; retraction preserves vertical lift clearance with a 1 m minimum. Verification telemetry does not supply motion targets.
+
+Scene extraction is independent of Isaac Python and pinned to `92b0409ccf83549e74d03966bdde7f0f700ff927`, rather than the moving main branch. Keep full Git history for that revision. Missing Gazebo/Embree dependencies disable the optional plugin build, without preventing Isaac builds. See the Chinese guide for detailed setup.
 
 ## Run
 
-Edit defaults at the top of the root scripts; no arguments are required.
+Edit defaults at the top of the root scripts; no arguments are required. Isaac remains the default; append `--sim gazebo` to select Gazebo.
 
 | Entry point | Default behavior |
 |---|---|
@@ -83,7 +116,7 @@ Edit defaults at the top of the root scripts; no arguments are required.
 | `./start_pick_and_place_demo.sh` | Pick/place book, cup, coke, bottle and shoe in `manipulation_test` |
 | `./start_navigation_and_pick_demo.sh` | Navigation and manipulation in `simple_room` |
 | `./start_llm_agent.sh` | Qwen3 task server and Web UI in `simple_room` |
-| `./stop_robot_sim.sh` | Stop ROS/Isaac services and close project service terminals |
+| `./stop_robot_sim.sh` | Stop ROS/Isaac/Gazebo services and close project service terminals |
 
 Startup cleans previous sessions and logs. One RViz displays FAST-LIO clouds, odometry trails, semantic voxels, maps and navigation paths. Use **Nav2 Goal** once navigation is ready. Set `AUTO_EXPLORE=false` for manual mapping/navigation, or pause exploration on `/explore/resume` with `std_msgs/msg/Bool {data: false}`.
 
@@ -95,7 +128,7 @@ source install/setup.zsh
 ros2 service call /localization/save_map std_srvs/srv/Trigger '{}'
 ```
 
-Default output: `maps/gazebo_simple_room`. Navigation modes require `bundle.json`, `map.pcd`, `map.yaml` and `map.pgm`; a 2D map alone is insufficient for ICP localization. Saving does not overwrite an existing bundle. Task coordinates must be checked when changing maps. Set `DASHSCOPE_API_KEY` before starting the LLM mode; Web UI runs at `http://localhost:8888`.
+Isaac default output: `maps/gazebo_simple_room`; Gazebo default: `maps/gazebo/simple_room`. Navigation modes require `bundle.json`, `map.pcd`, `map.yaml` and `map.pgm`; a 2D map alone is insufficient for ICP localization. Saving does not overwrite an existing bundle. Task coordinates must be checked when changing maps. Set `DASHSCOPE_API_KEY` before starting the LLM mode; Web UI runs at `http://localhost:8888`.
 
 ## Configuration
 
@@ -113,9 +146,9 @@ The PhysX-raycast lidar approximates MID-360 sampling rather than its optical re
 | `src/x_bot/config/isaac_controllers.yaml` | Controllers and gripper stall thresholds |
 | `src/x_bot/config/pick_and_place_demo.yaml` | Grasp task and physical verification |
 
-Exploration defaults to FAST-LIO geometry projected into synchronized RGB masks. Manipulation defaults to Isaac depth; set `DEPTH_SOURCE=lsm` with `SEMANTIC_CLOUD_SOURCE=depth` for stereo inferred depth. FAST-LIO mode does not need LSM. All semantic maps use the new CUDA voxel mapper; recognition pauses retain geometry updates so observed miss rays can clear moved objects. Semantic depth clouds use stride 2 while GraspNet keeps full density. See [semantic mapping](src/semantic_voxel_mapping/README.md) and [LSM](src/LSM_depth_infer/README.md) for details.
+Exploration defaults to FAST-LIO geometry projected into synchronized RGB masks. Manipulation defaults to Isaac depth; set `DEPTH_SOURCE=lsm` with `SEMANTIC_CLOUD_SOURCE=depth` for stereo inferred depth. FAST-LIO mode does not need LSM. All semantic maps use the new CUDA voxel mapper; grasping gates cloud publication while YOLOE inference and images remain active, and occupancy updates resume after release. Semantic depth clouds use stride 2 while GraspNet keeps full density. See [semantic mapping](src/semantic_voxel_mapping/README.md) for details. `src/LSM_depth_infer` is an ignored local optional module; existing local files remain, but new clones must provide the module, configuration and inference engine and build `stereo_matching` before selecting `lsm`.
 
-Physical grasp checks verify lift, retained carry and settled placement. `/isaac/debug/object_states` is read-only validation telemetry; perception selects targets and contact/friction move objects. An action success alone does not prove a physical grasp.
+Physical grasp checks verify lift, retained carry and settled placement. `/simulation/debug/object_states` is read-only validation telemetry (Isaac retains its legacy alias); perception selects targets and contact/friction move objects. An action success alone does not prove a physical grasp.
 
 ## Repository organization and checks
 
@@ -130,6 +163,8 @@ ros2 topic echo /localization/status
 ros2 control list_controllers
 ```
 
-Set `HEADLESS=true` to disable the observation viewport while retaining camera/ROS perception. Configured velocity is measured per simulation second; wall-clock motion depends on real-time factor. Profiling adds overhead. Without desktop terminals, service logs are written to `log/isaac_sim`.
+Set `HEADLESS=true` to disable the observation viewport while retaining camera/ROS perception. Configured velocity is measured per simulation second; wall-clock motion depends on real-time factor. Profiling adds overhead. Without desktop terminals, service logs are written to `log/isaac` or `log/gazebo`.
+
+During grasping, YOLOE keeps inference and annotated images active. The `/yoloe_multi_text_prompt/enable_pointcloud` (`std_srvs/srv/SetBool`) service gates both colored and semantic clouds; the demo restores publication on completion or failure. Occupancy updates from these clouds pause during grasping and resume afterward.
 
 Thanks to FAST-LIO, FAST_LIO_ROS2, YOLOE, GraspNet, m-explore-ros2, Franka ROS 2 and bcr_bot. Original asset licenses are retained alongside cached scene sources.

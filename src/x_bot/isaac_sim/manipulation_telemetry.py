@@ -37,7 +37,8 @@ class ManipulationTelemetry:
         bounds = cache.ComputeWorldBound(bin_prim).ComputeAlignedRange()
         self.place_bounds = [list(bounds.GetMin()), list(bounds.GetMax())]
         self.bodies = RigidPrim(paths)
-        self.publisher = node.create_publisher(String, '/isaac/debug/object_states', 1)
+        self.publisher = node.create_publisher(String, '/simulation/debug/object_states', 1)
+        self.legacy_publisher = node.create_publisher(String, '/isaac/debug/object_states', 1)
         self.last = -1.0
         self.callback = SimulationManager.register_callback(self.step, SimulationEvent.PHYSICS_POST_STEP, order=110)
         node.get_logger().info(f'Manipulation ground-truth telemetry: {self.names}')
@@ -57,6 +58,7 @@ class ManipulationTelemetry:
                    'center': list(Gf.Vec3d(*positions[i].tolist()) + Gf.Quatd(float(orientations[i][0]), Gf.Vec3d(*orientations[i][1:].tolist())).Transform(self.centers[i]))}
             for i, name in enumerate(self.names)}})
         self.publisher.publish(msg)
+        self.legacy_publisher.publish(msg)
 
     def close(self):
         SimulationManager.deregister_callback(self.callback)

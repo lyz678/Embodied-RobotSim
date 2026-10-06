@@ -39,6 +39,7 @@
 #include <explore/explore.h>
 
 #include <thread>
+#include <std_srvs/srv/trigger.hpp>
 #include <rclcpp/create_timer.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <ament_index_cpp/get_package_share_directory.hpp>
@@ -77,6 +78,7 @@ Explore::Explore()
   this->declare_parameter<float>("min_frontier_size", 0.5);
   this->declare_parameter<bool>("return_to_init", false);
   this->declare_parameter<std::string>("map_save_path", "");
+  this->declare_parameter<std::string>("map_save_service", "");
 
   this->get_parameter("planner_frequency", planner_frequency_);
   this->get_parameter("stuck_distance_threshold", stuck_distance_threshold_);  // 获取卡住距离检测阈值
@@ -532,6 +534,27 @@ void Explore::saveMap()
 {
   // 💾 自动保存地图到源码目录 src/x_bot/maps（不写 install）
   RCLCPP_INFO(logger_, "Saving map automatically...");
+
+  const auto service = this->get_parameter("map_save_service").as_string();
+  if (!service.empty()) {
+    auto client = this->create_client<std_srvs::srv::Trigger>(service);
+    if (!client->wait_for_service(std::chrono::seconds(3))) {
+      RCLCPP_ERROR(logger_, "Map save service unavailable: %s", service.c_str());
+      return;
+    }
+    // Save the complete paired PCD/2D bundle through its owning node.
+    // Keep the client alive until its response without blocking navigation.
+    client->async_send_request(std::make_shared<std_srvs::srv::Trigger::Request>(),
+        [client, logger = logger_](rclcpp::Client<std_srvs::srv::Trigger>::SharedFuture future) {
+          const auto result = future.get();
+          if (result->success) {
+            RCLCPP_INFO(logger, "Complete map bundle saved: %s", result->message.c_str());
+          } else {
+            RCLCPP_ERROR(logger, "Map save failed: %s", result->message.c_str());
+          }
+        });
+    return;
+  }
 
   std::string map_path;
   this->get_parameter("map_save_path", map_path);

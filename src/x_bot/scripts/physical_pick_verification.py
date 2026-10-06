@@ -1,4 +1,4 @@
-"""Read-only Isaac acceptance checks; never supplies grasp targets or motion poses."""
+"""Read-only simulation acceptance checks; never supplies grasp targets or motion poses."""
 import math
 
 CLASS_OBJECTS = {3: 'book', 2: 'coffee_mug', 9: 'coke_can', 4: 'water_bottle', 6: 'shoe'}

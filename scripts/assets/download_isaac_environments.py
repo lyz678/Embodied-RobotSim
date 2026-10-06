@@ -4,6 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 import os
+from scene_sources import SOURCE_REVISION
 from isaacsim import SimulationApp
 
 app = SimulationApp({'headless': True})
@@ -39,7 +40,7 @@ try:
     for name, (model, mesh) in objects.items():
         prefix = f'src/x_bot/models/simple_house/{model}'
         source_dir = destination / 'PickObjects/source' / model
-        paths = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', 'main', prefix], cwd=repository, text=True).splitlines()
+        paths = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', SOURCE_REVISION, prefix], cwd=repository, text=True).splitlines()
         if not paths:
             raise RuntimeError(f'Missing main-branch asset: {model}')
         for path in paths:
@@ -47,7 +48,7 @@ try:
                 continue
             target = source_dir / Path(path).relative_to(prefix)
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(subprocess.check_output(['git', 'show', f'main:{path}'], cwd=repository))
+            target.write_bytes(subprocess.check_output(['git', 'show', f'{SOURCE_REVISION}:{path}'], cwd=repository))
         output = destination / 'PickObjects' / f'{name}.usd'
         context = converter.AssetConverterContext()
         context.ignore_materials = False
