@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+<name>x_bot_mapping</name><version>0.2.0</version><description>x bot mapping</description>
+<maintainer email="maintainer@example.com">Embodied RobotSim maintainers</maintainer><license>Apache-2.0</license>
+<buildtool_depend>ament_cmake</buildtool_depend>
+<buildtool_depend>ament_cmake_python</buildtool_depend>
+<depend>nav_msgs</depend>
+<depend>python3-numpy</depend>
+<depend>rclpy</depend>
+<depend>semantic_voxel_mapping</depend>
+<depend>sensor_msgs</depend>
+<depend>sensor_msgs_py</depend>
+<depend>std_msgs</depend>
+<depend>std_srvs</depend>
+<depend>tf2_ros</depend>
+<depend>x_bot_navigation</depend>
+<depend>x_bot_common</depend>
+<test_depend>ament_cmake_gtest</test_depend>
+<export><build_type>ament_cmake</build_type></export>
+<exec_depend>message_filters</exec_depend>
+<exec_depend>ament_index_python</exec_depend>
+</package>

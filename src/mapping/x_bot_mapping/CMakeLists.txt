@@ -1,0 +1,10 @@
+cmake_minimum_required(VERSION 3.16)
+project(x_bot_mapping)
+set(CMAKE_CXX_STANDARD 17)
+find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
+ament_python_install_package(${PROJECT_NAME})
+install(DIRECTORY launch DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS scripts/map_builder DESTINATION lib/${PROJECT_NAME})
+
+ament_package()

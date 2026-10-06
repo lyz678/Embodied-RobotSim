@@ -17,13 +17,32 @@ ROS 2 Jazzy workspace with Isaac Sim 6.1 and Gazebo Harmonic backends for a diff
 Both backends share the entry scripts. Isaac Sim is the default; add `--sim gazebo` to switch:
 
 ```bash
-./start_explore_and_mapping.sh
-./start_explore_and_mapping.sh --sim gazebo
+./start_mapping.sh
+./start_mapping.sh --sim gazebo
 ```
 
 ### LLM Agent
 
 ![LLM Agent](assets/Embodied_LLM.gif)
+
+## Source layout
+
+| Group | Responsibility |
+|---|---|
+| `src/description/` | x_bot / Franka URDF and meshes |
+| `src/localization/` | FAST-LIO adapter, ICP and localization TF |
+| `src/perception/` | YOLOE, GraspNet, TensorRT plugins and optional local LSM |
+| `src/planning/` | Exploration, Nav2, MoveIt configuration and unified RViz |
+| `src/control/` | Velocity arbitration, safety, path controller, base and joint parameters |
+| `src/mapping/` | CUDA semantic voxels, 2D grids and paired-map persistence |
+| `src/manipulation/` | Scan, Go Home, gripper, pick/place and physical acceptance |
+| `src/simulation/` | Isaac, Gazebo Harmonic and shared scene asset parsing |
+| `src/sensors/` | Livox bridge and shared MID-360 configuration/sampling |
+| `src/embodied/` | Agent and Web UI |
+| `src/common/` / `src/interfaces/` | Geometry, system composition and message definitions |
+| `src/vendor/` | Ignored, pinned FAST-LIO dependency checkout |
+
+Runtime helpers live in `scripts/runtime/`; installation, assets and diagnostics are grouped separately. Root launchers are `start_mapping.sh`, `start_pick.sh`, `start_embodied.sh` and `stop_robot_sim.sh`.
 
 ## Setup
 
@@ -51,28 +70,28 @@ sudo apt install python3-vcstool python3-rosdep python3-colcon-common-extensions
   ros-jazzy-navigation2 ros-jazzy-nav2-bringup \
   ros-jazzy-ros2-control ros-jazzy-ros2-controllers
 # Run sudo rosdep init once if rosdep has not been initialized.
-bash scripts/setup_isaac_dependencies.sh
+bash scripts/setup/setup_dependencies.sh
 bash -c 'source /opt/ros/jazzy/setup.bash && rosdep update && rosdep install --from-paths src --ignore-src -r -y'
 ```
 
-The [dependency manifest](scripts/isaac.repos) pins FAST_LIO_ROS2 commit `2fffc570a25d0df172720bac034fbdb6a13d2162`. The setup script imports it into `src/isaac_vendor/FAST_LIO_ROS2` and initializes the ikd-Tree submodule. Keep this dependency for simulation builds. No Livox hardware SDK is required: `src/isaac_livox_interfaces` supplies the `livox_ros_driver2` message package. Do not add another package with that name.
+The [dependency manifest](scripts/setup/vendor.repos) pins FAST_LIO_ROS2 commit `2fffc570a25d0df172720bac034fbdb6a13d2162`. The setup script imports it into `src/vendor/FAST_LIO_ROS2` and initializes the ikd-Tree submodule. Keep this dependency for simulation builds. No Livox hardware SDK is required: `src/interfaces/livox_ros_driver2` supplies the `livox_ros_driver2` message package. Do not add another package with that name.
 
 Download models from the [model folder](https://drive.google.com/drive/folders/1gPPyvKqiYd7cg2vUyqucV1CjLTf6J0y2?usp=drive_link):
 
 | Model | Destination |
 |---|---|
-| `yoloe-v8l-text-prompt-multi_nc10_fp16.onnx` | `src/yoloe_infer/models/` |
-| `graspnet.onnx` | `src/graspnet_infer/` |
+| `yoloe-v8l-text-prompt-multi_nc10_fp16.onnx` | `src/perception/yoloe_infer/models/` |
+| `graspnet.onnx` | `src/perception/graspnet_infer/` |
 
-Keep the required `src/yoloe_infer/models/tokenizer_data.json.gz`. Generate engines locally when changing GPU or TensorRT versions:
+Keep the required `src/perception/yoloe_infer/models/tokenizer_data.json.gz`. Generate engines locally when changing GPU or TensorRT versions:
 
 ```bash
-bash src/graspnet_infer/tensorrt_plugins/build.sh
-trtexec --onnx=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.onnx \
-  --saveEngine=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.engine
-trtexec --onnx=src/graspnet_infer/graspnet.onnx \
-  --saveEngine=src/graspnet_infer/graspnet.trt \
-  --staticPlugins=src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so
+bash src/perception/graspnet_infer/tensorrt_plugins/build.sh
+trtexec --onnx=src/perception/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.onnx \
+  --saveEngine=src/perception/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.engine
+trtexec --onnx=src/perception/graspnet_infer/graspnet.onnx \
+  --saveEngine=src/perception/graspnet_infer/graspnet.trt \
+  --staticPlugins=src/perception/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so
 bash -c 'source /opt/ros/jazzy/setup.bash && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release'
 ```
 
@@ -95,13 +114,13 @@ Gazebo uses the current Isaac-first task, mapping and motion defaults, FAST-LIO,
 sudo apt install ros-jazzy-ros-gz ros-jazzy-gz-ros2-control \
   ros-jazzy-gz-sim-vendor ros-jazzy-gz-common-vendor ros-jazzy-gz-plugin-vendor libembree-dev
 bash -c 'source /opt/ros/jazzy/setup.bash && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release'
-./start_explore_and_mapping.sh --sim gazebo
-./start_pick_and_place_demo.sh --sim gazebo
+./start_mapping.sh --sim gazebo
+./start_pick.sh --sim gazebo
 ```
 
 Set `SIM_BACKEND=gazebo` in an entry script for argument-free Gazebo startup. Supported worlds are `simple_room` and `manipulation_test`; USD-only worlds are rejected. Gazebo maps live under `maps/gazebo/<world>`; existing Isaac map paths remain compatible. Gazebo semantic maps are saved to `semantic_map.svm` in the selected bundle. On completion, Gazebo exploration calls `/localization/save_map` to save the complete paired PCD/2D bundle. Existing bundles are protected from overwrite; choose a new `--bundle` when remapping. Use `DEPTH_SOURCE=sim` for the selected simulator's depth, or `lsm` for inferred depth. The legacy `isaac` depth value remains accepted only by Isaac.
 
-Shared base parameters live in `src/x_bot/config/base_motion.yaml`; Gazebo controller interface overrides live in `gazebo_controllers.yaml`, layered over the existing Isaac controller defaults. Gazebo joint-2 effort-drive gains, finger drives and friction live in `gazebo_physics.yaml`. Controllers load sequentially: manager discovery allows 600 s, each service call 300 s, and activation 120 s, including cold shader compilation and collision decomposition. The optional C++ backend uses Embree and Gazebo's native mesh loader for collision rays: 1,000 actual rays per 5 ms step, 100 ms packets, identical approximate nonrepeating directions and timestamps to Isaac. Dynamic scene meshes use convex decomposition shared by physics and Embree. Bottle damping uses physical forces and torques. Its ground truth never supplies navigation TF. Physical verification uses the neutral telemetry topic on both backends. PCA top grasps pair the depth-derived center and direction; retraction preserves vertical lift clearance with a 1 m minimum. Verification telemetry does not supply motion targets.
+Shared base parameters live in `src/control/x_bot_control/config/base_motion.yaml`; Gazebo controller interface overrides live in `gazebo_controllers.yaml`, layered over the existing Isaac controller defaults. Gazebo joint-2 effort-drive gains, finger drives and friction live in `gazebo_physics.yaml`. Controllers load sequentially: manager discovery allows 600 s, each service call 300 s, and activation 120 s, including cold shader compilation and collision decomposition. The optional C++ backend uses Embree and Gazebo's native mesh loader for collision rays: 1,000 actual rays per 5 ms step, 100 ms packets, identical approximate nonrepeating directions and timestamps to Isaac. Dynamic scene meshes use convex decomposition shared by physics and Embree. Bottle damping uses physical forces and torques. Its ground truth never supplies navigation TF. Physical verification uses the neutral telemetry topic on both backends. PCA top grasps pair the depth-derived center and direction; retraction preserves vertical lift clearance with a 1 m minimum. Verification telemetry does not supply motion targets.
 
 Scene extraction is independent of Isaac Python and pinned to `92b0409ccf83549e74d03966bdde7f0f700ff927`, rather than the moving main branch. Keep full Git history for that revision. Missing Gazebo/Embree dependencies disable the optional plugin build, without preventing Isaac builds. See the Chinese guide for detailed setup.
 
@@ -111,11 +130,11 @@ Edit defaults at the top of the root scripts; no arguments are required. Isaac r
 
 | Entry point | Default behavior |
 |---|---|
-| `./start_explore_and_mapping.sh` | Automatic exploration/mapping in `simple_room` |
-| `./start_navigation.sh` | ICP localization and Nav2 in `simple_room` |
-| `./start_pick_and_place_demo.sh` | Pick/place book, cup, coke, bottle and shoe in `manipulation_test` |
-| `./start_navigation_and_pick_demo.sh` | Navigation and manipulation in `simple_room` |
-| `./start_llm_agent.sh` | Qwen3 task server and Web UI in `simple_room` |
+| `./start_mapping.sh` | Automatic exploration/mapping in `simple_room` |
+| `./start_mapping.sh --mode navigation` | ICP localization and Nav2 in `simple_room` |
+| `./start_pick.sh` | Pick/place book, cup, coke, bottle and shoe in `manipulation_test` |
+| `./start_pick.sh --mode navigation` | Navigation and manipulation in `simple_room` |
+| `./start_embodied.sh` | Qwen3 task server and Web UI in `simple_room` |
 | `./stop_robot_sim.sh` | Stop ROS/Isaac/Gazebo services and close project service terminals |
 
 Startup cleans previous sessions and logs. One RViz displays FAST-LIO clouds, odometry trails, semantic voxels, maps and navigation paths. Use **Nav2 Goal** once navigation is ready. Set `AUTO_EXPLORE=false` for manual mapping/navigation, or pause exploration on `/explore/resume` with `std_msgs/msg/Bool {data: false}`.
@@ -132,27 +151,27 @@ Isaac default output: `maps/gazebo_simple_room`; Gazebo default: `maps/gazebo/si
 
 ## Configuration
 
-FAST-LIO uses **`src/x_bot_localization/config/fastlio_mid360.yaml`**, not the vendor repository's default YAML. Topics are `/livox/lidar` and `/livox/imu`, lidar type is 1, scan lines 4, timestamp unit 3 (ns), and scan rate 10 Hz in simulation time. Time synchronization is disabled with zero offset because both sensors share the simulation clock. Simulated lidar/IMU origins are colocated, so extrinsics are zero translation and identity rotation, with online extrinsic estimation disabled. Map/surface filters use 0.15 m and point filtering uses every third point.
+FAST-LIO uses **`src/localization/x_bot_localization/config/fastlio_mid360.yaml`**, not the vendor repository's default YAML. Topics are `/livox/lidar` and `/livox/imu`, lidar type is 1, scan lines 4, timestamp unit 3 (ns), and scan rate 20 Hz in simulation time (shared `mid360.yaml` setting). Time synchronization is disabled with zero offset because both sensors share the simulation clock. Simulated lidar/IMU origins are colocated, so extrinsics are zero translation and identity rotation, with online extrinsic estimation disabled. Map/surface filters use 0.15 m and point filtering uses every third point.
 
 The PhysX-raycast lidar approximates MID-360 sampling rather than its optical response. Physics/IMU run at 200 Hz and clouds at 10 Hz in simulation time. Navigation TF is `map → odom → base_footprint → mid360_imu_link`; FAST-LIO's native TF is kept private. Ground truth is debug-only. Known-map ICP requires an approximate initial pose; use RViz **2D Pose Estimate** to correct it. Invalid localization stops the base. Restart the complete localization pipeline after resetting the simulation clock.
 
 | File / setting | Purpose |
 |---|---|
 | Root script defaults | World, map bundle, initial pose, build and headless options |
-| `src/x_bot_localization/config/nav2_isaac.yaml` | Navigation velocity, footprint, inflation and path tracking |
-| `src/semantic_voxel_mapping/config/map.yaml` | Exploration semantic mapping |
-| `src/semantic_voxel_mapping/config/manipulation.yaml` | 2 cm manipulation mapping, 5 Hz integration / 2 Hz publication limits |
-| `src/yoloe_infer/configs/manipulation.yaml` | Manipulation classes/colors and semantic depth sampling |
-| `src/x_bot/config/isaac_controllers.yaml` | Controllers and gripper stall thresholds |
-| `src/x_bot/config/pick_and_place_demo.yaml` | Grasp task and physical verification |
+| `src/planning/x_bot_navigation/config/nav2.yaml` | Navigation velocity, footprint, inflation and path tracking |
+| `src/mapping/semantic_voxel_mapping/config/map.yaml` | Exploration semantic mapping |
+| `src/mapping/semantic_voxel_mapping/config/manipulation.yaml` | 2 cm manipulation mapping, 5 Hz integration / 2 Hz publication limits |
+| `src/perception/yoloe_infer/configs/manipulation.yaml` | Manipulation classes/colors and semantic depth sampling |
+| `src/control/x_bot_control/config/isaac_controllers.yaml` | Controllers and gripper stall thresholds |
+| `src/manipulation/x_bot_manipulation/config/pick_and_place_demo.yaml` | Grasp task and physical verification |
 
-Exploration defaults to FAST-LIO geometry projected into synchronized RGB masks. Manipulation defaults to Isaac depth; set `DEPTH_SOURCE=lsm` with `SEMANTIC_CLOUD_SOURCE=depth` for stereo inferred depth. FAST-LIO mode does not need LSM. All semantic maps use the new CUDA voxel mapper; grasping gates cloud publication while YOLOE inference and images remain active, and occupancy updates resume after release. Semantic depth clouds use stride 2 while GraspNet keeps full density. See [semantic mapping](src/semantic_voxel_mapping/README.md) for details. `src/LSM_depth_infer` is an ignored local optional module; existing local files remain, but new clones must provide the module, configuration and inference engine and build `stereo_matching` before selecting `lsm`.
+Exploration defaults to FAST-LIO geometry projected into synchronized RGB masks. Manipulation defaults to Isaac depth; set `DEPTH_SOURCE=lsm` with `SEMANTIC_CLOUD_SOURCE=depth` for stereo inferred depth. FAST-LIO mode does not need LSM. All semantic maps use the new CUDA voxel mapper; grasping gates cloud publication while YOLOE inference and images remain active, and occupancy updates resume after release. Semantic depth clouds use stride 2 while GraspNet keeps full density. See [semantic mapping](src/mapping/semantic_voxel_mapping/README.md) for details. `src/perception/LSM_depth_infer` is an ignored local optional module; existing local files remain, but new clones must provide the module, configuration and inference engine and build `stereo_matching` before selecting `lsm`.
 
 Physical grasp checks verify lift, retained carry and settled placement. `/simulation/debug/object_states` is read-only validation telemetry (Isaac retains its legacy alias); perception selects targets and contact/friction move objects. An action success alone does not prove a physical grasp.
 
 ## Repository organization and checks
 
-`scripts/robot_services.sh`, `isaac_runtime.sh` and `close_robot_terminals.py` implement common runtime/cleanup. `scripts/setup_isaac_dependencies.sh` uses `scripts/isaac.repos`. Asset utilities live in `scripts/assets`; optional read-only profiling lives in `scripts/diagnostics`. Offline regressions stay in `tests`. Historical validation reports and one-off migration validation scripts have been removed. Build products, map bundles and vendor dependencies are ignored.
+`scripts/runtime/robot_services.sh`, `isaac_runtime.sh` and `close_robot_terminals.py` implement common runtime/cleanup. `scripts/setup/setup_dependencies.sh` uses `scripts/setup/vendor.repos`. Asset utilities live in `scripts/assets`; optional read-only profiling lives in `scripts/diagnostics`. Offline regressions stay in `tests`. Historical validation reports and one-off migration validation scripts have been removed. Build products, map bundles and vendor dependencies are ignored.
 
 ```bash
 python3 -m unittest discover -s tests -v
@@ -168,3 +187,31 @@ Set `HEADLESS=true` to disable the observation viewport while retaining camera/R
 During grasping, YOLOE keeps inference and annotated images active. The `/yoloe_multi_text_prompt/enable_pointcloud` (`std_srvs/srv/SetBool`) service gates both colored and semantic clouds; the demo restores publication on completion or failure. Occupancy updates from these clouds pause during grasping and resume afterward.
 
 Thanks to FAST-LIO, FAST_LIO_ROS2, YOLOE, GraspNet, m-explore-ros2, Franka ROS 2 and bcr_bot. Original asset licenses are retained alongside cached scene sources.
+
+## Functional layout and entrypoint migration
+
+The source tree is grouped into description, localization, perception, planning, control, mapping, manipulation, simulation, sensors, embodied, common, interfaces and vendor directories. `x_bot` retains only URDF and meshes so mesh package URIs stay valid. `x_bot_bringup` composes estimator, sensors, safety and map services; individual modules own their algorithms and configuration. Unified RViz is installed by `x_bot_navigation`.
+
+| Previous entry | Current entry |
+|---|---|
+| `start_explore_and_mapping.sh` | `./start_mapping.sh` |
+| `start_navigation.sh` | `./start_mapping.sh --mode navigation` |
+| `start_pick_and_place_demo.sh` | `./start_pick.sh` |
+| `start_navigation_and_pick_demo.sh` | `./start_pick.sh --mode navigation` |
+| `start_llm_agent.sh` | `./start_embodied.sh` |
+
+The root contains these three launchers and `stop_robot_sim.sh`. All launchers default to Isaac and support `--sim gazebo`; runtime helpers live in `scripts/runtime/`. Existing topics, services, actions, TF, 20 Hz scan framing and numerical control defaults are preserved. Both backends save paired maps via `/localization/save_map`. Maps stay in `maps/`, with pre-migration 2D outputs preserved in `maps/legacy/` and `maps/pre_reorganization/`. Rebuild after moving sources; the old install must not be reused. Local inference models, LSM and the pinned FAST-LIO checkout are preserved in their new directories.
+
+Optional Agent / Web dependencies are installed explicitly, outside the simulation startup:
+
+```bash
+bash scripts/setup/setup_embodied_dependencies.sh --local
+export DASHSCOPE_API_KEY='your-key'
+./start_embodied.sh
+```
+
+The launcher uses `.venv/agent/bin/python` when present (system ROS packages remain available), or an explicit `AGENT_PYTHON`. Runtime scripts do not install system packages. Web logs are stored in `log/web/`.
+
+`--local` extracts optional Web ROS packages into ignored `.cache/embodied_sysroot/` and installs Agent Python dependencies into `.venv/agent/`, without sudo. The embodied launcher loads that local overlay. Without `--local`, installation uses system apt packages. Without an API key, Agent status remains available and chat reports the missing configuration.
+
+Repeated mapping runs preserve an existing bundle and print a new timestamped output directory. Pass that path with `--bundle` when navigating on the newly saved map.

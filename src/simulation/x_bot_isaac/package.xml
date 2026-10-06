@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<package format="3">
+<name>x_bot_isaac</name><version>0.2.0</version><description>x bot isaac</description>
+<maintainer email="maintainer@example.com">Embodied RobotSim maintainers</maintainer><license>Apache-2.0</license>
+<buildtool_depend>ament_cmake</buildtool_depend>
+<depend>controller_manager</depend>
+<depend>franka_description</depend>
+<depend>launch_ros</depend>
+<depend>python3-yaml</depend>
+<depend>rclpy</depend>
+<depend>robot_state_publisher</depend>
+<depend>x_bot</depend>
+<depend>x_bot_control</depend>
+<depend>x_bot_scene_assets</depend>
+<depend>x_bot_sensors</depend>
+<depend>xacro</depend>
+<export><build_type>ament_cmake</build_type></export>
+<exec_depend>ament_index_python</exec_depend>
+<exec_depend>sensor_msgs_py</exec_depend>
+<exec_depend>geometry_msgs</exec_depend>
+<exec_depend>sensor_msgs</exec_depend>
+<exec_depend>std_msgs</exec_depend>
+<exec_depend>python3-numpy</exec_depend>
+<exec_depend>nav_msgs</exec_depend>
+<exec_depend>builtin_interfaces</exec_depend>
+</package>

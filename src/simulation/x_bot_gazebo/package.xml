@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>x_bot_gazebo</name><version>0.1.0</version>
+  <description>Optional Gazebo Harmonic backend with MID360 sampling and read-only verification.</description>
+  <maintainer email="maintainer@example.com">Embodied RobotSim maintainers</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend><depend>sensor_msgs</depend><depend>std_msgs</depend>
+  <depend>nav_msgs</depend><depend>geometry_msgs</depend><depend>nlohmann-json-dev</depend>
+  <depend>yaml-cpp</depend><depend>ament_index_cpp</depend><depend>pluginlib</depend>
+  <exec_depend>x_bot</exec_depend>
+  <test_depend>ament_cmake_test</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+<exec_depend>x_bot_control</exec_depend><exec_depend>x_bot_sensors</exec_depend>
+<exec_depend>x_bot_scene_assets</exec_depend>
+</package>

@@ -1,12 +1,14 @@
 """SDF include/asset resolution regressions without Kit or Gazebo."""
+
+import source_packages
 from pathlib import Path
 import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src/x_bot/isaac_sim'))
-from sdf_scene import SdfAssets, sdf_bool
-from mid360_sampling import ray_matches_surface, native_hit_mask
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src/simulation/x_bot_isaac/runtime'))
+from x_bot_scene_assets.sdf_scene import SdfAssets, sdf_bool
+from x_bot_sensors.mid360_sampling import ray_matches_surface, native_hit_mask
 from scene_contacts import visible_surface_height
 
 

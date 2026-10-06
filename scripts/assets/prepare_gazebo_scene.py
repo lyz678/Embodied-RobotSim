@@ -3,14 +3,14 @@
 
 import argparse
 import os
+from ament_index_python.packages import get_package_share_directory
 from pathlib import Path
 import sys
 import xml.etree.ElementTree as ET
 import yaml
 from scene_sources import REPOSITORY, SOURCE_REVISION, extract_sources
 
-sys.path.insert(0, str(REPOSITORY / "src/x_bot/isaac_sim"))
-from sdf_scene import SdfAssets
+from x_bot_scene_assets.sdf_scene import SdfAssets
 
 
 def configure_book_inertia(model):
@@ -59,7 +59,7 @@ def prepare(world, destination):
     assets = SdfAssets(source)
     scene = assets.world(world)
     physics_config = yaml.safe_load(
-        (REPOSITORY / "src/x_bot/config/gazebo_physics.yaml").read_text()
+        (Path(get_package_share_directory("x_bot_control")) / "config/gazebo_physics.yaml").read_text()
     )
     # Resolve URIs before dropping parser-only source-directory annotations.
     for model in scene.iter("model"):

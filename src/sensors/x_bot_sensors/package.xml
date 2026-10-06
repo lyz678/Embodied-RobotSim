@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+<name>x_bot_sensors</name><version>0.2.0</version><description>x bot sensors</description>
+<maintainer email="maintainer@example.com">Embodied RobotSim maintainers</maintainer><license>Apache-2.0</license>
+<buildtool_depend>ament_cmake</buildtool_depend>
+<buildtool_depend>ament_cmake_python</buildtool_depend>
+<depend>livox_ros_driver2</depend>
+<depend>python3-numpy</depend>
+<depend>python3-yaml</depend>
+<depend>rclpy</depend>
+<depend>sensor_msgs</depend>
+<test_depend>ament_cmake_gtest</test_depend>
+<export><build_type>ament_cmake</build_type></export>
+<exec_depend>ament_index_python</exec_depend>
+</package>

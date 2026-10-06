@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+<name>x_bot_navigation</name><version>0.2.0</version><description>x bot navigation</description>
+<maintainer email="maintainer@example.com">Embodied RobotSim maintainers</maintainer><license>Apache-2.0</license>
+<buildtool_depend>ament_cmake</buildtool_depend>
+<depend>launch_ros</depend>
+<depend>nav2_bringup</depend>
+<depend>nav2_common</depend>
+<depend>nav2_graceful_controller</depend>
+<depend>nav2_mppi_controller</depend>
+<depend>nav2_regulated_pure_pursuit_controller</depend>
+<depend>nav2_smoother</depend>
+<depend>rviz2</depend>
+<depend>x_bot_control</depend>
+<export><build_type>ament_cmake</build_type></export>
+</package>

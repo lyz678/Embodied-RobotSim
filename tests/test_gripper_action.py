@@ -1,4 +1,6 @@
 """Action outcome handling without requiring a running ROS installation."""
+
+import source_packages
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace as NS
@@ -22,7 +24,7 @@ class GripperAction(TestCase):
             def __init__(self): self.command = NS(position=0, max_effort=0)
         modules = {'action_msgs': NS(), 'action_msgs.msg': NS(GoalStatus=NS(STATUS_SUCCEEDED=4)),
                    'control_msgs': NS(), 'control_msgs.action': NS(GripperCommand=NS(Goal=Goal))}
-        path = Path(__file__).resolve().parents[1]/'src/x_bot/scripts/gripper_action.py'
+        path = Path(__file__).resolve().parents[1]/'src/manipulation/x_bot_manipulation/scripts/gripper_action.py'
         spec = importlib.util.spec_from_file_location('tested_gripper_action', path)
         self.module = importlib.util.module_from_spec(spec)
         with patch.dict('sys.modules', modules): spec.loader.exec_module(self.module)

@@ -1,0 +1,47 @@
+# Explore Lite 自主探索算法参数配置
+# 基于前沿探索(Frontier-based Exploration)实现未知环境自主探索
+
+explore_node:
+  ros__parameters:
+
+    # 机器人坐标系配置
+    robot_base_frame: base_link                    # 机器人基座坐标系
+
+    # 代价地图话题配置
+    costmap_topic: /global_costmap/costmap        # 全局代价地图话题（Nav2提供）
+    costmap_updates_topic: /global_costmap/costmap_updates  # 代价地图更新话题
+
+    # 可视化配置
+    visualize: true                               # 启用探索过程可视化
+
+    # 规划器配置
+    planner_frequency: 0.5                        # 规划器频率（Hz）- 每2秒检测一次
+    # 🔄 导航决策逻辑：
+    # - 目标前沿已被地图观测到时，提前取消导航并选择下一个前沿
+    # - 尚未观测到时继续导航；卡住时交给脱困/重试机制
+    finish_on_observation: true
+    observation_map_topic: /map                  # 原始二维地图，避免膨胀代价误判
+    stuck_timeout: 20.0                          # 仿真秒；给 Nav2 脱困时间，暂停不计时
+    stuck_distance_threshold: 0.05               # 卡住距离检测阈值（米）- 累计进展阈值 5cm，非单次检测位移
+    stuck_angle_threshold: 0.17                   # 卡住角度检测阈值（弧度）- 累计朝向进展阈值约10度
+
+    # 探索评分权重
+    potential_scale: 5.0                          # 势场权重 - 吸引机器人向未知区域移动
+    orientation_scale: 0.0                        # 朝向权重 - 当前设为0，不考虑朝向
+    gain_scale: 0.5                              # 增益权重 - 平衡探索新区域vs深入探索
+
+    # 系统参数
+    transform_tolerance: 0.5                      # TF变换容忍度（秒）
+    min_frontier_size: 0.1                       # 最小前沿大小（米）- 过滤太小的探索目标
+    return_to_init: true                          # 探索完成后返回初始位置
+
+    # 地图保存路径（不含扩展名；生成 map.pgm / map.yaml）
+    # 留空 → 通过 /localization/save_map 保存完整地图包到入口指定的 maps/ 目录
+    map_save_path: ""
+    # Corner coverage: include small reachable boundaries beside inflation.
+    max_travel_cost: 200       # 0..252; never traverse inscribed/lethal/unknown cells.
+    completion_checks: 5      # At 0.5 Hz, require ~10 s without new frontiers.
+    retry_cooldown: 20.0      # Retry failed goals after new map observations.
+    observation_wait: 6.0     # Give sensors time after successful navigation.
+    blacklist_radius: 0.25    # Limit suppression to the same observation point.
+    max_goal_attempts: 3      # Bound persistent unreachable/no-change goals.

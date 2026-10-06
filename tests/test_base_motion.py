@@ -1,12 +1,14 @@
 """Offline command/geometry regressions, not a Gazebo/Isaac dynamics test."""
+
+import source_packages
 import math
 from pathlib import Path
 import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT/'src/x_bot/isaac_sim'))
-from base_motion import (BaseMotion, WHEEL_NAMES, wheel_velocities, RADIUS, TRACK,
+sys.path.insert(0, str(ROOT/'src/simulation/x_bot_isaac/runtime'))
+from x_bot_control.base_motion import (BaseMotion, WHEEL_NAMES, wheel_velocities, RADIUS, TRACK,
                          MAX_ANGULAR, ANGULAR_ACCEL, MAX_WHEEL_YAW_DEMAND,
                          WHEEL_YAW_ACCEL)
 
@@ -151,7 +153,7 @@ class BaseMotionTests(unittest.TestCase):
         self.assertEqual(motion.advance(.1,.5,.005,measured_angular=math.nan),[0]*4)
 
     def test_single_wheel_writer(self):
-        source=(ROOT/'src/x_bot/isaac_sim/ros_bridge.py').read_text()
+        source=(ROOT/'src/simulation/x_bot_isaac/runtime/ros_bridge.py').read_text()
         self.assertEqual(source.count('isaacsim.core.nodes.IsaacArticulationController'),1)
         self.assertIn('list(WHEEL_NAMES)',source)
         self.assertNotIn('FrontDifferential',source)

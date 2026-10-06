@@ -1,10 +1,12 @@
 """Separating retreat must never hide a new obstacle in the swept footprint."""
+
+import source_packages
 import math
 from pathlib import Path
 import sys
 import unittest
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'src/x_bot_localization'))
-from x_bot_localization.contact_escape import separating_contacts
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'src/localization/x_bot_localization'))
+from x_bot_control.contact_escape import separating_contacts
 
 
 class ContactEscapeTests(unittest.TestCase):

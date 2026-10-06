@@ -34,7 +34,7 @@ from lifecycle_msgs.srv import ChangeState
 from nav2_msgs.action import FollowPath
 from rclpy.action import ActionClient
 
-cfg = yaml.safe_load(open(ROOT / "src/x_bot_localization/config/nav2_isaac.yaml"))
+cfg = yaml.safe_load(open(ROOT / "src/planning/x_bot_navigation/config/nav2.yaml"))
 p = cfg["controller_server"]["ros__parameters"]
 p["use_sim_time"] = False
 if args.controller == "mppi":

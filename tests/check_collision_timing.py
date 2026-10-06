@@ -17,7 +17,7 @@ from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Bool
 from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
 from lifecycle_msgs.srv import ChangeState
-from x_bot_localization.contact_scan import ContactScan
+from x_bot_control.contact_scan import ContactScan
 
 assert os.environ.get("ROS_DOMAIN_ID") == "79"
 rclpy.init()
@@ -108,7 +108,7 @@ def spin_for(duration):
 cfg = yaml.safe_load(
     (
         Path(__file__).resolve().parents[1]
-        / "src/x_bot_localization/config/nav2_isaac.yaml"
+        / "src/planning/x_bot_navigation/config/nav2.yaml"
     ).read_text()
 )["collision_monitor"]["ros__parameters"]
 cfg["use_sim_time"] = False

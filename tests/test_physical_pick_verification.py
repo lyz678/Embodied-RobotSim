@@ -1,16 +1,17 @@
+import source_packages
 import copy
 import sys
 from pathlib import Path
 import unittest
 import yaml
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src/x_bot/scripts'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src/manipulation/x_bot_manipulation/scripts'))
 from physical_pick_verification import lifted, retained, in_bin
 
 class PhysicalPickAcceptance(unittest.TestCase):
     def setUp(self):
         self.initial = {'objects': {'book': {'position': [.6, .3, .8]}, 'fr3_hand': {'position': [.5,.3,.9]}}, 'place_bounds': [[-.2,-1,0],[.2,-.6,.4]]}
     def test_fixture_keeps_leg_gap_open(self):
-        path = Path(__file__).resolve().parents[1] / 'src/x_bot/config/manipulation_fixture.yaml'
+        path = Path(__file__).resolve().parents[1] / 'src/manipulation/x_bot_manipulation/config/manipulation_fixture.yaml'
         boxes = yaml.safe_load(path.read_text())['boxes']
         def inside(point, box):
             return all(abs(point[i]-box['position'][i]) <= box['size'][i]/2 for i in range(3))

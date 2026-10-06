@@ -1,5 +1,7 @@
 """Backend selection and pinned asset preparation regressions, without simulators."""
 
+import source_packages
+
 import importlib.util
 import os
 from pathlib import Path
@@ -32,18 +34,16 @@ class BackendTests(unittest.TestCase):
 
     def test_all_entrypoints_select_default_and_override(self):
         for name in (
-            "start_explore_and_mapping.sh",
-            "start_navigation.sh",
-            "start_pick_and_place_demo.sh",
-            "start_navigation_and_pick_demo.sh",
-            "start_llm_agent.sh",
+            "start_mapping.sh",
+            "start_pick.sh",
+            "start_embodied.sh",
         ):
             with tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
-                (root / "scripts").mkdir()
+                (root / "scripts/runtime").mkdir(parents=True)
                 entry = root / name
                 entry.write_text((ROOT / name).read_text())
-                (root / "scripts/robot_services.sh").write_text('printf "%s\\n" "$@"\n')
+                (root / "scripts/runtime/robot_services.sh").write_text('printf "%s\\n" "$@"\n')
                 baseline = subprocess.check_output(
                     ["bash", str(entry)], text=True
                 ).splitlines()
@@ -52,6 +52,20 @@ class BackendTests(unittest.TestCase):
                 ).splitlines()
                 self.assertEqual(baseline[1:3], ["--sim", "isaac"])
                 self.assertEqual(override[-2:], ["--sim", "gazebo"])
+
+    def test_task_modes_dispatch_and_reject_invalid_modes(self):
+        for name, expected in (("start_mapping.sh", "navigation"), ("start_pick.sh", "navigation_pick")):
+            with tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                (root / "scripts/runtime").mkdir(parents=True)
+                entry = root / name
+                entry.write_text((ROOT / name).read_text())
+                (root / "scripts/runtime/robot_services.sh").write_text('printf "%s\\n" "$@"\n')
+                result = subprocess.check_output(["bash", str(entry), "--mode", "navigation", "--sim", "gazebo"], text=True).splitlines()
+                self.assertEqual(result[0], expected)
+                self.assertEqual(result[-2:], ["--sim", "gazebo"])
+                invalid = subprocess.run(["bash", str(entry), "--mode", "invalid"], capture_output=True)
+                self.assertEqual(invalid.returncode, 2)
 
     def test_prepared_world_resolves_collision_mesh_and_preserves_source(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -86,13 +100,13 @@ class BackendTests(unittest.TestCase):
             self.assertEqual(world.read_text(), original)
 
     def test_cpp_sampler_matches_isaac_reference(self):
-        binary = ROOT / "build/x_bot_gazebo/test_sampling"
+        binary = Path(os.environ.get("ROBOT_BUILD_BASE", ROOT / "build")) / "x_bot_gazebo/test_sampling"
         if not binary.exists():
             self.skipTest("Build optional Gazebo tests first")
         import numpy as np
 
-        sys.path.insert(0, str(ROOT / "src/x_bot/isaac_sim"))
-        from mid360_sampling import direction_array
+        sys.path.insert(0, str(ROOT / "src/simulation/x_bot_isaac/runtime"))
+        from x_bot_sensors.mid360_sampling import direction_array
 
         for first in (0, 19999, 123456789):
             result = subprocess.check_output(
@@ -109,7 +123,7 @@ class BackendTests(unittest.TestCase):
         result = subprocess.run(
             [
                 "bash",
-                str(ROOT / "scripts/robot_services.sh"),
+                str(ROOT / "scripts/runtime/robot_services.sh"),
                 "explore",
                 "--sim",
                 "invalid",
@@ -124,7 +138,7 @@ class BackendTests(unittest.TestCase):
         result = subprocess.run(
             [
                 "bash",
-                str(ROOT / "scripts/robot_services.sh"),
+                str(ROOT / "scripts/runtime/robot_services.sh"),
                 "explore",
                 "--sim",
                 "gazebo",

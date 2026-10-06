@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<package format="3">
+<name>x_bot_manipulation</name><version>0.2.0</version><description>x bot manipulation</description>
+<maintainer email="maintainer@example.com">Embodied RobotSim maintainers</maintainer><license>Apache-2.0</license>
+<buildtool_depend>ament_cmake</buildtool_depend>
+<depend>ament_index_cpp</depend>
+<depend>control_msgs</depend>
+<depend>cv_bridge</depend>
+<depend>geometry_msgs</depend>
+<depend>moveit_msgs</depend>
+<depend>moveit_ros_planning_interface</depend>
+<depend>pcl_conversions</depend>
+<depend>python3-numpy</depend>
+<depend>python3-yaml</depend>
+<depend>rclcpp</depend>
+<depend>rclcpp_action</depend>
+<depend>rclpy</depend>
+<depend>sensor_msgs</depend>
+<depend>shape_msgs</depend>
+<depend>std_msgs</depend>
+<depend>std_srvs</depend>
+<depend>tf2</depend>
+<depend>tf2_geometry_msgs</depend>
+<depend>tf2_ros</depend>
+<depend>x_bot_control</depend>
+<depend>x_bot_moveit_config</depend>
+<depend>yaml-cpp</depend>
+<export><build_type>ament_cmake</build_type></export>
+<exec_depend>ament_index_python</exec_depend>
+<exec_depend>yoloe_infer</exec_depend>
+<exec_depend>franka_fr3_moveit_config</exec_depend>
+<exec_depend>nav2_msgs</exec_depend>
+<exec_depend>vision_msgs</exec_depend>
+<exec_depend>visualization_msgs</exec_depend>
+<exec_depend>trajectory_msgs</exec_depend>
+<exec_depend>builtin_interfaces</exec_depend>
+<exec_depend>action_msgs</exec_depend>
+</package>

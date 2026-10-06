@@ -16,8 +16,7 @@ import tarfile
 import traceback
 
 REPOSITORY = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPOSITORY / 'src/x_bot/isaac_sim'))
-from sdf_scene import SdfAssets, WORLDS, numbers, safe_name, sdf_bool
+from x_bot_scene_assets.sdf_scene import SdfAssets, WORLDS, numbers, safe_name, sdf_bool
 
 
 from scene_sources import SOURCE_REVISION, extract_sources
@@ -58,6 +57,8 @@ def main():
                 context.convert_stage_up_z = mesh.suffix.lower() != '.obj'
                 context.use_double_precision_to_usd_transform_op = True
                 if mesh.suffix.lower() == '.dae':
+                    from ament_index_python.packages import get_package_share_directory
+                    sys.path.insert(0, str(Path(get_package_share_directory('x_bot_isaac')) / 'runtime'))
                     from collada_asset import convert_collada
                     convert_collada(mesh, output)
                 else:

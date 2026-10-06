@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<package format="3">
+<name>x_bot</name><version>0.2.0</version><description>x bot</description>
+<maintainer email="maintainer@example.com">Embodied RobotSim maintainers</maintainer><license>Apache-2.0</license>
+<buildtool_depend>ament_cmake</buildtool_depend>
+<depend>franka_description</depend>
+<depend>xacro</depend>
+<test_depend>ament_cmake_gtest</test_depend>
+<export><build_type>ament_cmake</build_type></export>
+<exec_depend>x_bot_control</exec_depend>
+</package>

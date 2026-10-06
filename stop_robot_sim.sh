@@ -4,7 +4,7 @@ echo "🛑 正在停止所有机器人仿真服务..."
 
 echo "关闭机器人服务终端窗口..."
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-python3 "$SCRIPT_DIR/scripts/close_robot_terminals.py"
+python3 "$SCRIPT_DIR/scripts/runtime/close_robot_terminals.py"
 
 # 1. 停止 ROS2 守护进程 (最先停止，防止节点被发现或自动重连)
 echo "清理 ROS2 守护进程..."
@@ -46,6 +46,15 @@ patterns=(
     "pick_and_place"
     "franka"
     "x_bot"
+    "fastlio_mapping"
+    "velocity_smoother"
+    "collision_monitor"
+    "behavior_server"
+    "smoother_server"
+    "agent_server.py"
+    "rosbridge_websocket"
+    "web_video_server"
+    "http.server.*8888"
     "fps_plugin"
     "stereo_matching"
     "semantic_voxel_node"
@@ -54,9 +63,9 @@ patterns=(
     "gz sim"
     "gz-sim-server"
     "gz-sim-gui"
-    "gazebo_backend.launch.py"
+    "x_bot_gazebo.*backend.launch.py"
     # Isaac Sim backend
-    "src/x_bot/isaac_sim/run_sim.py"
+    "src/simulation/x_bot_isaac/runtime/run_sim.py"
     "isaac-sim"
     "isaacsim"
 )

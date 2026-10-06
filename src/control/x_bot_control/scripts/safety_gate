@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+from x_bot_control.safety_gate import main
+main()

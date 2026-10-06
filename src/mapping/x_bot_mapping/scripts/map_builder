@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+from x_bot_mapping.map_builder import main
+main()

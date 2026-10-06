@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="3">
+<name>x_bot_moveit_config</name><version>0.2.0</version><description>x bot moveit config</description>
+<maintainer email="maintainer@example.com">Embodied RobotSim maintainers</maintainer><license>Apache-2.0</license>
+<buildtool_depend>ament_cmake</buildtool_depend>
+<depend>franka_fr3_moveit_config</depend>
+<depend>launch_ros</depend>
+<depend>moveit_configs_utils</depend>
+<depend>moveit_ros_move_group</depend>
+<depend>x_bot</depend>
+<depend>x_bot_control</depend>
+<export><build_type>ament_cmake</build_type></export>
+</package>

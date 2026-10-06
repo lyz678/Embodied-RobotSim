@@ -1,4 +1,6 @@
 """Run: python3 -m unittest discover -s tests -v (no ROS2/Isaac/PCL)."""
+
+import source_packages
 import ast
 import math
 import os
@@ -16,9 +18,12 @@ import numpy as np
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT/'src/x_bot_localization'), str(ROOT/'src/x_bot/isaac_sim')]
-from mid360_sampling import Packet, POINT, period_for_rate, directions, direction_array, settled_at_rest
-from x_bot_localization.core import matrix, quaternion, transform, decode_cloud, Grid, ray_cells, Health, save_bundle, VelocityArbiter
+sys.path[:0] = [str(ROOT/'src/localization/x_bot_localization'), str(ROOT/'src/simulation/x_bot_isaac/runtime')]
+from x_bot_sensors.mid360_sampling import Packet, POINT, period_for_rate, directions, direction_array, settled_at_rest
+from x_bot_common.geometry import matrix, quaternion, transform
+from x_bot_sensors.cloud import decode_cloud
+from x_bot_mapping.grid import Grid, ray_cells, save_bundle
+from x_bot_control.safety import Health, VelocityArbiter
 
 
 def cloud(data, endian=False):
@@ -268,10 +273,10 @@ class Readiness(unittest.TestCase):
 class Contracts(unittest.TestCase):
     def test_default_entrypoint_starts_isaac_exploration(self):
         with tempfile.TemporaryDirectory() as folder:
-            entry = Path(folder)/'start_explore_and_mapping.sh'
-            entry.write_text((ROOT/'start_explore_and_mapping.sh').read_text())
-            (Path(folder)/'scripts').mkdir()
-            (Path(folder)/'scripts/robot_services.sh').write_text('printf "%s\\n" "$@"\n')
+            entry = Path(folder)/'start_mapping.sh'
+            entry.write_text((ROOT/'start_mapping.sh').read_text())
+            (Path(folder)/'scripts/runtime').mkdir(parents=True)
+            (Path(folder)/'scripts/runtime/robot_services.sh').write_text('printf "%s\\n" "$@"\n')
             environment = dict(os.environ)
             environment.pop('SIM_BACKEND', None)
             result = subprocess.run(['bash', str(entry)], env=environment,
@@ -280,32 +285,32 @@ class Contracts(unittest.TestCase):
                              ['explore', '--sim', 'isaac', '--world', 'simple_room', '--bundle', str(Path(folder)/'maps/gazebo_simple_room'),
                               '--initial-x', '0.0', '--initial-y', '0.0',
                               '--initial-yaw', '1.5708', '--depth-source', 'sim',
-                              '--lsm-config', str(Path(folder)/'src/LSM_depth_infer/config/config.yaml'),
-                              '--lsm-params', str(Path(folder)/'src/LSM_depth_infer/config/isaac_params.yaml'),
+                              '--lsm-config', str(Path(folder)/'src/perception/LSM_depth_infer/config/config.yaml'),
+                              '--lsm-params', str(Path(folder)/'src/perception/LSM_depth_infer/config/isaac_params.yaml'),
                               '--semantic-cloud-source', 'fastlio',
                               '--octomap-backend', 'semantic_cuda', '--semantic-map-config',
-                              str(Path(folder)/'src/semantic_voxel_mapping/config/map.yaml'), '--build'])
+                              str(Path(folder)/'src/mapping/semantic_voxel_mapping/config/map.yaml'), '--build'])
 
     def test_pick_entrypoint_uses_main_manipulation_scene(self):
         with tempfile.TemporaryDirectory() as folder:
-            entry = Path(folder)/'start_pick_and_place_demo.sh'
-            entry.write_text((ROOT/'start_pick_and_place_demo.sh').read_text())
-            (Path(folder)/'scripts').mkdir()
-            (Path(folder)/'scripts/robot_services.sh').write_text('printf "%s\\n" "$@"\n')
+            entry = Path(folder)/'start_pick.sh'
+            entry.write_text((ROOT/'start_pick.sh').read_text())
+            (Path(folder)/'scripts/runtime').mkdir(parents=True)
+            (Path(folder)/'scripts/runtime/robot_services.sh').write_text('printf "%s\\n" "$@"\n')
             result = subprocess.run(['bash', str(entry)], check=True, capture_output=True, text=True)
             self.assertEqual(result.stdout.splitlines(),
                              ['pick', '--sim', 'isaac', '--world', 'manipulation_test', '--bundle', str(Path(folder)/'maps/manipulation_test'),
                               '--initial-x', '0.0', '--initial-y', '0.0', '--initial-yaw', '0.0',
-                              '--yoloe-config', str(Path(folder)/'src/yoloe_infer/configs/manipulation.yaml'),
+                              '--yoloe-config', str(Path(folder)/'src/perception/yoloe_infer/configs/manipulation.yaml'),
                               '--depth-source', 'sim', '--semantic-cloud-source', 'depth',
                               '--octomap-resolution', '0.02', '--semantic-map-config',
-                              str(Path(folder)/'src/semantic_voxel_mapping/config/manipulation.yaml'),
-                              '--lsm-config', str(Path(folder)/'src/LSM_depth_infer/config/config.yaml'),
-                              '--lsm-params', str(Path(folder)/'src/LSM_depth_infer/config/isaac_params.yaml'), '--build'])
+                              str(Path(folder)/'src/mapping/semantic_voxel_mapping/config/manipulation.yaml'),
+                              '--lsm-config', str(Path(folder)/'src/perception/LSM_depth_infer/config/config.yaml'),
+                              '--lsm-params', str(Path(folder)/'src/perception/LSM_depth_infer/config/isaac_params.yaml'), '--build'])
 
     def test_python_syntax(self):
-        paths=list((ROOT/'src/x_bot/isaac_sim').glob('*.py'))+list((ROOT/'src/x_bot_localization').rglob('*.py'))
-        paths += [path for path in (ROOT/'src/x_bot_localization/scripts').iterdir() if path.is_file()]
+        paths=list((ROOT/'src/simulation/x_bot_isaac/runtime').glob('*.py'))+list((ROOT/'src/localization/x_bot_localization').rglob('*.py'))
+        paths += [path for path in (ROOT/'src/localization/x_bot_localization/scripts').iterdir() if path.is_file()]
         for path in paths:
             ast.parse(path.read_text(),filename=str(path))
 
@@ -314,13 +319,13 @@ class Contracts(unittest.TestCase):
             subprocess.run(['bash','-n',str(path)],check=True)
 
     def test_yaml_and_xml(self):
-        for path in (ROOT/'src/x_bot_localization').rglob('*.yaml'):
+        for path in (ROOT/'src/localization/x_bot_localization').rglob('*.yaml'):
             self.assertIsInstance(yaml.safe_load(path.read_text()),dict)
-        for path in [ROOT/'src/x_bot/urdf/x_bot.xacro',ROOT/'src/x_bot_localization/package.xml',ROOT/'src/isaac_livox_interfaces/package.xml']:
+        for path in [ROOT/'src/description/x_bot/urdf/x_bot.xacro',ROOT/'src/localization/x_bot_localization/package.xml',ROOT/'src/interfaces/livox_ros_driver2/package.xml']:
             ET.parse(path)
 
     def test_nav2_limits(self):
-        params=yaml.safe_load((ROOT/'src/x_bot_localization/config/nav2_isaac.yaml').read_text())
+        params=yaml.safe_load((ROOT/'src/planning/x_bot_navigation/config/nav2.yaml').read_text())
         controller=params['controller_server']['ros__parameters']['FollowPath']
         limits=params['velocity_smoother']['ros__parameters']['max_velocity']
         self.assertLessEqual(controller['vx_max'], limits[0])
@@ -334,7 +339,7 @@ class Contracts(unittest.TestCase):
         self.assertEqual(params['velocity_smoother']['ros__parameters']['max_velocity'],[1.,0,1.2])
 
     def test_planning_margin_prevents_collision_monitor_contact_deadlock(self):
-        params=yaml.safe_load((ROOT/'src/x_bot_localization/config/nav2_isaac.yaml').read_text())
+        params=yaml.safe_load((ROOT/'src/planning/x_bot_navigation/config/nav2.yaml').read_text())
         local=params['local_costmap']['local_costmap']['ros__parameters']
         global_map=params['global_costmap']['global_costmap']['ros__parameters']
         self.assertEqual(local['robot_radius'], global_map['robot_radius'])
@@ -346,31 +351,31 @@ class Contracts(unittest.TestCase):
     def test_rviz_goal_tool_has_navigation_panel(self):
         # GoalTool updates GoalUpdater; Navigation 2 consumes that event and
         # sends NavigateToPose. A toolbar tool alone cannot start navigation.
-        config = yaml.safe_load((ROOT/'src/x_bot/rviz/octomap.rviz').read_text())
+        config = yaml.safe_load((ROOT/'src/planning/x_bot_navigation/rviz/octomap.rviz').read_text())
         tools = {tool['Class'] for tool in config['Visualization Manager']['Tools']}
         panels = {panel['Class'] for panel in config['Panels']}
         self.assertIn('nav2_rviz_plugins/GoalTool', tools)
         self.assertIn('nav2_rviz_plugins/Navigation 2', panels)
 
     def test_single_tf_authority(self):
-        bridge=(ROOT/'src/x_bot/isaac_sim/ros_bridge.py').read_text()
+        bridge=(ROOT/'src/simulation/x_bot_isaac/runtime/ros_bridge.py').read_text()
         self.assertNotIn('PublishRawTransformTree',bridge)
         self.assertNotIn('Example_Rotary_2D',bridge)
         self.assertIn('/debug/ground_truth/odom',bridge)
-        launch=(ROOT/'src/x_bot_localization/launch/localization.launch.py').read_text()
+        launch=(ROOT/'src/common/x_bot_bringup/launch/localization.launch.py').read_text()
         self.assertIn("('/tf','/fastlio/tf_internal')",launch)
-        start=(ROOT/'scripts/robot_services.sh').read_text()
+        start=(ROOT/'scripts/runtime/robot_services.sh').read_text()
         self.assertNotIn('cartographer.launch.py',start)
         self.assertNotIn('nav2.launch.py',start)
 
     def test_fastlio_calibration(self):
-        p=yaml.safe_load((ROOT/'src/x_bot_localization/config/fastlio_mid360.yaml').read_text())['/**']['ros__parameters']
+        p=yaml.safe_load((ROOT/'src/localization/x_bot_localization/config/fastlio_mid360.yaml').read_text())['/**']['ros__parameters']
         self.assertFalse(p['mapping']['extrinsic_est_en'])
         self.assertEqual(p['mapping']['extrinsic_T'],[0.,0.,0.])
         self.assertEqual(p['preprocess']['timestamp_unit'],3)
 
     def test_mount_geometry(self):
-        tree=ET.parse(ROOT/'src/x_bot/urdf/x_bot.xacro')
+        tree=ET.parse(ROOT/'src/description/x_bot/urdf/x_bot.xacro')
         joint=tree.find('.//joint[@name="mid360_joint"]')
         self.assertEqual(joint.find('parent').get('link'),'roof_link')
         arg=tree.find('.//{http://www.ros.org/wiki/xacro}arg[@name="mid360_xyz"]')
@@ -383,12 +388,12 @@ class Contracts(unittest.TestCase):
             self.skipTest('Optional xacro package not installed')
         original=xacro.eval_extension
         def local_packages(text):
-            for name in ('x_bot','franka_description'):
-                text=text.replace('$(find '+name+')',str(ROOT/'src'/name))
+            for name, directory in {'x_bot':'description/x_bot','franka_description':'description/franka_description','x_bot_control':'control/x_bot_control'}.items():
+                text=text.replace('$(find '+name+')',str(ROOT/'src'/directory))
             return original(text)
         with patch.object(xacro,'eval_extension',side_effect=local_packages):
             for isaac in ('true','false'):
-                doc=xacro.process_file(str(ROOT/'src/x_bot/urdf/x_bot.xacro'),mappings={
+                doc=xacro.process_file(str(ROOT/'src/description/x_bot/urdf/x_bot.xacro'),mappings={
                     'sim_isaac':isaac,'two_d_lidar_enabled':'true','camera_enabled':'true'})
                 tree=ET.fromstring(doc.toxml())
                 names={n.get('name') for n in tree.findall('link')}
