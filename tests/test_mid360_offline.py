@@ -273,7 +273,13 @@ class Contracts(unittest.TestCase):
             result = subprocess.run(['bash', str(entry)], check=True, capture_output=True, text=True)
             self.assertEqual(result.stdout.splitlines(),
                              ['pick', '--world', 'manipulation_test', '--bundle', str(Path(folder)/'maps/manipulation_test'),
-                              '--initial-x', '0.0', '--initial-y', '0.0', '--initial-yaw', '0.0', '--build'])
+                              '--initial-x', '0.0', '--initial-y', '0.0', '--initial-yaw', '0.0',
+                              '--yoloe-config', str(Path(folder)/'src/yoloe_infer/configs/manipulation.yaml'),
+                              '--depth-source', 'isaac', '--semantic-cloud-source', 'depth',
+                              '--octomap-resolution', '0.02', '--semantic-map-config',
+                              str(Path(folder)/'src/semantic_voxel_mapping/config/manipulation.yaml'),
+                              '--lsm-config', str(Path(folder)/'src/LSM_depth_infer/config/config.yaml'),
+                              '--lsm-params', str(Path(folder)/'src/LSM_depth_infer/config/isaac_params.yaml'), '--build'])
 
     def test_python_syntax(self):
         paths=list((ROOT/'src/x_bot/isaac_sim').glob('*.py'))+list((ROOT/'src/x_bot_localization').rglob('*.py'))

@@ -25,15 +25,19 @@ fi
 INITIAL_X=0.0
 INITIAL_Y=0.0
 INITIAL_YAW=""
+YOLOE_CONFIG="$ROOT_DIR/src/yoloe_infer/configs/config.yaml"
+[[ "$MODE" == pick ]] && YOLOE_CONFIG="$ROOT_DIR/src/yoloe_infer/configs/manipulation.yaml"
 DEPTH_SOURCE=isaac
 [[ "$MODE" == explore ]] && DEPTH_SOURCE=lsm
 LSM_CONFIG_FILE="$ROOT_DIR/src/LSM_depth_infer/config/config.yaml"
 LSM_PARAMS_FILE="$ROOT_DIR/src/LSM_depth_infer/config/isaac_params.yaml"
 DEPTH_IMAGE_TOPIC=""
 OCTOMAP_CLOUD_TOPIC=""
-OCTOMAP_BACKEND=legacy
-[[ "$MODE" == explore ]] && OCTOMAP_BACKEND=semantic_cuda
+OCTOMAP_BACKEND=semantic_cuda
+OCTOMAP_RESOLUTION=0.10
+[[ "$MODE" != explore ]] && OCTOMAP_RESOLUTION=0.02
 SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/semantic_voxel_mapping/config/map.yaml"
+[[ "$MODE" != explore ]] && SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/semantic_voxel_mapping/config/manipulation.yaml"
 SEMANTIC_CLOUD_SOURCE=depth
 [[ "$MODE" == explore ]] && SEMANTIC_CLOUD_SOURCE=fastlio
 while (($#)); do
@@ -46,12 +50,14 @@ while (($#)); do
         --initial-x) shift; INITIAL_X="${1:?缺少 x}" ;;
         --initial-y) shift; INITIAL_Y="${1:?缺少 y}" ;;
         --initial-yaw) shift; INITIAL_YAW="${1:?缺少 yaw}" ;;
+        --yoloe-config) shift; YOLOE_CONFIG="${1:?缺少 YOLOE 配置}" ;;
         --depth-source) shift; DEPTH_SOURCE="${1:?缺少深度来源 lsm/isaac}" ;;
         --lsm-config) shift; LSM_CONFIG_FILE="${1:?缺少 LSM 配置文件}" ;;
         --lsm-params) shift; LSM_PARAMS_FILE="${1:?缺少 LSM ROS 参数文件}" ;;
         --depth-image-topic) shift; DEPTH_IMAGE_TOPIC="${1:?缺少深度图话题}" ;;
         --octomap-cloud-topic) shift; OCTOMAP_CLOUD_TOPIC="${1:?缺少 OctoMap 点云话题}" ;;
-        --octomap-backend) shift; OCTOMAP_BACKEND="${1:?缺少 semantic_cuda/legacy}" ;;
+        --octomap-backend) shift; OCTOMAP_BACKEND="${1:?缺少 semantic_cuda}" ;;
+        --octomap-resolution) shift; OCTOMAP_RESOLUTION="${1:?缺少 OctoMap 分辨率（米）}" ;;
         --semantic-map-config) shift; SEMANTIC_MAP_CONFIG="${1:?缺少语义地图配置}" ;;
         --semantic-cloud-source) shift; SEMANTIC_CLOUD_SOURCE="${1:?缺少语义点云来源 fastlio/depth}" ;;
         *.yaml) echo "Isaac 定位需要配套 PCD 地图目录，请用 --bundle；不能只用旧二维 YAML 地图。" >&2; exit 2 ;;
@@ -60,29 +66,29 @@ while (($#)); do
     shift
 done
 
+if ! python3 -c 'import sys; value=float(sys.argv[1]); sys.exit(not (0.005 <= value <= 1.0))' "$OCTOMAP_RESOLUTION"; then
+    echo "OctoMap 分辨率必须为 0.005 到 1.0 米" >&2
+    exit 2
+fi
+
 case "$OCTOMAP_BACKEND" in
     semantic_cuda)
-        [[ "$MODE" == explore ]] || { echo "语义 CUDA 后端首版仅支持探索模式" >&2; exit 2; }
         [[ -f "$SEMANTIC_MAP_CONFIG" && "$SEMANTIC_MAP_CONFIG" != *"'"* && "$SEMANTIC_MAP_CONFIG" != *$'\n'* ]] || { echo "语义地图配置无效：$SEMANTIC_MAP_CONFIG" >&2; exit 2; }
-        [[ -z "$OCTOMAP_CLOUD_TOPIC" ]] || { echo "语义后端的输入话题请在 SEMANTIC_MAP_CONFIG 中设置；OCTOMAP_CLOUD_TOPIC 仅用于 legacy 后端" >&2; exit 2; }
         ;;
-    legacy) ;;
-    *) echo "OctoMap 后端必须为 semantic_cuda 或 legacy" >&2; exit 2 ;;
+    *) echo "建图后端统一为 semantic_cuda" >&2; exit 2 ;;
 esac
 
 case "$SEMANTIC_CLOUD_SOURCE" in
     fastlio|depth) ;;
     *) echo "语义点云来源必须为 fastlio 或 depth" >&2; exit 2 ;;
 esac
-# The legacy manipulation/perception path continues to generate RGB-D clouds.
-[[ "$OCTOMAP_BACKEND" == legacy ]] && SEMANTIC_CLOUD_SOURCE=depth
 USE_LSM=false
 [[ "$DEPTH_SOURCE" == lsm && "$SEMANTIC_CLOUD_SOURCE" == depth ]] && USE_LSM=true
 
 case "$DEPTH_SOURCE" in
     lsm)
         DEPTH_IMAGE_TOPIC="${DEPTH_IMAGE_TOPIC:-/x_bot/camera_left/nn_depth}"
-        OCTOMAP_CLOUD_TOPIC="${OCTOMAP_CLOUD_TOPIC:-/x_bot/camera_left/nn_pointcloud}"
+        OCTOMAP_CLOUD_TOPIC="${OCTOMAP_CLOUD_TOPIC:-/yoloe_multi_text_prompt/pointcloud_semantic}"
         if [[ "$USE_LSM" == true ]]; then
             for config_path in "$LSM_CONFIG_FILE" "$LSM_PARAMS_FILE"; do
                 [[ -f "$config_path" && "$config_path" != *"'"* && "$config_path" != *$'\n'* ]] || { echo "LSM 配置文件无效：$config_path" >&2; exit 2; }
@@ -91,13 +97,15 @@ case "$DEPTH_SOURCE" in
         ;;
     isaac)
         DEPTH_IMAGE_TOPIC="${DEPTH_IMAGE_TOPIC:-/x_bot/camera_left/depth/image_raw}"
-        OCTOMAP_CLOUD_TOPIC="${OCTOMAP_CLOUD_TOPIC:-/yoloe_multi_text_prompt/pointcloud_colored}"
+        OCTOMAP_CLOUD_TOPIC="${OCTOMAP_CLOUD_TOPIC:-/yoloe_multi_text_prompt/pointcloud_semantic}"
         ;;
     *) echo "深度来源必须为 lsm 或 isaac" >&2; exit 2 ;;
 esac
 for topic in "$DEPTH_IMAGE_TOPIC" "$OCTOMAP_CLOUD_TOPIC"; do
     [[ "$topic" =~ ^/[a-zA-Z0-9_/]+$ ]] || { echo "无效 ROS 话题：$topic" >&2; exit 2; }
 done
+
+[[ -f "$YOLOE_CONFIG" && "$YOLOE_CONFIG" != *"'"* && "$YOLOE_CONFIG" != *$'\n'* ]] || { echo "YOLOE 配置无效：$YOLOE_CONFIG" >&2; exit 2; }
 
 cd "$ROOT_DIR"
 # Keep large camera/cloud writes off lifecycle/service callback threads.
@@ -210,7 +218,7 @@ if [[ "$WORLD" == office || "$WORLD" == isaac_simple_room ]]; then
     ASSET_FILE="$ASSETS_PATH/Office/office.usd"
     [[ "$WORLD" == isaac_simple_room ]] && ASSET_FILE="$ASSETS_PATH/Simple_Room/simple_room.usd"
     if [[ ! -f "$ASSET_FILE" ]]; then
-        echo "缺少本地场景资产：$ASSET_FILE；请用 Isaac python.sh 执行 scripts/download_isaac_environments.py。" >&2
+        echo "缺少本地场景资产：$ASSET_FILE；请用 Isaac python.sh 执行 scripts/assets/download_isaac_environments.py。" >&2
         exit 1
     fi
 fi
@@ -220,7 +228,7 @@ if [[ "$WORLD" != office && "$WORLD" != isaac_simple_room ]]; then
     if [[ ! -f "$ASSETS_PATH/GazeboMain/$SOURCE_WORLD.usd" || ! -f "$ASSETS_PATH/GazeboMain/$SOURCE_WORLD.json" ]]; then
         MIGRATION_PYTHON="${ISAAC_SIM_PYTHON:-${ISAAC_SIM_PATH:-$HOME/isaacsim}/python.sh}"
         echo "首次启动，迁移 main 原始场景和贴图：$SOURCE_WORLD"
-        "$MIGRATION_PYTHON" "$ROOT_DIR/scripts/migrate_gazebo_scenes.py" --worlds "$SOURCE_WORLD"
+        "$MIGRATION_PYTHON" "$ROOT_DIR/scripts/assets/migrate_gazebo_scenes.py" --worlds "$SOURCE_WORLD"
     fi
 fi
 for coordinate in "$INITIAL_X" "$INITIAL_Y" "$INITIAL_YAW"; do
@@ -244,7 +252,7 @@ launch_navigation() {
 }
 
 launch_yoloe() {
-    launch_window "YOLOE Vision" "$ROS_ENV && ros2 run yoloe_infer ros2_trt_infer_text_prompt_multi_node --ros-args -p use_sim_time:=true -p config_path:='$ROOT_DIR/src/yoloe_infer/configs/config.yaml' -p depth_topic:='$DEPTH_IMAGE_TOPIC' -p semantic_cloud_source:='$SEMANTIC_CLOUD_SOURCE'"
+    launch_window "YOLOE Vision" "$ROS_ENV && ros2 run yoloe_infer ros2_trt_infer_text_prompt_multi_node --ros-args -p use_sim_time:=true -p config_path:='$YOLOE_CONFIG' -p depth_topic:='$DEPTH_IMAGE_TOPIC' -p semantic_cloud_source:='$SEMANTIC_CLOUD_SOURCE'"
 }
 
 if [[ "$USE_LSM" == true ]]; then
@@ -256,11 +264,9 @@ launch_manipulation_stack() {
     launch_window "MoveIt" "$ROS_ENV && ros2 launch x_bot move_group.launch.py use_sim_time:=true use_rviz:=false"
     launch_yoloe
     sleep 2
-    if [[ "$MODE" != pick ]]; then
-        launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py use_sim_time:=true use_rviz:=false"
-        sleep 2
-    fi
-    launch_window "GraspNet" "$ROS_ENV && ros2 run graspnet_ros graspnet_node --ros-args -p use_sim_time:=true --params-file '$ROOT_DIR/src/graspnet_infer/graspnet_ros/config/config.yaml' -p engine_path:='$ROOT_DIR/src/graspnet_infer/graspnet.trt' -p plugin_path:='$ROOT_DIR/src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so'"
+    launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py backend:='$OCTOMAP_BACKEND' semantic_config:='$SEMANTIC_MAP_CONFIG' palette_file:='$YOLOE_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC' resolution:='$OCTOMAP_RESOLUTION' use_sim_time:=true use_rviz:=false"
+    sleep 2
+    launch_window "GraspNet" "$ROS_ENV && ros2 run graspnet_ros graspnet_node --ros-args -p use_sim_time:=true --params-file '$ROOT_DIR/src/graspnet_infer/graspnet_ros/config/config.yaml' -p engine_path:='$ROOT_DIR/src/graspnet_infer/graspnet.trt' -p plugin_path:='$ROOT_DIR/src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so' -p yoloe_config_path:='$YOLOE_CONFIG' -p target_frame:=base_footprint"
     launch_window "Arm Ctrl" "$ROS_ENV && ros2 run x_bot robot_actions --ros-args -p use_sim_time:=true"
 }
 
@@ -274,7 +280,7 @@ case "$MODE" in
         else
             echo "手动建图导航模式：在 RViz 中设置 Nav2 Goal。"
         fi
-        launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py backend:='$OCTOMAP_BACKEND' semantic_config:='$SEMANTIC_MAP_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC' use_rviz:=false"
+        launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot octomap_server.launch.py backend:='$OCTOMAP_BACKEND' semantic_config:='$SEMANTIC_MAP_CONFIG' palette_file:='$YOLOE_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC' use_rviz:=false"
         ;;
     navigation)
         launch_navigation
@@ -282,7 +288,7 @@ case "$MODE" in
     pick)
         launch_manipulation_stack
         sleep 3
-        launch_window "Pick and Place Demo" "$ROS_ENV && $READY && python3 '$ROOT_DIR/src/x_bot/scripts/pick_and_place_demo.py' --ros-args -p use_sim_time:=true -p prompts:=\"['coke', 'book', 'cup']\""
+        launch_window "Pick and Place Demo" "$ROS_ENV && $READY && python3 '$ROOT_DIR/src/x_bot/scripts/pick_and_place_demo.py' --ros-args --params-file '$ROOT_DIR/src/x_bot/config/pick_and_place_demo.yaml' -p use_sim_time:=true -p class_config:='$YOLOE_CONFIG'"
         ;;
     navigation_pick)
         launch_navigation

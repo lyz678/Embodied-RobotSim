@@ -48,6 +48,8 @@ patterns=(
     "x_bot"
     "fps_plugin"
     "stereo_matching"
+    "semantic_voxel_node"
+    "color_octomap_server_node"
     # Isaac Sim backend
     "src/x_bot/isaac_sim/run_sim.py"
     "isaac-sim"

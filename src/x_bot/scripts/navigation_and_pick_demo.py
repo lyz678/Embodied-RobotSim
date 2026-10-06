@@ -26,6 +26,7 @@ import threading
 import yaml
 import os
 from collections import deque
+from gripper_action import control_gripper as execute_gripper
 
 class NavigationAndPickDemo(Node):
     """使用实时 YOLOE 检测的抓取放置节点"""
@@ -375,44 +376,9 @@ class NavigationAndPickDemo(Node):
         self.get_logger().error(f"Arm motion timeout after {timeout}s")
         return False
     
-    def control_gripper(self, position: float, timeout: float = 10.0) -> bool:
-        """控制夹爪"""
-        self.get_logger().info(f"Setting gripper to {position}")
-        
-        goal = GripperCommand.Goal()
-        goal.command.position = float(position)
-        goal.command.max_effort = 10.0
-        
-        if not self.gripper_client.wait_for_server(timeout_sec=2.0):
-            self.get_logger().warn("Gripper server not available")
-            return False
-        
-        send_goal_future = self.gripper_client.send_goal_async(goal)
-        start_time = time.time()
-        while not send_goal_future.done():
-            if time.time() - start_time > timeout:
-                self.get_logger().error("Gripper send goal timeout")
-                return False
-            time.sleep(0.1)
-        
-        goal_handle = send_goal_future.result()
-        if not goal_handle.accepted:
-            self.get_logger().error("Gripper goal rejected")
-            return False
-        
-        result_future = goal_handle.get_result_async()
-        start_time = time.time()
-        while not result_future.done():
-            if time.time() - start_time > timeout:
-                self.get_logger().error("Gripper result timeout")
-                return False
-            time.sleep(0.1)
-        
-        result_future.result()
-        self.get_logger().info(f"Gripper set to {position}")
-        time.sleep(0.5)
-        return True
-    
+    def control_gripper(self, position: float, timeout: float = 20.0) -> bool:
+        return execute_gripper(self, self.gripper_client, position, timeout)
+
     def perform_scan(self) -> bool:
         """执行扫描"""
         self.get_logger().info(">>> Triggering Scan Sequence...")
@@ -578,7 +544,9 @@ class NavigationAndPickDemo(Node):
         time.sleep(1)  # 等待过滤生效和地图更新
 
         try:
-            self.control_gripper(0.06)
+            if not self.control_gripper(0.06):
+                self.get_logger().error("Failed to open gripper before grasp")
+                return False
             
             # 移动到目标位置
             self.get_logger().info("Step 1: Moving to target position...")
@@ -750,9 +718,13 @@ class NavigationAndPickDemo(Node):
             
         # 2. 扫描检测可乐 (YOLOE class_id=9)
         self.get_logger().info("\n>>> STEP 2: Scan and Detect Coke")
-        self.perform_go_home()
+        if not self.perform_go_home():
+            self.get_logger().error("Home failed before scan. Aborting pick sequence.")
+            return
         time.sleep(2.0)
-        self.perform_scan()
+        if not self.perform_scan():
+            self.get_logger().error("Scan incomplete. Aborting pick sequence.")
+            return
         time.sleep(1.0)
         
         # 3. 机械臂夹取可乐

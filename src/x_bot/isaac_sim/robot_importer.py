@@ -161,7 +161,7 @@ def configure_joint_drives(stage: Usd.Stage) -> None:
     """Configure stable tire contacts and wheel/arm/gripper drives."""
     root = PhysxSchema.PhysxArticulationAPI.Apply(find_articulation_root(stage))
     root.CreateSolverPositionIterationCountAttr(32)
-    root.CreateSolverVelocityIterationCountAttr(8)
+    root.CreateSolverVelocityIterationCountAttr(32)
     root.CreateEnabledSelfCollisionsAttr(False)
     round_chassis_geometry(stage)
     # Compliant rubber contacts absorb small polygon/contact corrections
@@ -220,16 +220,38 @@ def configure_joint_drives(stage: Usd.Stage) -> None:
         drive = UsdPhysics.DriveAPI.Apply(joint, "angular")
         drive.CreateTypeAttr("force")
         joint_number = int(name.removeprefix("fr3_joint"))
-        drive.CreateStiffnessAttr(600.0 if joint_number <= 4 else 300.0)
-        drive.CreateDampingAttr(40.0)
+        # Position-only ros2_control commands need sufficient servo bandwidth:
+        # the old gains lagged moving targets beyond the 0.1 rad path tolerance.
+        drive.CreateStiffnessAttr(2000.0 if joint_number <= 4 else 1200.0)
+        drive.CreateDampingAttr(80.0 if joint_number <= 4 else 60.0)
         drive.CreateMaxForceAttr(300.0)
+    fingertip_material = UsdShade.Material.Define(stage, "/World/Materials/GripperContact")
+    friction = UsdPhysics.MaterialAPI.Apply(fingertip_material.GetPrim())
+    friction.CreateStaticFrictionAttr(1.5)
+    friction.CreateDynamicFrictionAttr(1.2)
+    friction.CreateRestitutionAttr(0.0)
+    # Soft rubber pads reduce solver velocity chatter during sustained closure.
+    pad = PhysxSchema.PhysxMaterialAPI.Apply(fingertip_material.GetPrim())
+    pad.CreateCompliantContactStiffnessAttr(20000.0)
+    pad.CreateCompliantContactDampingAttr(100.0)
+    for name in ("fr3_leftfinger", "fr3_rightfinger"):
+        for prim in Usd.PrimRange(find_prim(stage, name)):
+            if prim.HasAPI(UsdPhysics.CollisionAPI):
+                UsdShade.MaterialBindingAPI.Apply(prim).Bind(fingertip_material, materialPurpose="physics")
+                # Rubber pads have finite area; resist twisting about a single
+                # contact line instead of treating a held object as a hinge.
+                contact = PhysxSchema.PhysxCollisionAPI.Apply(prim)
+                contact.CreateTorsionalPatchRadiusAttr(0.008)
+                contact.CreateMinTorsionalPatchRadiusAttr(0.004)
     for name in GRIPPER_JOINTS:
         joint = find_prim(stage, name)
         drive = UsdPhysics.DriveAPI.Apply(joint, "linear")
         drive.CreateTypeAttr("force")
-        drive.CreateStiffnessAttr(300.0)
-        drive.CreateDampingAttr(20.0)
-        drive.CreateMaxForceAttr(80.0)
+        # A compliant 300 N/m drive could close on a 1 kg object yet slip
+        # during lift. Raise normal force bandwidth, bounded to 40 N per finger.
+        drive.CreateStiffnessAttr(2000.0)
+        drive.CreateDampingAttr(80.0)
+        drive.CreateMaxForceAttr(40.0)
 
 
 def set_initial_joint_state(articulation_path: str) -> None:

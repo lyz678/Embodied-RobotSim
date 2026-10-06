@@ -2,12 +2,14 @@
 
 ROS 包名是 `stereo_matching`。探索入口设置 `SEMANTIC_CLOUD_SOURCE=depth` 且 `DEPTH_SOURCE=lsm` 时启动本节点：左右 RGB → TensorRT 视差 → 深度图和彩色点云。YOLOE 深度输入 `/x_bot/camera_left/nn_depth`；新语义后端融合 YOLOE 输出的 `/yoloe_multi_text_prompt/pointcloud_semantic`。旧 OctoMap 后端输入 `/x_bot/camera_left/nn_pointcloud`。FAST-LIO、`/map` 和导航虚拟扫描继续来自 MID360。
 
-直接运行探索脚本即可，无需参数。脚本顶部暴露：
+抓取放置入口 `start_pick_and_place_demo.sh` 默认 `DEPTH_SOURCE=isaac`、`SEMANTIC_CLOUD_SOURCE=depth`。改为 `DEPTH_SOURCE=lsm` 时启动本节点，YOLOE 使用 `nn_depth` 生成 `pointcloud_semantic`，交给新语义节点融合三维栅格和 `/projected_map`；MoveIt 接收新节点导出的碰撞地图，GraspNet 使用 YOLOE 抓取点云。抓取的 OctoMap 分辨率为 0.02 m，与 main/Gazebo 抓取一致。
+
+直接运行入口脚本即可，无需参数。脚本顶部暴露：
 
 | 配置 | 用途 |
 |---|---|
 | `SEMANTIC_CLOUD_SOURCE` | `fastlio`（探索默认）或 `depth`；depth 模式才启动所选深度链路 |
-| `DEPTH_SOURCE` | `lsm` 或 `isaac`（当前入口默认） |
+| `DEPTH_SOURCE` | `isaac`（入口默认）或 `lsm` |
 | `LSM_CONFIG_FILE` | 基础配置 YAML：引擎、CUDA 设备、输入尺寸、内参、基线、话题 |
 | `LSM_PARAMS_FILE` | 标准 ROS 参数 YAML，覆盖基础配置 |
 | `DEPTH_IMAGE_TOPIC` | YOLOE 深度输入；空值按来源选择默认话题 |

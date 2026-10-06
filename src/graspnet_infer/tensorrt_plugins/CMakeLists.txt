@@ -1,4 +1,8 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.24)
+# Select the local GPU before CUDA compiler detection; callers may override it.
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES OR CMAKE_CUDA_ARCHITECTURES STREQUAL "")
+  set(CMAKE_CUDA_ARCHITECTURES native)
+endif()
 project(fps_plugin)
 
 set(CMAKE_CXX_STANDARD 14)
@@ -68,7 +72,6 @@ set(CPP_SOURCES
     fps_plugin.cpp
 )
 
-set(CMAKE_CUDA_ARCHITECTURES 120)
 
 # Create library
 add_library(fps_plugin SHARED ${CUDA_SOURCES} ${CPP_SOURCES})

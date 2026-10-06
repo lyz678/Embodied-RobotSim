@@ -13,18 +13,30 @@ from vision_msgs.msg import Detection3DArray, Detection3D
 from visualization_msgs.msg import Marker
 from control_msgs.action import GripperCommand
 from std_srvs.srv import Trigger, SetBool
-from moveit_msgs.msg import CollisionObject
+from moveit_msgs.msg import CollisionObject, PlanningScene, AttachedCollisionObject
+from moveit_msgs.srv import ApplyPlanningScene
+from shape_msgs.msg import SolidPrimitive
+from geometry_msgs.msg import Pose
 from tf2_ros import Buffer, TransformListener
 import tf2_geometry_msgs
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from control_msgs.action import GripperCommand, FollowJointTrajectory
 from builtin_interfaces.msg import Duration
 import math
+import json
+import copy
+import numpy as np
+from scipy.spatial.transform import Rotation
+from sensor_msgs.msg import PointCloud2
+from sensor_msgs_py import point_cloud2
+from rclpy.qos import qos_profile_sensor_data
+from physical_pick_verification import CLASS_OBJECTS, lifted, retained, in_bin
 import time
 import threading
 import yaml
 import os
 from collections import deque
+from gripper_action import control_gripper as execute_gripper
 
 class PickAndPlaceDemo(Node):
     """使用实时 YOLOE 检测的抓取放置节点"""
@@ -45,6 +57,7 @@ class PickAndPlaceDemo(Node):
         
         # 机械臂控制
         self.pub_arm = self.create_publisher(PoseStamped, '/arm_command/pose', 10)
+        self.pub_cartesian = self.create_publisher(PoseStamped, '/arm_command/cartesian_pose', 10)
         self.pub_vis = self.create_publisher(Marker, '/target_pose_marker', 10)
         self.marker_id = 0
         self.gripper_client = ActionClient(self, GripperCommand, '/fr3_gripper_controller/gripper_cmd')
@@ -76,6 +89,16 @@ class PickAndPlaceDemo(Node):
         self.declare_parameter('floor_classes', [4, 6])     # bottle, shoe
         self.declare_parameter('min_confidence', 0.25)
         self.declare_parameter('detection_timeout', 5.0)
+        self.declare_parameter('floor_tcp_backoff', 0.035)
+        self.declare_parameter('release_step', 0.003)
+        self.declare_parameter('release_pause', 0.35)
+        self.declare_parameter('elongated_place_classes', [3,6])
+        self.declare_parameter('elongated_place_yaw', 0.7853981633974483)
+        self.declare_parameter('thin_object_tcp_backoff', 0.02)
+        self.declare_parameter('thin_object_classes', [9])
+        self.declare_parameter('thin_object_approach_pitch', 0.52)
+        self.declare_parameter('top_grasp_classes', [6])
+        self.declare_parameter('fixture_config', os.path.join(os.path.dirname(__file__), '../config/manipulation_fixture.yaml'))
         
         self.table_classes = self.get_parameter('table_classes').value
         self.floor_classes = self.get_parameter('floor_classes').value
@@ -91,7 +114,7 @@ class PickAndPlaceDemo(Node):
                 'rot': [-0.50, 0.48, 0.52, 0.50]
             },
             'Place': {
-                'pos': [-0.02, -0.76, 0.61],
+                'pos': [0.0, -0.80, 0.58],
                 'rot': [0.29, 0.28, -0.66, 0.64]
             },
             # 'palce':{
@@ -101,13 +124,29 @@ class PickAndPlaceDemo(Node):
         }
         
         # 从YOLOE配置文件读取类别ID到名称的映射
+        self.declare_parameter('class_config', '')
+        self.class_rgb = {}
         self.class_id_to_name = self.load_class_mapping_from_config()
+        self.floor_axes = {}
+        self.object_boxes = {}
+        self.inspect_floor = False
+        self.create_subscription(PointCloud2, '/yoloe_multi_text_prompt/pointcloud_semantic', self.floor_geometry_callback, qos_profile_sensor_data)
         
         # 状态变量
         self.latest_detections = []  # 最新的检测结果
+        self.detection_received_at = 0.0
         self.detection_lock = threading.Lock()
         self.last_motion_status = None
         
+        self.declare_parameter('verify_physical_pick', True)
+        self.verify_physical = self.get_parameter('verify_physical_pick').value
+        self.truth = None
+        self.truth_at = 0.0
+        self.completed_classes = set()
+        self.scene_client = self.create_client(ApplyPlanningScene, '/apply_planning_scene')
+        self.pub_target_bounds = self.create_publisher(CollisionObject, '/pick_target_bounds', 10)
+        self.create_subscription(String, '/isaac/debug/object_states', self.truth_callback, 10)
+
         # 启动逻辑线程
         self.logic_thread = threading.Thread(target=self.run_logic_loop, daemon=True)
         self.logic_thread.start()
@@ -135,6 +174,10 @@ class PickAndPlaceDemo(Node):
             except:
                 pass
         
+        configured = self.get_parameter('class_config').value
+        if configured:
+            config_path = configured
+
         class_id_to_name = {}
         
         try:
@@ -146,6 +189,8 @@ class PickAndPlaceDemo(Node):
                     for cls in config['classes']:
                         if 'id' in cls and 'name' in cls:
                             class_id_to_name[cls['id']] = cls['name']
+                            rgb = cls.get('color', [255,255,255])
+                            self.class_rgb[cls['id']] = (rgb[0]<<16)|(rgb[1]<<8)|rgb[2]
                     
                     self.get_logger().info(f"Loaded {len(class_id_to_name)} class mappings from {config_path}")
                 else:
@@ -157,6 +202,129 @@ class PickAndPlaceDemo(Node):
         
         return class_id_to_name
 
+    def install_fixture_collisions(self):
+        if not self.scene_client.wait_for_service(timeout_sec=30.0):
+            raise RuntimeError("Planning scene service unavailable")
+        with open(self.get_parameter('fixture_config').value) as stream:
+            config = yaml.safe_load(stream)
+        obj = CollisionObject()
+        obj.id = 'manipulation_work_table'
+        obj.header.frame_id = config['frame']
+        obj.pose.orientation.w = 1.0
+        obj.operation = CollisionObject.ADD
+        for box in config['boxes']:
+            shape = SolidPrimitive(type=SolidPrimitive.BOX, dimensions=box['size'])
+            pose = Pose();pose.orientation.w = 1.0
+            pose.position.x,pose.position.y,pose.position.z = box['position']
+            obj.primitives.append(shape);obj.primitive_poses.append(pose)
+        request = ApplyPlanningScene.Request()
+        request.scene.is_diff = True;request.scene.robot_state.is_diff = True
+        request.scene.world.collision_objects.append(obj)
+        future = self.scene_client.call_async(request)
+        deadline = time.monotonic()+10.0
+        while not future.done() and time.monotonic()<deadline:
+            time.sleep(.1)
+        if not future.done() or not future.result().success:
+            raise RuntimeError("Failed to install known work-table collision geometry")
+        self.pub_collision_object.publish(obj)
+        self.get_logger().info("Installed source-model table collisions (tabletop, legs and braces)")
+
+    def floor_geometry_callback(self, msg):
+        """Segmented depth supplies planning payload bounds and floor long axes."""
+        try:
+            points = point_cloud2.read_points(msg, field_names=('x','y','z','rgb'), skip_nans=True)
+            colors = points['rgb'].view(np.uint32) & 0x00ffffff
+            tf = None
+            for class_id in self.target_classes:
+                selected = points[colors == self.class_rgb.get(class_id)]
+                if len(selected) < 30:
+                    continue
+                xyz = np.column_stack([selected[name] for name in ('x','y','z')]).astype(float)
+                if msg.header.frame_id != 'odom':
+                    if tf is None:
+                        try:
+                            tf = self.tf_buffer.lookup_transform('odom', msg.header.frame_id, rclpy.time.Time.from_msg(msg.header.stamp))
+                        except Exception:
+                            tf = self.tf_buffer.lookup_transform('odom', msg.header.frame_id, rclpy.time.Time())
+                            age = abs((tf.header.stamp.sec-msg.header.stamp.sec)+(tf.header.stamp.nanosec-msg.header.stamp.nanosec)*1e-9)
+                            if age > .15:
+                                return
+                    q = tf.transform.rotation
+                    x,y,z,w = q.x,q.y,q.z,q.w
+                    rotation = np.array([[1-2*(y*y+z*z),2*(x*y-w*z),2*(x*z+w*y)], [2*(x*y+w*z),1-2*(x*x+z*z),2*(y*z-w*x)], [2*(x*z-w*y),2*(y*z+w*x),1-2*(x*x+y*y)]])
+                    t = tf.transform.translation
+                    xyz = xyz @ rotation.T + [t.x,t.y,t.z]
+                floor = class_id in self.floor_classes
+                xyz = xyz[(xyz[:,2] > (-.02 if floor else .65)) & (xyz[:,2] < (.2 if floor else 1.2))]
+                if len(xyz) < 30:
+                    continue
+                lo, hi = np.quantile(xyz, [.01,.99], axis=0)
+                self.object_boxes[class_id] = (time.monotonic(), ((lo+hi)/2).tolist(), (hi-lo+.04).tolist())
+                if floor:
+                    _, vectors = np.linalg.eigh(np.cov(xyz[:,:2].T))
+                    self.floor_axes[class_id] = (time.monotonic(), vectors[:,-1])
+        except Exception:
+            # A just-published image can precede its TF sample; use the next frame.
+            pass
+
+    def prepare_payload(self, class_id, geometry):
+        """Planning-only attachment, using depth bounds in the actual hand frame."""
+        _, center, size = geometry
+        world = PoseStamped()
+        world.header.frame_id = 'odom'
+        world.pose.orientation.w = 1.0
+        world.pose.position.x,world.pose.position.y,world.pose.position.z = center
+        local = self.tf_buffer.transform(world, 'fr3_hand')
+        attached = AttachedCollisionObject()
+        attached.link_name = 'fr3_hand'
+        attached.touch_links = ['fr3_hand','fr3_leftfinger','fr3_rightfinger','camera_link','fr3_link7']
+        attached.object.id = f'held_object_{class_id}'
+        attached.object.header.frame_id = 'fr3_hand'
+        attached.object.pose.orientation.w = 1.0
+        attached.object.operation = CollisionObject.ADD
+        attached.object.primitives.append(SolidPrimitive(type=SolidPrimitive.BOX, dimensions=size))
+        attached.object.primitive_poses.append(local.pose)
+        return attached
+
+    def update_payload(self, attached, remove=False):
+        request = ApplyPlanningScene.Request()
+        request.scene.is_diff = True
+        request.scene.robot_state.is_diff = True
+        obj = copy.deepcopy(attached)
+        if remove:
+            obj.object.operation = CollisionObject.REMOVE
+        request.scene.robot_state.attached_collision_objects.append(obj)
+        if remove:
+            # MoveIt detachment inserts the last attached pose into the world.
+            # This object is physically falling; perception will observe its new
+            # location. Remove the obsolete hand-relative planning placeholder.
+            world_remove = CollisionObject()
+            world_remove.id = obj.object.id
+            world_remove.operation = CollisionObject.REMOVE
+            request.scene.world.collision_objects.append(world_remove)
+        future = self.scene_client.call_async(request)
+        deadline = time.monotonic()+5.0
+        while not future.done() and time.monotonic()<deadline:
+            time.sleep(.05)
+        if not future.done() or not future.result().success:
+            raise RuntimeError("Failed to update planning payload")
+        self.get_logger().info(f"Planning payload {'removed' if remove else 'attached'}: {obj.object.id}")
+
+    def truth_callback(self, msg):
+        try:
+            self.truth = json.loads(msg.data)
+            self.truth_at = time.monotonic()
+        except (ValueError, TypeError):
+            pass
+
+    def physical_snapshot(self):
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            if self.truth and time.monotonic() - self.truth_at < 2.0:
+                return self.truth
+            time.sleep(0.1)
+        raise RuntimeError("No fresh physical verification telemetry; refusing unverified success")
+
     def status_callback(self, msg):
         """机械臂状态回调"""
         self.last_motion_status = msg.data
@@ -165,6 +333,7 @@ class PickAndPlaceDemo(Node):
         """检测结果回调 - 实时更新检测结果"""
         with self.detection_lock:
             self.latest_detections = msg.detections
+            self.detection_received_at = time.monotonic()
             self.get_logger().debug(f"Received {len(msg.detections)} detections")
        
     def get_latest_detection(self, class_id: int, timeout: float = None) -> Detection3D:
@@ -175,8 +344,9 @@ class PickAndPlaceDemo(Node):
         start_time = time.time()
         while time.time() - start_time < timeout:
             with self.detection_lock:
-                # 查找匹配的检测结果
-                for det in self.latest_detections:
+                # 查找匹配的检测结果，只使用近期收到的数据。
+                detections = self.latest_detections if time.monotonic() - self.detection_received_at <= self.detection_timeout else []
+                for det in detections:
                     if not det.results:
                         continue
                     
@@ -204,12 +374,18 @@ class PickAndPlaceDemo(Node):
         Rejects outliers and handles multi-modal noise.
         """
         self.get_logger().info(f"Collecting detections for {collection_time}s (Clustering)...")
-        candidates = [] 
+        candidates = []
+        seen = set()
         
         start_time = time.time()
         while time.time() - start_time < collection_time:
             det = self.get_latest_detection(class_id, timeout=0.1)
             if det and det.results:
+                stamp = (det.header.stamp.sec, det.header.stamp.nanosec)
+                if stamp in seen:
+                    time.sleep(0.1)
+                    continue
+                seen.add(stamp)
                 pose = det.results[0].pose.pose
                 candidates.append({
                     'det': det,
@@ -325,7 +501,7 @@ class PickAndPlaceDemo(Node):
     
     # Orientation helpers removed to strictly enforce GraspNet/Pose usage
     
-    def send_arm_pose(self, x: float, y: float, z: float, orientation: Quaternion, timeout: float = 30.0) -> bool:
+    def send_arm_pose(self, x: float, y: float, z: float, orientation: Quaternion, timeout: float = 45.0, cartesian=False) -> bool:
         """发送机械臂位姿命令"""
         pose = PoseStamped()
         pose.header.frame_id = "odom"
@@ -339,7 +515,7 @@ class PickAndPlaceDemo(Node):
         self.get_logger().info(f"Moving arm to: Pos({x:.3f}, {y:.3f}, {z:.3f}) Rot(xyzw)({orientation.x:.3f}, {orientation.y:.3f}, {orientation.z:.3f}, {orientation.w:.3f})")
         
         self.last_motion_status = None
-        self.pub_arm.publish(pose)
+        (self.pub_cartesian if cartesian else self.pub_arm).publish(pose)
         
         # Publish Visualization Marker
         marker = Marker()
@@ -374,44 +550,9 @@ class PickAndPlaceDemo(Node):
         self.get_logger().error(f"Arm motion timeout after {timeout}s")
         return False
     
-    def control_gripper(self, position: float, timeout: float = 10.0) -> bool:
-        """控制夹爪"""
-        self.get_logger().info(f"Setting gripper to {position}")
-        
-        goal = GripperCommand.Goal()
-        goal.command.position = float(position)
-        goal.command.max_effort = 10.0
-        
-        if not self.gripper_client.wait_for_server(timeout_sec=2.0):
-            self.get_logger().warn("Gripper server not available")
-            return False
-        
-        send_goal_future = self.gripper_client.send_goal_async(goal)
-        start_time = time.time()
-        while not send_goal_future.done():
-            if time.time() - start_time > timeout:
-                self.get_logger().error("Gripper send goal timeout")
-                return False
-            time.sleep(0.1)
-        
-        goal_handle = send_goal_future.result()
-        if not goal_handle.accepted:
-            self.get_logger().error("Gripper goal rejected")
-            return False
-        
-        result_future = goal_handle.get_result_async()
-        start_time = time.time()
-        while not result_future.done():
-            if time.time() - start_time > timeout:
-                self.get_logger().error("Gripper result timeout")
-                return False
-            time.sleep(0.1)
-        
-        result_future.result()
-        self.get_logger().info(f"Gripper set to {position}")
-        time.sleep(0.5)
-        return True
-    
+    def control_gripper(self, position: float, timeout: float = 20.0) -> bool:
+        return execute_gripper(self, self.gripper_client, position, timeout)
+
     def perform_scan(self) -> bool:
         """执行扫描"""
         self.get_logger().info(">>> Triggering Scan Sequence...")
@@ -438,11 +579,15 @@ class PickAndPlaceDemo(Node):
             return False
     
     def control_inference(self, enable: bool) -> bool:
-        """控制所有推理节点的启用/禁用状态"""
+        """Pause object/grasp recognition while keeping measured depth available."""
         success = True
         request = SetBool.Request()
         request.data = enable
         
+        if enable:
+            with self.detection_lock:
+                self.latest_detections = []
+                self.detection_received_at = 0.0
         action = "Enabling" if enable else "Disabling"
         self.get_logger().info(f">>> {action} inference nodes...")
         
@@ -482,10 +627,13 @@ class PickAndPlaceDemo(Node):
         else:
             self.get_logger().warn("GraspNet inference control service not available")
         
-        # 控制深度推理
+        # Geometry must keep flowing for occupancy hit/miss updates, including
+        # when LSM supplies depth instead of the simulator.
         if self.depth_inference_client.wait_for_service(timeout_sec=1.0):
             try:
-                future = self.depth_inference_client.call_async(request)
+                depth_request = SetBool.Request()
+                depth_request.data = True
+                future = self.depth_inference_client.call_async(depth_request)
                 while not future.done():
                     time.sleep(0.05)
                 response = future.result()
@@ -567,6 +715,24 @@ class PickAndPlaceDemo(Node):
     def perform_pick_and_place(self, pose, class_id: int) -> bool:
         """执行抓取和放置序列 - Using GraspNet Pose"""
         self.get_logger().info("=== Starting Pick and Place Sequence ===")
+        initial_truth = self.physical_snapshot() if self.verify_physical else None
+        object_name = CLASS_OBJECTS[class_id]
+        geometry = self.object_boxes.get(class_id)
+        if geometry is None or time.monotonic()-geometry[0] > self.detection_timeout:
+            self.get_logger().error("No fresh segmented depth bounds for planning payload")
+            return False
+        target_box = CollisionObject()
+        target_box.header.frame_id = 'odom'
+        target_box.id = f'pick_target_bounds_{class_id}'
+        target_box.pose.orientation.w = 1.0
+        target_box.primitives.append(SolidPrimitive(type=SolidPrimitive.BOX, dimensions=geometry[2]))
+        bounds_pose = Pose()
+        bounds_pose.orientation.w = 1.0
+        bounds_pose.position.x, bounds_pose.position.y, bounds_pose.position.z = geometry[1]
+        target_box.primitive_poses.append(bounds_pose)
+        self.pub_target_bounds.publish(target_box)
+        payload = None
+        payload_installed = False
         
         # 禁用推理节点，节省计算资源
         self.control_inference(False)
@@ -574,15 +740,23 @@ class PickAndPlaceDemo(Node):
         # 设置点云过滤，避免与目标物体碰撞
         self.get_logger().info(f"Filtering cloud for class_id={class_id}")
         self.pub_cloud_filter.publish(Int32(data=class_id))
-        time.sleep(1)  # 等待过滤生效和地图更新
+        self.remove_collision_object(class_id)
+        time.sleep(3.0)  # Allow a complete 1 Hz planning-scene export, even below real time.
 
         try:
-            self.control_gripper(0.06)
+            if not self.control_gripper(0.06):
+                self.get_logger().error("Failed to open gripper before grasp")
+                return False
             
+            q = pose.orientation
+            approach = [1-2*(q.y*q.y+q.z*q.z), 2*(q.x*q.y+q.w*q.z), 2*(q.x*q.z-q.w*q.y)]
+            if not self.send_arm_pose(pose.position.x - .08*approach[0], pose.position.y - .08*approach[1], pose.position.z - .08*approach[2], q):
+                self.get_logger().error("Failed to reach pregrasp pose")
+                return False
             # 移动到目标位置
             self.get_logger().info("Step 1: Moving to target position...")
             # Use Pose from GraspNet
-            if not self.send_arm_pose(pose.position.x, pose.position.y, pose.position.z, pose.orientation):
+            if not self.send_arm_pose(pose.position.x, pose.position.y, pose.position.z, pose.orientation, cartesian=True):
                 self.get_logger().error("Failed to move to target position")
                 return False
                         
@@ -598,7 +772,26 @@ class PickAndPlaceDemo(Node):
             self.get_logger().info("Removing collision object from octomap...")
             self.remove_collision_object(class_id)
             
-            # 抬起:XY方向往base回收50%距离 + Z轴固定1m高度
+            # Cache the measured box relative to the gripping hand before lift.
+            payload = self.prepare_payload(class_id, geometry)
+            measured_center = PoseStamped()
+            measured_center.header.frame_id = 'odom'
+            measured_center.pose.orientation.w = 1.0
+            measured_center.pose.position.x, measured_center.pose.position.y, measured_center.pose.position.z = geometry[1]
+            center_in_tcp = self.tf_buffer.transform(measured_center, 'fingers_center').pose.position
+            # Clear the support surface vertically before retracting sideways.
+            if not self.send_arm_pose(pose.position.x, pose.position.y, pose.position.z + .15, pose.orientation, cartesian=True):
+                self.get_logger().error("Failed vertical lift")
+                return False
+            if self.verify_physical and not lifted(initial_truth, self.physical_snapshot(), object_name):
+                self.get_logger().error("Physical vertical lift failed")
+                return False
+            # Install after clearing the support, so padding never creates a
+            # spurious initial penetration into the table/floor.
+            self.update_payload(payload)
+            payload_installed = True
+            time.sleep(1.5) # Allow mapper to replace world voxels inside the attached body.
+            # 抬起:XY方向往base回收80%距离 + Z轴固定1m高度
             self.get_logger().info("Step 3: Lifting object...")
             try:
                 # 获取base_footprint在odom下的位置
@@ -618,7 +811,7 @@ class PickAndPlaceDemo(Node):
                 # Z轴固定为1m
                 retreat_z = 1.0
                 
-                self.get_logger().info(f"Retreating 50% towards base at Z=1m: ({retreat_x:.3f}, {retreat_y:.3f}, {retreat_z:.3f})")
+                self.get_logger().info(f"Retreating 80% towards base at Z=1m: ({retreat_x:.3f}, {retreat_y:.3f}, {retreat_z:.3f})")
                 
                 if not self.send_arm_pose(retreat_x, retreat_y, retreat_z, pose.orientation):
                     self.get_logger().error("Failed to lift object")
@@ -630,25 +823,81 @@ class PickAndPlaceDemo(Node):
                     self.get_logger().error("Failed to lift object (fallback)")
                     return False
             
+            lift_truth = self.physical_snapshot() if self.verify_physical else None
+            if self.verify_physical and not lifted(initial_truth, lift_truth, object_name):
+                self.get_logger().error("Physical grasp failed: object did not lift with the hand")
+                return False
+            self.get_logger().info("Physical lift verified")
+
             # 移动到放置位置
             self.get_logger().info("Step 4: Moving to place position...")
             
             p = self.POSES['Place']
-            q = Quaternion(x=p['rot'][0], y=p['rot'][1], z=p['rot'][2], w=p['rot'][3])
-            
-            if not self.send_arm_pose(p['pos'][0], p['pos'][1], p['pos'][2], q): # Move to place area with object held firmly
+            # Preserve the object's tilt and only yaw toward the bin; rolling the
+            # hand into the old fixed place pose tipped objects onto the rim.
+            yaw = math.atan2(p['pos'][1]-base_y, p['pos'][0]-base_x) - math.atan2(approach[1], approach[0])
+            if class_id in self.get_parameter('elongated_place_classes').value:
+                # Long objects fit across the square bin's diagonal, rather
+                # than bridging its opposite parallel rims.
+                yaw += self.get_parameter('elongated_place_yaw').value
+            a, b = math.sin(yaw/2), math.cos(yaw/2)
+            g = pose.orientation
+            q = Quaternion(x=b*g.x-a*g.y, y=a*g.x+b*g.y, z=b*g.z+a*g.w, w=b*g.w-a*g.z)
+            # Center the perceived payload over the bin, rather than centering
+            # only the TCP (off-center grasps otherwise land near the rim).
+            offset = Rotation.from_quat([q.x,q.y,q.z,q.w]).apply([center_in_tcp.x,center_in_tcp.y,center_in_tcp.z])
+            place_x, place_y = p['pos'][0]-offset[0], p['pos'][1]-offset[1]
+            if not self.send_arm_pose(place_x, place_y, p['pos'][2], q):
                 self.get_logger().error("Failed to move to place position")
                 return False
             
+            time.sleep(1.5)  # Let the loaded arm settle before releasing.
+            if self.verify_physical and not retained(lift_truth, self.physical_snapshot(), object_name):
+                self.get_logger().error("Physical transport failed: object slipped from gripper")
+                return False
+
             # 打开夹爪（放置）
             self.get_logger().info("Step 5: Opening gripper to place...")
+            # A single full stroke can sweep the mug handle sideways. First
+            # release pressure in small increments and let the object drop clear.
+            opening = getattr(self, 'last_gripper_position', .005)
+            step = self.get_parameter('release_step').value
+            pause = self.get_parameter('release_pause').value
+            for increment in range(1, 5):
+                if not self.control_gripper(min(.06, opening + step*increment)):
+                    self.get_logger().error("Failed gradual gripper release")
+                    return False
+                time.sleep(pause)
             if not self.control_gripper(0.06):
                 self.get_logger().error("Failed to open gripper")
                 return False
             time.sleep(0.5)
-            
+            self.update_payload(payload, remove=True)
+            payload_installed = False
+            if self.verify_physical:
+                deadline = time.monotonic() + 15.0
+                settled = False
+                inside_since = None
+                while time.monotonic() < deadline:
+                    state = self.physical_snapshot()
+                    if in_bin(state, object_name):
+                        if inside_since is None:
+                            inside_since = state["simulation_time"]
+                        if state["simulation_time"] - inside_since >= 1.5:
+                            settled = True
+                            break
+                    else:
+                        inside_since = None
+                    time.sleep(0.2)
+                if not settled:
+                    self.get_logger().error("Physical placement failed: object is outside the bin")
+                    return False
+                self.get_logger().info(f"Physical placement verified: {object_name} inside bin")
+
             # 返回初始位置
-            self.perform_go_home()
+            if not self.perform_go_home():
+                self.get_logger().error("Failed to return home after placement")
+                return False
             
             self.get_logger().info("=== Pick and Place Sequence Complete! ===")
             return True
@@ -659,6 +908,11 @@ class PickAndPlaceDemo(Node):
             self.get_logger().error(traceback.format_exc())
             return False
         finally:
+            self.control_gripper(0.06)
+            if payload_installed:
+                self.update_payload(payload, remove=True)
+            target_box.operation = CollisionObject.REMOVE
+            self.pub_target_bounds.publish(target_box)
             # 清除过滤
             self.get_logger().info("Clearing cloud filter")
             self.pub_cloud_filter.publish(Int32(data=-1))
@@ -686,31 +940,47 @@ class PickAndPlaceDemo(Node):
         
         # 等待节点初始化
         time.sleep(2.0)
-        
+        try:
+            self.install_fixture_collisions()
+        except Exception as error:
+            self.get_logger().error(f"Fixture setup failed: {error}")
+            return
         while rclpy.ok():
+            if set(self.target_classes) <= self.completed_classes:
+                self.get_logger().info("All objects physically picked and placed; demo complete")
+                return
             round_number += 1
             
             self.get_logger().info(f"\n{'#'*60}")
             self.get_logger().info(f"### Round {round_number} ###")
             self.get_logger().info(f"{'#'*60}")
             
+            self.inspect_floor = False
             # Phase 1: Table Objects
             self.get_logger().info("\n>>> PHASE 1: Table Objects")
-            self.perform_go_home()
+            if not self.perform_go_home():
+                self.get_logger().warn("Home failed; retrying before scan and grasp")
+                time.sleep(2.0)
+                continue
             time.sleep(2.0)
-            self.perform_scan()
+            if not self.perform_scan():
+                self.get_logger().warn("Scan incomplete; retrying before grasp")
+                time.sleep(2.0)
+                continue
             time.sleep(1.0)
             
             self.process_targets(self.table_classes, "Table")
             
+            self.inspect_floor = True
             # Phase 2: Floor Objects
             self.get_logger().info("\n>>> PHASE 2: Floor Objects")
             
             p = self.POSES['PickFloor']
             q = Quaternion(x=p['rot'][0], y=p['rot'][1], z=p['rot'][2], w=p['rot'][3])
-            self.send_arm_pose(p['pos'][0], p['pos'][1], p['pos'][2], q)
-            
-            time.sleep(1.0)
+            if not self.send_arm_pose(p['pos'][0], p['pos'][1], p['pos'][2], q):
+                self.get_logger().warn("Floor observation pose failed; retrying from home")
+                continue
+            time.sleep(3.0)
             
             self.process_targets(self.floor_classes, "Floor")
             
@@ -724,12 +994,34 @@ class PickAndPlaceDemo(Node):
             if not rclpy.ok():
                 break
                 
+            if class_id in self.completed_classes:
+                continue
             class_name = self.class_id_to_name.get(class_id, f"unknown({class_id})")
             self.get_logger().info(f"\n--- [{zone_name}] Looking for '{class_name}' (id={class_id}) ---")
             
+            if zone_name == "Floor":
+                p = self.POSES['PickFloor']
+                q = Quaternion(x=p['rot'][0], y=p['rot'][1], z=p['rot'][2], w=p['rot'][3])
+                if not self.send_arm_pose(*p['pos'], q):
+                    self.get_logger().warn("Cannot observe floor target from current pose")
+                    continue
+                with self.detection_lock:
+                    self.latest_detections = []
+                    self.detection_received_at = 0.0
+                time.sleep(3.0)
             # 获取检测结果 (Stable Strategy)
-            detection = self.get_stable_detection(class_id, collection_time=2.0)
-            
+            detection = self.get_stable_detection(class_id, collection_time=5.0)
+
+            if detection is None and zone_name == "Floor":
+                p = self.POSES['PickFloor']
+                q = Quaternion(x=p['rot'][0], y=p['rot'][1], z=p['rot'][2], w=p['rot'][3])
+                for offset in (.12, -.12):
+                    self.get_logger().info(f"Searching floor from camera offset {offset:+.2f} m")
+                    if self.send_arm_pose(p['pos'][0]+offset, p['pos'][1], p['pos'][2], q):
+                        time.sleep(2.0)
+                        detection = self.get_stable_detection(class_id, collection_time=5.0)
+                        if detection is not None:
+                            break
             if detection is None:
                 self.get_logger().warn(f"No detection found for '{class_name}'")
                 continue
@@ -745,16 +1037,54 @@ class PickAndPlaceDemo(Node):
                  self.get_logger().warn("Detection has no results/pose available")
                  continue
             
-            grasp_pose = detection.results[0].pose.pose
+            grasp_pose = copy.deepcopy(detection.results[0].pose.pose)
+            q = grasp_pose.orientation
+            if zone_name == "Table" and class_id in self.get_parameter('thin_object_classes').value:
+                # Keep the predicted yaw/roll, elevate the wrist to clear the
+                # table with link6 while reaching small upright objects.
+                roll = math.atan2(2*(q.w*q.x+q.y*q.z), 1-2*(q.x*q.x+q.y*q.y))
+                yaw = math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z))
+                pitch = self.get_parameter('thin_object_approach_pitch').value
+                cr,sr,cp,sp,cy,sy = math.cos(roll/2),math.sin(roll/2),math.cos(pitch/2),math.sin(pitch/2),math.cos(yaw/2),math.sin(yaw/2)
+                q = Quaternion(x=sr*cp*cy-cr*sp*sy, y=cr*sp*cy+sr*cp*sy, z=cr*cp*sy-sr*sp*cy, w=cr*cp*cy+sr*sp*sy)
+                grasp_pose.orientation = q
+            if zone_name == "Floor" and class_id in self.get_parameter('top_grasp_classes').value and class_id in self.floor_axes:
+                observed_at, long_axis = self.floor_axes[class_id]
+                if time.monotonic() - observed_at <= self.detection_timeout:
+                    base = self.tf_buffer.lookup_transform('odom', 'base_footprint', rclpy.time.Time()).transform.translation
+                    radial = np.array([grasp_pose.position.x-base.x, grasp_pose.position.y-base.y])
+                    if long_axis @ radial < 0:
+                        long_axis = -long_axis
+                    # Approach mostly from above; close across the narrow side.
+                    # This keeps the wrist nearer the shoulder within arm reach.
+                    ax = np.array([.2*long_axis[0], .2*long_axis[1], -math.sqrt(.96)])
+                    ay = np.array([-long_axis[1],long_axis[0],0.])
+                    az = np.cross(ax,ay)
+                    # Convert orthonormal columns to quaternion via tf utilities.
+                    xyzw = Rotation.from_matrix(np.column_stack([ax,ay,az])).as_quat()
+                    q = Quaternion(x=float(xyzw[0]),y=float(xyzw[1]),z=float(xyzw[2]),w=float(xyzw[3]))
+                    grasp_pose.orientation = q
+                    self.get_logger().info(f"Floor top grasp from depth PCA axis: {long_axis.tolist()}")
+            approach = [1-2*(q.y*q.y+q.z*q.z), 2*(q.x*q.y+q.w*q.z), 2*(q.x*q.z-q.w*q.y)]
+            # Extended fingertips project 45.5 mm beyond this GraspNet frame.
+            # Lift the TCP for ground contacts, and avoid over-inserting into
+            # narrow objects while keeping their surface inside the pads.
+            backoff = self.get_parameter('floor_tcp_backoff').value if zone_name == "Floor" else (self.get_parameter('thin_object_tcp_backoff').value if class_id in self.get_parameter('thin_object_classes').value else 0.0)
+            grasp_pose.position.x -= backoff*approach[0]
+            grasp_pose.position.y -= backoff*approach[1]
+            grasp_pose.position.z -= backoff*approach[2]
+            self.get_logger().info(f"TCP backoff={backoff:.3f} m")
             
             # 执行抓取和放置
             if self.perform_pick_and_place(grasp_pose, class_id):
                 picked_count += 1
+                self.completed_classes.add(class_id)
                 self.get_logger().info(f"Successfully picked '{class_name}'!")
                 # Pick 成功后返回Home
                 self.perform_go_home()
             else:
                 self.get_logger().error(f"Failed to pick '{class_name}'")
+                self.perform_go_home()
         
         return picked_count
         

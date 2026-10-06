@@ -112,7 +112,9 @@ sensor_msgs::msg::PointCloud2 PointCloudColorizer::semantic_lidar_cloud(
 
 sensor_msgs::msg::PointCloud2 PointCloudColorizer::semantic_cloud(
     const cv::Mat& depth, const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info,
-    const std::vector<Detection>& detections, const std_msgs::msg::Header& header) {
+    const std::vector<Detection>& detections, const std_msgs::msg::Header& header,
+    int pixel_stride) {
+    if (pixel_stride < 1) throw std::invalid_argument("pixel_stride must be positive");
     cv::Mat colors(depth.size(), CV_8UC3, default_color_);
     cv::Mat scores = cv::Mat::zeros(depth.size(), CV_32F);
     for (const auto& det : detections) {
@@ -138,8 +140,8 @@ sensor_msgs::msg::PointCloud2 PointCloudColorizer::semantic_cloud(
         sensor_msgs::msg::PointField field; field.name=entry.first; field.offset=cloud.fields.size()*4;
         field.datatype=entry.second; field.count=1; cloud.fields.push_back(field);
     }
-    cloud.point_step=20; cloud.data.reserve(depth.total()*20);
-    for (int v=0;v<depth.rows;++v) for(int u=0;u<depth.cols;++u) {
+    cloud.point_step=20; cloud.data.reserve(size_t((depth.rows+pixel_stride-1)/pixel_stride)*((depth.cols+pixel_stride-1)/pixel_stride)*20);
+    for (int v=0;v<depth.rows;v+=pixel_stride) for(int u=0;u<depth.cols;u+=pixel_stride) {
         float d=depth.at<float>(v,u); if(!std::isfinite(d)||d<=min_depth_)continue;
         auto ray=camera.projectPixelTo3dRay(cv::Point2d(u,v));
         float values[5]={float(ray.x*d),float(ray.y*d),float(ray.z*d),0,scores.at<float>(v,u)};

@@ -7,7 +7,7 @@ octomap_server:
     # Coordinate frame for the Octomap
     frame_id: odom
     
-    # Resolution in meters (3cm voxels)
+    # Default voxel size (10 cm); pick launch overrides to 2 cm.
     resolution: 0.10
     
     # Sensor model parameters

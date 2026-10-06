@@ -120,7 +120,7 @@ def spawn_floor_height(stage: Usd.Stage, x: float, y: float) -> float:
 def _reference_environment(stage: Usd.Stage, folder: str, filename: str) -> Usd.Prim:
     asset = _assets_root() / folder / filename
     if not asset.is_file():
-        raise FileNotFoundError(f"Missing downloaded Isaac environment: {asset}; run scripts/download_isaac_environments.py with Isaac python.sh")
+        raise FileNotFoundError(f"Missing downloaded Isaac environment: {asset}; run scripts/assets/download_isaac_environments.py with Isaac python.sh")
     prim = UsdGeom.Xform.Define(stage, "/World/Scene/Environment").GetPrim()
     prim.GetReferences().AddReference(str(asset))
     return prim
@@ -207,7 +207,7 @@ def build_scene(stage: Usd.Stage, world_name: str, package_share: Path) -> None:
         asset = _assets_root() / "GazeboMain" / f"{source_name}.usd"
         manifest = asset.with_suffix(".json")
         if not asset.is_file() or not manifest.is_file():
-            raise FileNotFoundError(f"Missing migrated main-branch scene: {asset}; run scripts/migrate_gazebo_scenes.py with Isaac python.sh")
+            raise FileNotFoundError(f"Missing migrated main-branch scene: {asset}; run scripts/assets/migrate_gazebo_scenes.py with Isaac python.sh")
         root = UsdGeom.Xform.Define(stage, "/World/Scene/Environment").GetPrim()
         root.GetReferences().AddReference(str(asset))
     else:
@@ -215,3 +215,31 @@ def build_scene(stage: Usd.Stage, world_name: str, package_share: Path) -> None:
             f"Unsupported Isaac Sim world '{world_name}'. "
             "Supported worlds: office, simple_room, isaac_simple_room, legacy_room, gazebo_simple_room, manipulation_test, small_house, ware_house, obstacle_avoidance_test, empty"
         )
+
+
+def configure_manipulation_contacts(stage: Usd.Stage) -> None:
+    """Apply material and damping after referenced scene assets finish loading."""
+    from pxr import PhysxSchema, UsdShade
+    material = UsdShade.Material.Define(stage, "/World/Materials/PlasticBottle")
+    friction = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
+    friction.CreateStaticFrictionAttr(0.8)
+    friction.CreateDynamicFrictionAttr(0.6)
+    friction.CreateRestitutionAttr(0.0)
+    count = 0
+    for prim in stage.Traverse():
+        if '/water_bottle/' not in str(prim.GetPath()):
+            continue
+        if prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            body = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
+            body.CreateAngularDampingAttr(2.0)
+            body.CreateLinearDampingAttr(1.0)
+            count += 1
+        if prim.HasAPI(UsdPhysics.CollisionAPI):
+            UsdShade.MaterialBindingAPI.Apply(prim).Bind(material, materialPurpose="physics")
+    # Dynamic whole-table convex hull filled the space between the legs.
+    # Decompose the source mesh, retaining the table's original mass and motion.
+    for prim in stage.Traverse():
+        if '/kitchen_table/' in str(prim.GetPath()) and prim.HasAPI(UsdPhysics.CollisionAPI) and prim.IsA(UsdGeom.Mesh):
+            UsdPhysics.MeshCollisionAPI.Apply(prim).CreateApproximationAttr('convexDecomposition')
+    if count != 1:
+        raise RuntimeError(f"Expected one dynamic bottle body, found {count}")

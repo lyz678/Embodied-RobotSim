@@ -1,0 +1,30 @@
+semantic_voxel_map:
+  ros__parameters:
+    use_sim_time: true
+    cloud_topic: /yoloe_multi_text_prompt/pointcloud_semantic
+    map_frame: odom
+    palette_file: ""
+    map_file: maps/manipulation_semantic_map.svm
+    resolution: 0.02
+    min_range: 0.2
+    max_range: 2.0
+    min_z: 0.1
+    max_z: 2.5
+    hit: 0.7
+    miss: 0.4
+    clamp_min: 0.12
+    clamp_max: 0.97
+    occupied_threshold: 0.5
+    confidence_threshold: 0.35
+    vote_window: 30
+    min_observations: 3
+    majority_threshold: 0.6
+    cuda_device: 0
+    gpu_scratch_mib: 512
+    max_voxels: 4000000
+    integration_rate: 5.0
+    publish_rate: 2.0
+    self_filter: true
+    self_filter_padding: 0.02
+    publish_moveit_scene: true
+    planning_frame: base_footprint

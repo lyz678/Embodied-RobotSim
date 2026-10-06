@@ -55,7 +55,7 @@ class Map {
   if(occupied(c)&&!tie&&c.history.size()>=config.min_observations&&result.fraction>=config.majority)result.color=color;
   return result;
  }
- void commit(const Frame& frame){
+ std::vector<Key> commit(const Frame& frame){
   size_t additions=0;for(auto k:frame.hits)if(!cells.count(k))++additions;
   for(auto k:frame.free)if(!frame.hits.count(k)&&!cells.count(k))++additions;
   if(additions>config.max_voxels-cells.size())throw std::runtime_error("Map voxel budget exceeded; frame rejected");
@@ -70,9 +70,13 @@ class Map {
   };
   const double lower=logit(config.clamp_min),upper=logit(config.clamp_max);
   for(auto k:frame.free)if(!frame.hits.count(k)){
+   auto current=cells.find(k);
+   if(current!=cells.end()&&current->second.odds<=lower&&current->second.history.empty())continue;
    auto& c=cell_copy(k);c.odds=std::max(lower,c.odds+logit(config.miss));if(!occupied(c))c.history.clear();
   }
   for(auto k:frame.hits){
+   auto current=cells.find(k);
+   if(current!=cells.end()&&current->second.odds>=upper&&!frame.votes.count(k))continue;
    auto& c=cell_copy(k);c.odds=std::min(upper,c.odds+logit(config.hit));
    auto it=frame.votes.find(k);if(it==frame.votes.end())continue;
    unsigned best=0;Color color=UNKNOWN;bool tie=false;
@@ -82,9 +86,12 @@ class Map {
    if(!best||tie)continue;
    if(c.history.size()==config.window)c.history.erase(c.history.begin());c.history.push_back(color);
   }
+  std::vector<Key> changed;changed.reserve(changes.size());
+  for(const auto& entry:changes)changed.push_back(entry.first);
   cells.reserve(cells.size()+additions);
   for(auto& entry:changes){auto old=cells.find(entry.first);if(old!=cells.end())std::swap(old->second,entry.second);}
   cells.merge(changes);
+  return changed;
  }
  template<class T>static void write(std::ostream& s,T value){s.write(reinterpret_cast<const char*>(&value),sizeof(value));}
  template<class T>static T read(std::istream& s){T v{};s.read(reinterpret_cast<char*>(&v),sizeof(v));if(!s)throw std::runtime_error("Truncated map file");return v;}

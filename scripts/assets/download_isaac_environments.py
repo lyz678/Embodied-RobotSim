@@ -30,7 +30,7 @@ try:
     import isaacsim.core.experimental.utils.app as app_utils
     app_utils.enable_extension('omni.kit.asset_converter')
     import omni.kit.asset_converter as converter
-    repository = Path(__file__).resolve().parents[1]
+    repository = Path(__file__).resolve().parents[2]
     objects = {
         'coke': ('Coke', 'coke.obj'),
         'cup': ('ACE_Coffee_Mug_Kristen_16_oz_cup', 'model.obj'),

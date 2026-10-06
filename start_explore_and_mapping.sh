@@ -17,7 +17,7 @@ SEMANTIC_CLOUD_SOURCE=fastlio #depth：depth 时由 DEPTH_SOURCE 选择 Isaac/LS
 LSM_CONFIG_FILE="$ROOT_DIR/src/LSM_depth_infer/config/config.yaml"
 LSM_PARAMS_FILE="$ROOT_DIR/src/LSM_depth_infer/config/isaac_params.yaml"
 # 深度输入空值按 DEPTH_SOURCE 选择，lsm 默认 nn_depth。
-# OCTOMAP_CLOUD_TOPIC 仅用于 legacy；新后端输入在 SEMANTIC_MAP_CONFIG 配置。
+# OCTOMAP_CLOUD_TOPIC 留空使用 SEMANTIC_MAP_CONFIG 中的语义点云输入。
 DEPTH_IMAGE_TOPIC=""
 OCTOMAP_CLOUD_TOPIC=""
 OCTOMAP_BACKEND=semantic_cuda

@@ -1,4 +1,5 @@
 #include "ros2_trt_infer_text_prompt_multi_node.hpp"
+#include "compact_cloud.hpp"
 #include <filesystem>
 #include <chrono>
 #include <yaml-cpp/yaml.h>
@@ -93,6 +94,8 @@ YoloeMultiTextPromptNode::YoloeMultiTextPromptNode()
 
     auto readonly = rcl_interfaces::msg::ParameterDescriptor{};
     readonly.read_only = true;
+    semantic_depth_stride_ = declare_parameter<int>("semantic_depth_stride", config["semantic_depth_stride"].as<int>(1), readonly);
+    if (semantic_depth_stride_ < 1 || semantic_depth_stride_ > 8) throw std::runtime_error("semantic_depth_stride must be in [1,8]");
     semantic_cloud_source_ = declare_parameter<std::string>("semantic_cloud_source", config["semantic_cloud_source"].as<std::string>("depth"), readonly);
     auto lidar_topic = declare_parameter<std::string>("semantic_lidar_topic", config["semantic_lidar_topic"].as<std::string>("/fastlio/cloud_odom"), readonly);
     lidar_frame_ = declare_parameter<std::string>("semantic_lidar_frame", config["semantic_lidar_frame"].as<std::string>("mid360_link"), readonly);
@@ -124,6 +127,11 @@ YoloeMultiTextPromptNode::YoloeMultiTextPromptNode()
     }
 
     pub_image_ = this->create_publisher<sensor_msgs::msg::Image>(image_result_topic, 10);
+    // Preview must survive suspended inference and missing depth/CameraInfo
+    // (for example, when grasping pauses the stereo depth node).
+    sub_image_ = this->create_subscription<sensor_msgs::msg::Image>(
+        image_topic, rclcpp::SensorDataQoS().keep_last(2),
+        std::bind(&YoloeMultiTextPromptNode::image_callback, this, std::placeholders::_1));
     pub_pointcloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(pointcloud_colored_topic, 10);
     pub_semantic_cloud_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("~/pointcloud_semantic", rclcpp::SensorDataQoS().keep_last(2));
     pub_detections_3d_ = this->create_publisher<vision_msgs::msg::Detection3DArray>(detections_3d_topic, 10);
@@ -148,6 +156,18 @@ YoloeMultiTextPromptNode::YoloeMultiTextPromptNode()
     
     RCLCPP_INFO(this->get_logger(), "Inference control initialized (enabled=%s)", 
                 enable_inference_ ? "true" : "false");
+}
+
+void YoloeMultiTextPromptNode::image_callback(
+    const sensor_msgs::msg::Image::ConstSharedPtr& image_msg) {
+    if (enable_inference_) return; // Synchronized inference publishes annotations.
+    try {
+        auto image = cv_bridge::toCvShare(image_msg, sensor_msgs::image_encodings::BGR8);
+        pub_image_->publish(*image->toImageMsg());
+    } catch (const cv_bridge::Exception& e) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+            "Live preview conversion failed: %s", e.what());
+    }
 }
 
 
@@ -182,7 +202,6 @@ void YoloeMultiTextPromptNode::lidar_sync_callback(
     const sensor_msgs::msg::Image::ConstSharedPtr& image_msg,
     const sensor_msgs::msg::PointCloud2::ConstSharedPtr& cloud_msg,
     const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info_msg) {
-    if (!enable_inference_) return;
     try {
         if (image_msg->header.frame_id.empty() || cloud_msg->header.frame_id.empty() ||
             image_msg->header.frame_id != info_msg->header.frame_id ||
@@ -213,7 +232,7 @@ void YoloeMultiTextPromptNode::lidar_sync_callback(
         pcl::fromROSMsg(*cloud_msg, original);
         pcl::transformPointCloud(original, camera_points, eigen_transform(camera_tf));
         pcl::transformPointCloud(original, lidar_points, eigen_transform(lidar_tf));
-        auto detections = infer_image(image_msg);
+        auto detections = enable_inference_ ? infer_image(image_msg) : std::vector<Detection>{};
         std_msgs::msg::Header header = cloud_msg->header;
         header.frame_id = lidar_frame_;
         pub_semantic_cloud_->publish(pointcloud_colorizer_->semantic_lidar_cloud(
@@ -229,10 +248,17 @@ void YoloeMultiTextPromptNode::sync_callback(
     const sensor_msgs::msg::Image::ConstSharedPtr& depth_msg,
     const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info_msg) {
 
-    // Skip processing if inference is disabled
+    // Suspend classification, not measured geometry. Raycasting still needs
+    // background returns to clear voxels after an object has moved away.
     if (!enable_inference_) {
-        RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-                             "Inference disabled, skipping frame");
+        try {
+            auto depth = cv_bridge::toCvShare(depth_msg, sensor_msgs::image_encodings::TYPE_32FC1);
+            pub_semantic_cloud_->publish(pointcloud_colorizer_->semantic_cloud(
+                depth->image, info_msg, {}, depth_msg->header, semantic_depth_stride_));
+        } catch (const std::exception& e) {
+            RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
+                "Geometry-only depth frame rejected: %s", e.what());
+        }
         return;
     }
 
@@ -242,7 +268,9 @@ void YoloeMultiTextPromptNode::sync_callback(
         RCLCPP_INFO(this->get_logger(), "Processing frame %d (FPS: %.2f)", sync_count, current_fps_);
     }
 
+    const auto frame_begin = std::chrono::steady_clock::now();
     auto detections = infer_image(image_msg);
+    const auto infer_done = std::chrono::steady_clock::now();
 
     // PointCloud Colorization
     cv_bridge::CvImagePtr depth_ptr;
@@ -250,18 +278,8 @@ void YoloeMultiTextPromptNode::sync_callback(
     // Publish independent geometry before legacy depth/mask processing. A bad
     // semantic detection must not remove a measured obstacle or shorten a ray.
     pub_semantic_cloud_->publish(pointcloud_colorizer_->semantic_cloud(
-        depth_ptr->image, info_msg, detections, depth_msg->header));
-
-    // PointCloud Generation Part 1: RAW Point Cloud (for GraspNet / Perception)
-    // We generate this using the UNMODIFIED depth image
-    pcl::PointCloud<pcl::PointXYZRGB> cloud_raw;
-    pointcloud_colorizer_->process(depth_ptr->image, info_msg, detections, cloud_raw);
-
-    // Publish RAW Cloud
-    sensor_msgs::msg::PointCloud2 pc_msg_raw;
-    pcl::toROSMsg(cloud_raw, pc_msg_raw);
-    pc_msg_raw.header.frame_id = depth_msg->header.frame_id;
-    pc_msg_raw.header.stamp = depth_msg->header.stamp;
+        depth_ptr->image, info_msg, detections, depth_msg->header, semantic_depth_stride_));
+    const auto semantic_done = std::chrono::steady_clock::now();
 
     std::string source_frame = depth_msg->header.frame_id;            
 
@@ -295,17 +313,19 @@ void YoloeMultiTextPromptNode::sync_callback(
             
             detections_3d_msg.detections.push_back(det_3d);
 
-            RCLCPP_INFO(this->get_logger(), "Object: %s (ID: %d), Confidence: %.2f, 3D Pose (odom): [x: %.3f, y: %.3f, z: %.3f]",
+            RCLCPP_DEBUG(this->get_logger(), "Object: %s (ID: %d), Confidence: %.2f, 3D Pose (odom): [x: %.3f, y: %.3f, z: %.3f]",
                         coord.class_name.c_str(), coord.class_id, coord.confidence, coord.x, coord.y, coord.z);
         }
         
         pub_detections_3d_->publish(detections_3d_msg);
     }
+    const auto coordinates_done = std::chrono::steady_clock::now();
 
     // PointCloud Generation Part 2: FILTERED Point Cloud (for Octomap / Nav)
     // We generate this using the MODIFIED depth image
     pcl::PointCloud<pcl::PointXYZRGB> cloud_filtered;
     pointcloud_colorizer_->process(depth_ptr->image, info_msg, detections, cloud_filtered);
+    const auto legacy_done = std::chrono::steady_clock::now();
 
     // Transform to odom frame, apply ground filtering, then transform back to camera frame
     try {
@@ -313,8 +333,8 @@ void YoloeMultiTextPromptNode::sync_callback(
         geometry_msgs::msg::TransformStamped cam_to_odom = tf_buffer_->lookupTransform(
             "odom", depth_msg->header.frame_id, depth_msg->header.stamp, rclcpp::Duration::from_seconds(0.5));
         
-        // Transform point cloud to odom frame
-        pcl::PointCloud<pcl::PointXYZRGB> cloud_in_odom;
+        // Ground filtering needs only odom Z. Keep the original camera points
+        // instead of allocating and transforming the entire cloud twice.
         Eigen::Affine3d transform_cam_to_odom = Eigen::Affine3d::Identity();
         transform_cam_to_odom.translation() << cam_to_odom.transform.translation.x,
                                                cam_to_odom.transform.translation.y,
@@ -324,31 +344,29 @@ void YoloeMultiTextPromptNode::sync_callback(
                                          cam_to_odom.transform.rotation.y,
                                          cam_to_odom.transform.rotation.z);
         transform_cam_to_odom.rotate(q_cam_to_odom);
-        pcl::transformPointCloud(cloud_filtered, cloud_in_odom, transform_cam_to_odom);
-        
-        // Apply ground filtering in odom frame (z > ground_filter_z_min_)
-        pcl::PointCloud<pcl::PointXYZRGB> cloud_ground_filtered_odom;
-        pcl::PassThrough<pcl::PointXYZRGB> pass;
-        pass.setInputCloud(cloud_in_odom.makeShared());
-        pass.setFilterFieldName("z");
-        pass.setFilterLimits(ground_filter_z_min_, 100.0); // z_min to 100m
-        pass.filter(cloud_ground_filtered_odom);
-        
-        // Transform back to camera frame for publishing (required for raycast)
         pcl::PointCloud<pcl::PointXYZRGB> cloud_ground_filtered_cam;
-        Eigen::Affine3d transform_odom_to_cam = transform_cam_to_odom.inverse();
-        pcl::transformPointCloud(cloud_ground_filtered_odom, cloud_ground_filtered_cam, transform_odom_to_cam);
+        cloud_ground_filtered_cam.reserve(cloud_filtered.size());
+        for (const auto& point : cloud_filtered) {
+            const double z = transform_cam_to_odom.matrix()(2,0)*point.x +
+                transform_cam_to_odom.matrix()(2,1)*point.y +
+                transform_cam_to_odom.matrix()(2,2)*point.z + transform_cam_to_odom.translation().z();
+            if (std::isfinite(z) && z >= ground_filter_z_min_ && z <= 100.0)
+                cloud_ground_filtered_cam.push_back(point);
+        }
         
         // Publish FILTERED Cloud in camera frame
-        sensor_msgs::msg::PointCloud2 pc_msg_filtered;
-        pcl::toROSMsg(cloud_ground_filtered_cam, pc_msg_filtered);
-        pc_msg_filtered.header.frame_id = depth_msg->header.frame_id;
-        pc_msg_filtered.header.stamp = depth_msg->header.stamp;
+        auto pc_msg_filtered = compact_xyzrgb(cloud_ground_filtered_cam, depth_msg->header);
         pub_pointcloud_->publish(pc_msg_filtered);
     } catch (const tf2::TransformException& ex) {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
                             "Could not transform point cloud to odom for filtering: %s", ex.what());
     }
+    const auto finished = std::chrono::steady_clock::now();
+    auto ms = [](auto a, auto b){return std::chrono::duration<double,std::milli>(b-a).count();};
+    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
+        "Frame ms: inference=%.1f semantic=%.1f coordinates=%.1f legacy=%.1f filter/publish=%.1f total=%.1f",
+        ms(frame_begin,infer_done),ms(infer_done,semantic_done),ms(semantic_done,coordinates_done),
+        ms(coordinates_done,legacy_done),ms(legacy_done,finished),ms(frame_begin,finished));
 }
 
 cv::Mat YoloeMultiTextPromptNode::draw_detections(
@@ -438,7 +456,7 @@ void YoloeMultiTextPromptNode::enable_inference_callback(
     
     enable_inference_ = request->data;
     response->success = true;
-    response->message = enable_inference_ ? "Inference enabled" : "Inference disabled";
+    response->message = enable_inference_ ? "Inference enabled" : "Inference disabled; live image preview and geometry active";
     
     RCLCPP_INFO(this->get_logger(), "%s", response->message.c_str());
 }

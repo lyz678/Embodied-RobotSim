@@ -53,6 +53,10 @@
 	<exec_depend>ros2_control</exec_depend>
 	<exec_depend>ros2_controllers</exec_depend>
 	<exec_depend>sensor_msgs</exec_depend>
+	<exec_depend>sensor_msgs_py</exec_depend>
+	<exec_depend>shape_msgs</exec_depend>
+	<exec_depend>python3-numpy</exec_depend>
+	<exec_depend>python3-scipy</exec_depend>
 	<exec_depend>pcl_conversions</exec_depend>
 	<exec_depend>cv_bridge</exec_depend>
 

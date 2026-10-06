@@ -6,10 +6,17 @@
 #include <fstream>
 #include <iostream>
 #include <mutex>
+#include <algorithm>
+#include <cmath>
+#include <unordered_map>
+#include <yaml-cpp/yaml.h>
 
 #include <rclcpp/rclcpp.hpp>
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit/planning_scene_monitor/planning_scene_monitor.h>
+#include <moveit/robot_trajectory/robot_trajectory.hpp>
+#include <moveit/robot_state/conversions.hpp>
+#include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
 #include <moveit/collision_detection/collision_matrix.h>
 #include <moveit_msgs/msg/planning_scene.hpp>
 #include <moveit_msgs/srv/get_planning_scene.hpp>
@@ -54,15 +61,16 @@ public:
     sub_opt.callback_group = callback_group_;
 
     subscription_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-      "/arm_command/pose", 10, std::bind(&RobotActionsNode::topic_callback, this, std::placeholders::_1), sub_opt);
+      "/arm_command/pose", 10, [this](geometry_msgs::msg::PoseStamped::SharedPtr msg) { topic_callback(msg, false); }, sub_opt);
+
+    cartesian_sub_ = this->create_subscription<geometry_msgs::msg::PoseStamped>(
+      "/arm_command/cartesian_pose", 10, [this](geometry_msgs::msg::PoseStamped::SharedPtr msg) { topic_callback(msg, true); }, sub_opt);
 
     joint_sub_ = this->create_subscription<sensor_msgs::msg::JointState>(
       "/joint_states", 10, std::bind(&RobotActionsNode::joint_callback, this, std::placeholders::_1), sub_opt);
 
     status_pub_ = this->create_publisher<std_msgs::msg::String>("/arm_command/status", 10);
     
-    // Create planning scene diff publisher for ACM updates
-    planning_scene_diff_publisher_ = this->create_publisher<moveit_msgs::msg::PlanningScene>("/planning_scene", 1);
     
     // Initialize Trajectory Action Client with callback group
     trajectory_client_ = rclcpp_action::create_client<control_msgs::action::FollowJointTrajectory>(
@@ -87,9 +95,9 @@ public:
     move_group_->setPlanningPipelineId("ompl");
     move_group_->setPlannerId("RRTConnectkConfigDefault");
     move_group_->setPlanningTime(10.0);
-    move_group_->setMaxVelocityScalingFactor(0.5);
-    move_group_->setMaxAccelerationScalingFactor(0.5);
-    move_group_->setPoseReferenceFrame("odom"); // Ensure odom frame
+    move_group_->setMaxVelocityScalingFactor(0.3);
+    move_group_->setMaxAccelerationScalingFactor(0.25);
+    move_group_->setPoseReferenceFrame(move_group_->getPlanningFrame());
     
     // Explicitly set the TCP to our new center point
     // This ensures we reach for the ball with the fingers, not the wrist
@@ -98,45 +106,18 @@ public:
     RCLCPP_INFO(this->get_logger(), "MoveGroup Interface READY");
     RCLCPP_INFO(this->get_logger(), "End Effector Link: %s", move_group_->getEndEffectorLink().c_str());
     
-    // Initialize PlanningSceneMonitor and configure ACM to allow finger-octomap collisions
+    // Initialize a local monitor for start-state and collision diagnostics
     RCLCPP_INFO(this->get_logger(), "Initializing PlanningSceneMonitor...");
     planning_scene_monitor_ = std::make_shared<planning_scene_monitor::PlanningSceneMonitor>(
       shared_from_this(), "robot_description");
     
     if (planning_scene_monitor_) {
-      planning_scene_monitor_->startSceneMonitor();
+      planning_scene_monitor_->startSceneMonitor("/monitored_planning_scene");
       planning_scene_monitor_->startWorldGeometryMonitor();
       planning_scene_monitor_->startStateMonitor();
       
-      // Wait briefly for scene to initialize
-      std::this_thread::sleep_for(std::chrono::milliseconds(500));
-      
-      // Modify ACM to allow fingers to collide with octomap
-      moveit_msgs::msg::PlanningScene planning_scene_diff;
-      {
-        planning_scene_monitor::LockedPlanningSceneRW scene(planning_scene_monitor_);
-        collision_detection::AllowedCollisionMatrix& acm = 
-          scene->getAllowedCollisionMatrixNonConst();
-        
-        std::vector<std::string> finger_links = {
-          "fr3_leftfinger", "fr3_rightfinger"
-        };
-        
-        for (const auto& link : finger_links) {
-          acm.setEntry("<octomap>", link, true);
-          RCLCPP_INFO(this->get_logger(), 
-            "[ACM] Allowed collision: %s <-> <octomap>", link.c_str());
-        }
-        
-        // Get planning scene diff message
-        scene->getPlanningSceneDiffMsg(planning_scene_diff);
-      }
-      
-      // Publish ACM changes to move_group
-      planning_scene_diff.is_diff = true;
-      planning_scene_diff_publisher_->publish(planning_scene_diff);
-      
-      RCLCPP_INFO(this->get_logger(), "Published ACM diff to move_group");
+      // The semantic planning export excludes only the selected target.
+      // Preserve finger collisions with all other measured obstacles.
       RCLCPP_INFO(this->get_logger(), "PlanningSceneMonitor configured successfully");
     } else {
       RCLCPP_WARN(this->get_logger(), "Failed to create PlanningSceneMonitor");
@@ -185,6 +166,18 @@ private:
     }
   }
 
+  bool plan_with_retries(moveit::planning_interface::MoveGroupInterface::Plan& plan)
+  {
+    // Time parameterization can expose collisions between sparse OMPL samples.
+    // Retry another fully validated path; never execute an invalid response.
+    for (int attempt = 0; attempt < 3; ++attempt) {
+      auto result = move_group_->plan(plan);
+      if (result == moveit::core::MoveItErrorCode::SUCCESS) return true;
+      RCLCPP_WARN(get_logger(), "Pose planning attempt %d failed: %d", attempt+1, result.val);
+    }
+    return false;
+  }
+
   // --- Topic Callbacks ---
   void joint_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
   {
@@ -211,38 +204,90 @@ private:
     }
   }
 
-  void topic_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg)
+  void topic_callback(const geometry_msgs::msg::PoseStamped::SharedPtr msg, bool cartesian)
   {
+    std::lock_guard<std::mutex> motion_lock(motion_mutex_);
     if (!ensure_move_group()) {
         RCLCPP_WARN(this->get_logger(), "MoveGroup not yet initialized or failed!");
         return;
     }
 
-    geometry_msgs::msg::PoseStamped target_pose_odom;
+    geometry_msgs::msg::PoseStamped target_pose_planning;
     try {
-        if (!tf_buffer_->canTransform("odom", msg->header.frame_id, msg->header.stamp, rclcpp::Duration::from_seconds(1.0))) {
+        if (!tf_buffer_->canTransform(move_group_->getPlanningFrame(), msg->header.frame_id, msg->header.stamp, rclcpp::Duration::from_seconds(1.0))) {
              RCLCPP_WARN(this->get_logger(), "Wait for transform failed");
              return;
         }
-        target_pose_odom = tf_buffer_->transform(*msg, "odom");
+        target_pose_planning = tf_buffer_->transform(*msg, move_group_->getPlanningFrame());
     } catch (const tf2::TransformException & ex) {
-        RCLCPP_ERROR(this->get_logger(), "Transform to odom failed: %s", ex.what());
+        RCLCPP_ERROR(this->get_logger(), "Transform to planning frame failed: %s", ex.what());
         return;
     }
 
-    RCLCPP_INFO(this->get_logger(), "Received target pose (transformed to odom): Pos(%.3f, %.3f, %.3f) Ori(%.3f, %.3f, %.3f, %.3f)", 
-        target_pose_odom.pose.position.x, target_pose_odom.pose.position.y, target_pose_odom.pose.position.z,
-        target_pose_odom.pose.orientation.x, target_pose_odom.pose.orientation.y, 
-        target_pose_odom.pose.orientation.z, target_pose_odom.pose.orientation.w);
+    RCLCPP_INFO(this->get_logger(), "Received target pose (planning frame): Pos(%.3f, %.3f, %.3f) Ori(%.3f, %.3f, %.3f, %.3f)",
+        target_pose_planning.pose.position.x, target_pose_planning.pose.position.y, target_pose_planning.pose.position.z,
+        target_pose_planning.pose.orientation.x, target_pose_planning.pose.orientation.y,
+        target_pose_planning.pose.orientation.z, target_pose_planning.pose.orientation.w);
     
     RCLCPP_INFO(this->get_logger(), "=== Before Motion ===");
     print_current_pose();
 
+    if (!prepare_planning_start()) {
+        std_msgs::msg::String status;
+        status.data = "FAILED: Invalid or unavailable joint state";
+        status_pub_->publish(status);
+        return;
+    }
     // Pass PoseStamped directly so MoveIt handles frame transform
-    move_group_->setPoseTarget(target_pose_odom);
+    move_group_->setPoseTarget(target_pose_planning);
 
     moveit::planning_interface::MoveGroupInterface::Plan plan;
-    bool success = (move_group_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+    bool success = false;
+    if (cartesian) {
+      moveit_msgs::msg::RobotTrajectory trajectory;
+      const double fraction = move_group_->computeCartesianPath({target_pose_planning.pose}, 0.005, trajectory, true);
+      auto state = move_group_->getCurrentState();
+      if (fraction >= 0.99 && state) {
+        robot_trajectory::RobotTrajectory timed(move_group_->getRobotModel(), "fr3_arm");
+        timed.setRobotTrajectoryMsg(*state, trajectory);
+        trajectory_processing::TimeOptimalTrajectoryGeneration timing;
+        std::unordered_map<std::string,double> velocities, accelerations;
+        auto limits = YAML::LoadFile(ament_index_cpp::get_package_share_directory("franka_fr3_moveit_config") + "/config/fr3_joint_limits.yaml")["joint_limits"];
+        for (const auto& name : state->getJointModelGroup("fr3_arm")->getVariableNames()) {
+          velocities[name] = move_group_->getRobotModel()->getVariableBounds(name).max_velocity_;
+          accelerations[name] = limits[name]["max_acceleration"].as<double>();
+        }
+        success = timing.computeTimeStamps(timed, velocities, accelerations, 0.3, 0.25);
+        timed.getRobotTrajectoryMsg(plan.trajectory);
+      }
+      RCLCPP_INFO(get_logger(), "Collision-checked Cartesian path fraction: %.3f", fraction);
+      if (!success) {
+        moveit_msgs::msg::RobotTrajectory diagnostic;
+        const double unchecked = move_group_->computeCartesianPath({target_pose_planning.pose}, 0.005, diagnostic, false);
+        RCLCPP_WARN(get_logger(), "Straight path fraction without collision checking (diagnostic only): %.3f", unchecked);
+        if (state && planning_scene_monitor_) {
+          planning_scene_monitor::LockedPlanningSceneRO scene(planning_scene_monitor_);
+          auto candidate = *state;
+          for (const auto& point : diagnostic.joint_trajectory.points) {
+            candidate.setVariablePositions(diagnostic.joint_trajectory.joint_names, point.positions);
+            candidate.update();
+            collision_detection::CollisionRequest request;
+            request.group_name = "fr3_arm";request.contacts = true;request.max_contacts = 20;
+            collision_detection::CollisionResult result;
+            scene->checkCollision(request, result, candidate);
+            if (result.collision) {
+              for (const auto& pair : result.contacts)
+                RCLCPP_WARN(get_logger(), "Straight path blocked by %s / %s", pair.first.first.c_str(), pair.first.second.c_str());
+              break;
+            }
+          }
+        }
+        RCLCPP_WARN(get_logger(), "Straight path unavailable; trying collision-checked joint-space approach");
+        success = plan_with_retries(plan);
+      }
+    } else {
+      success = plan_with_retries(plan);
+    }
 
     if (success) {
         RCLCPP_INFO(this->get_logger(), "Plan valid. Executing...");
@@ -283,8 +328,53 @@ private:
       return (move_group_ != nullptr);
   }
 
+  bool prepare_planning_start() {
+      auto state = move_group_->getCurrentState(2.0);
+      if (!state) {
+          RCLCPP_ERROR(this->get_logger(), "No current joint state for planning");
+          return false;
+      }
+      // PhysX publishes float joint positions. At a hard stop, rounding can
+      // exceed the double URDF bound by ~1e-7 rad and fail Jazzy's strict check.
+      // Correct only numerical overshoot in the planning copy, never hardware
+      // feedback or meaningful out-of-bounds states. Collision checks stay on.
+      const auto model = state->getRobotModel();
+      for (const auto& name : model->getVariableNames()) {
+          const auto& bounds = model->getVariableBounds(name);
+          const double value = state->getVariablePosition(name);
+          if (!std::isfinite(value)) return false;
+          if (!bounds.position_bounded_) continue;
+          const double bounded = std::clamp(value, bounds.min_position_, bounds.max_position_);
+          const double error = std::abs(value - bounded);
+          if (error > 1e-4) {
+              RCLCPP_ERROR(this->get_logger(), "%s outside joint limits by %.9f; refusing plan",
+                           name.c_str(), error);
+              return false;
+          }
+          if (error > 0.0) {
+              RCLCPP_INFO(this->get_logger(), "Correcting numerical start-state overshoot: %s %.9f rad",
+                          name.c_str(), error);
+              state->setVariablePosition(name, bounded);
+          }
+      }
+      state->update();
+      moveit_msgs::msg::RobotState start;
+      moveit::core::robotStateToRobotStateMsg(*state, start);
+      // Preserve payloads attached in the server's planning scene. A full
+      // joint-only state would silently clear them before collision checking.
+      start.is_diff = true;
+      start.attached_collision_objects.clear(); // Server owns attachment lifecycle; never replay a stale local copy.
+      move_group_->setStartState(start);
+      return true;
+  }
+
   bool perform_go_home() {
+      std::lock_guard<std::mutex> motion_lock(motion_mutex_);
       RCLCPP_INFO(this->get_logger(), "Executing Go Home...");
+      if (!trajectory_client_->wait_for_action_server(std::chrono::seconds(30))) {
+          RCLCPP_ERROR(this->get_logger(), "Arm trajectory controller not ready for go home");
+          return false;
+      }
       
       std::string package_share_directory = ament_index_cpp::get_package_share_directory("x_bot");
       std::string yaml_file = package_share_directory + "/config/initial_positions.yaml";
@@ -324,14 +414,20 @@ private:
           return false;
       }
 
+      move_group_->clearPoseTargets();
+      if (!prepare_planning_start()) return false;
       move_group_->setJointValueTarget(home_joints);
       move_group_->setGoalTolerance(0.01);
       
       moveit::planning_interface::MoveGroupInterface::Plan plan;
-      if (move_group_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-          return (move_group_->execute(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+      const auto planning_result = move_group_->plan(plan);
+      if (planning_result == moveit::core::MoveItErrorCode::SUCCESS) {
+          const auto execution_result = move_group_->execute(plan);
+          if (execution_result != moveit::core::MoveItErrorCode::SUCCESS)
+              RCLCPP_ERROR(this->get_logger(), "Home execution failed: MoveIt code %d", execution_result.val);
+          return execution_result == moveit::core::MoveItErrorCode::SUCCESS;
       } else {
-          RCLCPP_ERROR(this->get_logger(), "Planning to home failed");
+          RCLCPP_ERROR(this->get_logger(), "Planning to home failed: MoveIt code %d", planning_result.val);
           return false;
       }
   }
@@ -352,6 +448,7 @@ private:
           RCLCPP_WARN(this->get_logger(), "Scan request rejected: Scan already in progress.");
           return false;
       }
+      std::lock_guard<std::mutex> motion_lock(motion_mutex_);
 
       RCLCPP_INFO(this->get_logger(), "Executing Scan Sequence (Sequential Control)...");
 
@@ -401,7 +498,7 @@ private:
           trajectory_msgs::msg::JointTrajectoryPoint point;
           point.positions = target_positions;
           
-          double speed = 2.0; // rad/s
+          const double speed = 0.8; // Peak rad/s for a smooth rest-to-rest scan.
           double max_diff = 0.0;
           for (size_t k = 0; k < target_positions.size(); ++k) {
               double current_val = 0.0;
@@ -413,7 +510,22 @@ private:
               if (diff > max_diff) max_diff = diff;
           }
           
-          double duration = std::max(max_diff / speed, 1.0); // Minimum 1.0s
+          // Quintic interpolation peaks at 1.875 * displacement / duration.
+          // Explicit rest endpoints avoid the old abrupt constant-speed start.
+          double duration = std::max(1.875 * max_diff / speed, 1.5);
+          trajectory_msgs::msg::JointTrajectoryPoint start;
+          for (const auto& name : goal_msg.trajectory.joint_names) {
+              if (!current_positions.count(name)) {
+                  RCLCPP_ERROR(this->get_logger(), "Missing scan joint state: %s", name.c_str());
+                  return false;
+              }
+              start.positions.push_back(current_positions.at(name));
+          }
+          start.velocities.assign(target_positions.size(), 0.0);
+          start.accelerations.assign(target_positions.size(), 0.0);
+          point.velocities = start.velocities;
+          point.accelerations = start.accelerations;
+          goal_msg.trajectory.points.push_back(start);
           
           point.time_from_start = rclcpp::Duration::from_seconds(duration); 
           goal_msg.trajectory.points.push_back(point);
@@ -438,6 +550,7 @@ private:
           
           RCLCPP_INFO(this->get_logger(), "Waiting for execution result...");
           if (result_future.wait_for(std::chrono::seconds(30)) != std::future_status::ready) {
+              trajectory_client_->async_cancel_goal(goal_handle);
               RCLCPP_ERROR(this->get_logger(), "Execution timed out (Result wait)");
               return false;
           }
@@ -448,7 +561,9 @@ private:
                return false;
           }
           if (wrapped_result.code != rclcpp_action::ResultCode::SUCCEEDED) {
-              RCLCPP_ERROR(this->get_logger(), "Trajectory failed with code: %d", (int)wrapped_result.code);
+              RCLCPP_ERROR(this->get_logger(), "Scan step %zu failed: action=%d, controller=%d, %s",
+                           i+1, (int)wrapped_result.code, wrapped_result.result->error_code,
+                           wrapped_result.result->error_string.c_str());
               return false;
           }
           
@@ -462,16 +577,16 @@ private:
 
   std::shared_ptr<moveit::planning_interface::MoveGroupInterface> move_group_;
   planning_scene_monitor::PlanningSceneMonitorPtr planning_scene_monitor_;
-  rclcpp::Publisher<moveit_msgs::msg::PlanningScene>::SharedPtr planning_scene_diff_publisher_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr go_home_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr scan_service_;
 
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr subscription_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr subscription_, cartesian_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_sub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
   std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
   std::mutex joint_mutex_;
+  std::mutex motion_mutex_;
   sensor_msgs::msg::JointState latest_joint_state_;
   rclcpp::CallbackGroup::SharedPtr callback_group_;
   rclcpp_action::Client<control_msgs::action::FollowJointTrajectory>::SharedPtr trajectory_client_;

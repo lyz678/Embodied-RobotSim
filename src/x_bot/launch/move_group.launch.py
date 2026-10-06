@@ -34,7 +34,7 @@ def generate_launch_description():
     declare_use_sim_time_cmd = DeclareLaunchArgument(
         name='use_sim_time',
         default_value='true',
-        description='Use simulation (Gazebo) clock if true')
+        description='Use simulation clock if true')
 
     declare_use_rviz_cmd = DeclareLaunchArgument(
         name='use_rviz',
@@ -79,11 +79,6 @@ def generate_launch_description():
             .to_moveit_configs()
         )
 
-        # MoveIt capabilities
-        move_group_capabilities = {
-            "capabilities": "move_group/ExecuteTaskSolutionCapability move_group/MoveGroupGetPlanningSceneService move_group/ClearOctomapService move_group/MoveGroupCartesianPathService move_group/MoveGroupKinematicsService move_group/MoveGroupMoveAction MoveGroupPlanService move_group/MoveGroupQueryPlannersService move_group/MoveGroupStateValidationService"
-        }
-
         # Manually load joint limits to ensure acceleration limits are applied
         with open(joint_limits_file_path, 'r') as file:
             joint_limits_content = yaml.safe_load(file)
@@ -103,7 +98,6 @@ def generate_launch_description():
                 os.path.join(config_path, 'sensors_3d_x_bot.yaml'),
                 {'use_sim_time': use_sim_time},
                 {'start_state': {'content': initial_positions_file_path}},
-                move_group_capabilities,
             ],
             # Suppress noisy shape_mask and planning_scene_monitor errors
             ros_arguments=[

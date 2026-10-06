@@ -69,6 +69,7 @@ def main() -> int:
 
     temp_dir = None
     lidar_sensor = None
+    manipulation_telemetry = None
     return_code = 0
     try:
         for extension in (
@@ -107,6 +108,9 @@ def main() -> int:
         while omni.usd.get_context().get_stage_loading_status()[2] > 0:
             simulation_app.update()
 
+        if args.world == 'manipulation_test':
+            from scene_builder import configure_manipulation_contacts
+            configure_manipulation_contacts(stage)
         articulation = find_articulation_root(stage)
         articulation_path = str(articulation.GetPath())
         configure_joint_drives(stage)
@@ -119,6 +123,9 @@ def main() -> int:
         # and base start at rest before the first published physics sample.
         SimulationManager.initialize_physics()
         set_initial_joint_state(articulation_path)
+        if args.world == 'manipulation_test':
+            from manipulation_telemetry import ManipulationTelemetry
+            manipulation_telemetry = ManipulationTelemetry(stage, lidar_sensor.node)
         if not args.headless:
             ViewportManager.set_camera_view(
                 "/OmniverseKit_Persp", eye=[3.5, 3.5, 2.8], target=[0.0, 0.0, 0.8]
@@ -155,6 +162,8 @@ def main() -> int:
     else:
         return_code = 0
     finally:
+        if manipulation_telemetry is not None:
+            manipulation_telemetry.close()
         if lidar_sensor is not None:
             lidar_sensor.close()
         try:

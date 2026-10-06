@@ -1,6 +1,6 @@
 # CUDA 多帧语义体素地图
 
-探索入口默认使用本包。直接运行 `./start_explore_and_mapping.sh`；入口顶部的 `OCTOMAP_BACKEND=semantic_cuda` 和 `SEMANTIC_MAP_CONFIG` 控制后端和配置路径。改为 `OCTOMAP_BACKEND=legacy` 可回到原 ColorOctoMap；导航、抓取和 LLM 入口暂时仍用原后端。
+探索入口默认使用本包。直接运行 `./start_explore_and_mapping.sh`；入口顶部的 `OCTOMAP_BACKEND=semantic_cuda` 和 `SEMANTIC_MAP_CONFIG` 控制后端和配置路径。所有启动入口的三维建图统一使用本包。抓取、导航抓取和 LLM 使用 `config/manipulation.yaml`（2 cm、2 m 范围），探索使用 `config/map.yaml`（10 cm、10 m 范围）。
 
 本包使用自己的稀疏体素状态融合地图，CUDA 执行三维 DDA 射线遍历、排序和去重。CPU 负责每帧证据合并、占据概率、语义投票和 ROS 输出。`ColorOcTree` 只用于兼容导出，不参与融合；不会通过平均 RGB 生成不存在的类别颜色。必须有可用 CUDA 设备，启动失败会明确报错，不自动回退 CPU。
 
@@ -17,7 +17,7 @@ DEPTH_SOURCE=isaac           # isaac 或 lsm，仅 depth 模式使用
 
 所有有限 FAST-LIO 端点都保留，包括视野外、mask 外和遮挡点，以白色 RGB 和零置信度表示未知。输出点坐标转换到扫描时间的 `mid360_link`，时间戳仍为扫描时间，因此 raycast 使用雷达原点，不能将 `odom` 原点或相机原点当作激光原点。不会用相机深度替换激光点坐标，也不会把缺少激光返回的方向当作空闲观测；地图自身的距离/高度筛选仍生效。
 
-`SEMANTIC_CLOUD_SOURCE=depth` 保留原有深度点云路径：`DEPTH_SOURCE=isaac` 使用仿真器深度，`DEPTH_SOURCE=lsm` 使用双目推理深度。有效背景深度保留为未知，检测掩膜及深度 MAD 过滤决定语义颜色。旧点云和 Detection3D 输出在 depth 模式保持原行为；导航抓取/LLM 的 legacy 后端自动采用 depth 模式。fastlio 模式用于探索语义建图，只发布语义点云和检测图像，不发布旧 RGB-D 点云/Detection3D；不会启动未使用的 LSM 节点。
+`SEMANTIC_CLOUD_SOURCE=depth` 保留原有深度点云路径：`DEPTH_SOURCE=isaac` 使用仿真器深度，`DEPTH_SOURCE=lsm` 使用双目推理深度。有效背景深度保留为未知，检测掩膜及深度 MAD 过滤决定语义颜色。旧点云和 Detection3D 输出在 depth 模式保持原行为；抓取/导航抓取/LLM 默认采用 depth 模式。fastlio 模式用于探索语义建图，只发布语义点云和检测图像，不发布旧 RGB-D 点云/Detection3D；不会启动未使用的 LSM 节点。
 
 投影参数在 `src/yoloe_infer/configs/config.yaml`，也可用同名 ROS 启动参数覆盖：
 
@@ -97,3 +97,15 @@ CUDA 编译默认生成本机 GPU 的原生指令，避免驱动 PTX JIT 版本�
 核心测试覆盖重复证据、hit 优先、误检投票、未知/平票、历史淘汰、空闲清除、持久化和预算拒绝。benchmark 检查 CUDA 与 CPU 的空闲体素集合完全一致，包含负坐标、轴向和边界射线。报告中的 `gpu_ms` 包括每块射线、排序去重、回传及部分主机处理，不代表整帧融合或仿真实时倍率。
 
 YOLOE 投影测试验证 FOV、mask（不是 bbox）、同像素遮挡、重叠检测置信度、原始端点与雷达时间戳保留，以及旧深度模式兼容。
+
+## 抓取碰撞地图
+
+`manipulation.yaml` 开启 `self_filter`，通过 `/robot_description` 的碰撞几何和点云时间戳的 TF 过滤机器人自身点，再执行 CUDA raycast。缺失描述或 TF 时拒绝整帧，避免把机器人自身建成障碍。`publish_moveit_scene` 将同一融合状态导出为 MoveIt 支持的 OcTree 并通过 `/planning_scene` 更新，导出保留 `odom` 体素坐标，通过 `base_footprint←odom` 的实时 TF 设置 OctoMap origin，并更新规划场景的固定帧变换，避免底盘移动后地图错位。MoveIt 的点云融合插件已关闭。彩色 `/octomap_full`、三维体素、二维投影仍来自同一状态。
+
+抓取时 `/set_cloud_filter` 选择的类别只从 MoveIt 碰撞导出中排除；不删除语义地图的几何或投票历史。恢复为 `-1` 后重新导出全部障碍。深度来源保持可切换 Isaac/LSM，两者都接入 YOLOE 的 `pointcloud_semantic`。
+
+MoveIt 的 OcTree 类型及 OctomapWithPose 接入依据：[Jazzy PlanningScene 实现](https://github.com/moveit/moveit2/blob/jazzy/moveit_core/planning_scene/src/planning_scene.cpp)。
+
+抓取时暂停 YOLOE 分类和 GraspNet，但继续发布无语义的测量点云（白色、confidence=0），LSM 深度流也保持启用，因此 CUDA raycast 的 hit/miss 更新不会随识别暂停。未知点不增加语义投票。`miss=0.4`、`clamp_max=0.97` 时，饱和体素约需 9 帧有效空闲射线才能低于 0.5；重复像素在一帧内只计一次 miss。移走后的原位置必须重新被有效背景射线穿过才能清空，被遮挡或不在视野内的体素不会直接删除。
+
+抓取模式融合上限为 5 Hz、发布为 2 Hz（墙钟频率）。占用、颜色和投影的派生缓存只更新实际改变的体素；持续观测已达到 clamp_min 的空闲体素不再重复分配，保存的概率/历史仍以 canonical Map 为准。诊断增加 `export_ms`、`input_points`、`rays`、`occupied_voxels`，用于区分 CUDA、CPU 融合和地图导出的耗时。

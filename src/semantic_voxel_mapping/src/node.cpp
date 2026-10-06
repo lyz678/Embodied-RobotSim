@@ -1,4 +1,10 @@
 #include "semantic_voxel_mapping/core.hpp"
+#include "semantic_voxel_mapping/self_filter.hpp"
+#include "semantic_voxel_mapping/export_cache.hpp"
+#include <moveit_msgs/msg/planning_scene.hpp>
+#include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/int32.hpp>
+#include <octomap/OcTree.h>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/point_cloud2_iterator.hpp>
@@ -25,13 +31,24 @@
 using namespace std::chrono_literals;
 class SemanticMapNode:public rclcpp::Node {
  using Cloud=sensor_msgs::msg::PointCloud2;using Trigger=std_srvs::srv::Trigger;
- svm::Map map_;std::unordered_set<svm::Color> palette_;std::string signature_,frame_,file_;
+ svm::Map map_;std::unique_ptr<MapExportCache> exports_;std::unordered_set<svm::Color> palette_;std::string signature_,frame_,file_;
  double min_range_,max_range_,zmin_,zmax_,confidence_,integration_rate_,publish_rate_;
  size_t budget_;int device_;int64_t last_stamp_=-1;bool clock_fault_=false,dirty_=false;
- uint64_t integrated_=0,dropped_=0,errors_=0;double gpu_ms_=0,total_ms_=0;size_t scratch_=0;
+ uint64_t integrated_=0,dropped_=0,errors_=0;double gpu_ms_=0,total_ms_=0;size_t scratch_=0;double export_ms_=0;size_t input_points_=0,ray_count_=0;
  std::chrono::steady_clock::time_point last_wall_{};
  std::unique_ptr<tf2_ros::Buffer> tf_;std::unique_ptr<tf2_ros::TransformListener> listener_;
  rclcpp::Subscription<Cloud>::SharedPtr input_;
+ std::string planning_frame_;
+ bool self_filter_enabled_=false,publish_moveit_=false;double self_padding_=0;
+ RobotSelfFilter self_filter_;
+ std::unordered_map<int,svm::Color> class_colors_;int excluded_class_=-1;
+ rclcpp::Subscription<std_msgs::msg::String>::SharedPtr description_;
+ rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr filter_class_;
+ rclcpp::Publisher<moveit_msgs::msg::PlanningScene>::SharedPtr scene_;
+ rclcpp::Subscription<moveit_msgs::msg::PlanningScene>::SharedPtr monitored_scene_;
+ std::unordered_map<std::string,moveit_msgs::msg::AttachedCollisionObject> payloads_;
+ rclcpp::Subscription<moveit_msgs::msg::CollisionObject>::SharedPtr target_bounds_;
+ moveit_msgs::msg::CollisionObject target_box_;
  rclcpp::Publisher<Cloud>::SharedPtr voxels_;
  rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr markers_;
  rclcpp::Publisher<octomap_msgs::msg::Octomap>::SharedPtr octomap_;
@@ -49,7 +66,7 @@ public:
   int window=option("vote_window",30),minimum=option("min_observations",3),maximum=option("max_voxels",2000000);
   if(window<1||minimum<1||maximum<1)throw std::runtime_error("Invalid integer map limits");
   c.window=window;c.min_observations=minimum;c.majority=option("majority_threshold",.6);c.max_voxels=maximum;c.validate();
-  map_=svm::Map(c);frame_=option("map_frame",std::string("odom"));file_=option("map_file",std::string("maps/semantic_map.svm"));
+  map_=svm::Map(c);exports_=std::make_unique<MapExportCache>(c.resolution);frame_=option("map_frame",std::string("odom"));file_=option("map_file",std::string("maps/semantic_map.svm"));
   min_range_=option("min_range",.2);max_range_=option("max_range",8.);zmin_=option("min_z",.1);zmax_=option("max_z",2.5);
   confidence_=option("confidence_threshold",.5);integration_rate_=option("integration_rate",5.);publish_rate_=option("publish_rate",1.);
   int memory=option("gpu_scratch_mib",512);device_=option("cuda_device",0);
@@ -65,6 +82,7 @@ public:
    if(rgb.size()!=3||std::any_of(rgb.begin(),rgb.end(),[](int v){return v<0||v>255;})||!ids.insert(id).second)throw std::runtime_error("Invalid class palette");
    auto color=(uint32_t(rgb[0])<<16)|(uint32_t(rgb[1])<<8)|rgb[2];
    if(color==svm::UNKNOWN||!palette_.insert(color).second)throw std::runtime_error("Class RGB colors must be unique; white is reserved for unknown");
+   class_colors_[id]=color;
    palette_records.push_back(std::to_string(id)+":"+name+":"+std::to_string(color));
   }
   auto unknown=yaml["default_color"].as<std::vector<int>>();if(unknown!=std::vector<int>({255,255,255})||palette_.empty())throw std::runtime_error("Semantic palette requires white unknown and at least one class");
@@ -73,6 +91,25 @@ public:
   svm::require_cuda(device_);
   tf_=std::make_unique<tf2_ros::Buffer>(get_clock());listener_=std::make_unique<tf2_ros::TransformListener>(*tf_);
   auto qos=rclcpp::QoS(1).transient_local().reliable();
+  self_filter_enabled_=option("self_filter",false);self_padding_=option("self_filter_padding",.02);
+  publish_moveit_=option("publish_moveit_scene",false);
+  planning_frame_=option("planning_frame",std::string("base_footprint"));
+  if(!std::isfinite(self_padding_)||self_padding_<0||self_padding_>.2)throw std::runtime_error("Invalid self-filter padding");
+  if(self_filter_enabled_)description_=create_subscription<std_msgs::msg::String>("/robot_description",qos,
+   [this](std_msgs::msg::String::ConstSharedPtr msg){try{self_filter_.load(msg->data,self_padding_);}catch(const std::exception& e){RCLCPP_ERROR(get_logger(),"Self filter: %s",e.what());}});
+  if(publish_moveit_){
+   target_bounds_=create_subscription<moveit_msgs::msg::CollisionObject>("/pick_target_bounds",10,[this](moveit_msgs::msg::CollisionObject::ConstSharedPtr msg){target_box_=*msg;dirty_=true;});
+   monitored_scene_=create_subscription<moveit_msgs::msg::PlanningScene>("/monitored_planning_scene",10,[this](moveit_msgs::msg::PlanningScene::ConstSharedPtr msg){
+    if(!msg->robot_state.is_diff)payloads_.clear();
+    for(const auto& obj:msg->robot_state.attached_collision_objects){
+     if(obj.object.operation==moveit_msgs::msg::CollisionObject::REMOVE)payloads_.erase(obj.object.id);
+     else payloads_[obj.object.id]=obj;
+    }
+    dirty_=true;
+   });
+   scene_=create_publisher<moveit_msgs::msg::PlanningScene>("/planning_scene",rclcpp::QoS(1).reliable());
+   filter_class_=create_subscription<std_msgs::msg::Int32>("/set_cloud_filter",10,[this](std_msgs::msg::Int32::ConstSharedPtr msg){excluded_class_=msg->data;dirty_=true;});
+  }
   voxels_=create_publisher<Cloud>("/semantic_map/voxels",qos);
   markers_=create_publisher<visualization_msgs::msg::MarkerArray>("/occupied_cells_vis_array",qos);
   octomap_=create_publisher<octomap_msgs::msg::Octomap>("/octomap_full",qos);
@@ -80,9 +117,9 @@ public:
   diagnostics_=create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/semantic_map/diagnostics",10);
   auto topic=option("cloud_topic",std::string("/yoloe_multi_text_prompt/pointcloud_semantic"));
   input_=create_subscription<Cloud>(topic,rclcpp::SensorDataQoS().keep_last(2),[this](Cloud::ConstSharedPtr msg){receive(*msg);});
-  service("clear",[this]{map_.cells.clear();clock_fault_=false;last_stamp_=-1;last_wall_={};dirty_=true;});
+  service("clear",[this]{map_.cells.clear();exports_=std::make_unique<MapExportCache>(map_.config.resolution);clock_fault_=false;last_stamp_=-1;last_wall_={};dirty_=true;});
   service("save",[this]{save();});
-  service("load",[this]{std::ifstream in(file_,std::ios::binary);map_.load(in,signature_,palette_);clock_fault_=false;last_stamp_=-1;last_wall_={};dirty_=true;});
+  service("load",[this]{std::ifstream in(file_,std::ios::binary);map_.load(in,signature_,palette_);exports_->rebuild(map_);clock_fault_=false;last_stamp_=-1;last_wall_={};dirty_=true;});
   timer_=create_wall_timer(std::chrono::duration<double>(1/publish_rate_),[this]{publish();diagnose();});
   RCLCPP_INFO(get_logger(),"CUDA semantic map: input=%s, resolution=%.3f m, frame=%s, votes=%u, min=%u, majority=%.2f",topic.c_str(),c.resolution,frame_.c_str(),c.window,c.min_observations,c.majority);
  }
@@ -108,8 +145,10 @@ private:
    tf2::Transform pose;tf2::fromMsg(transform.transform,pose);auto translation=pose.getOrigin();svm::Vec origin{translation.x(),translation.y(),translation.z()};
    auto check_key=[this](svm::Vec v){for(auto a:{v.x,v.y,v.z})if(!std::isfinite(a)||a/map_.config.resolution<=-svm::BIAS||a/map_.config.resolution>=svm::BIAS)throw std::runtime_error("Point outside voxel key range");};check_key(origin);
    uint16_t endian=1;bool swap=msg.is_bigendian!=(*reinterpret_cast<uint8_t*>(&endian)==0);
+   std::vector<int> robot_mask;if(self_filter_enabled_)robot_mask=self_filter_.mask(msg,*tf_);
    std::vector<svm::Ray> rays;rays.reserve(size_t(msg.width)*msg.height);svm::Frame evidence;
    for(unsigned row=0;row<msg.height;++row)for(unsigned col=0;col<msg.width;++col){
+    if(!robot_mask.empty()&&robot_mask[size_t(row)*msg.width+col]!=point_containment_filter::ShapeMask::OUTSIDE)continue;
     auto p=msg.data.data()+size_t(row)*msg.row_step+size_t(col)*msg.point_step;
     double x=number(read32(p+offsets[0],swap)),y=number(read32(p+offsets[1],swap)),z=number(read32(p+offsets[2],swap));
     if(!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(z))continue;
@@ -122,44 +161,90 @@ private:
      if(std::isfinite(score)&&score>=confidence_&&score<=1&&palette_.count(rgb))++evidence.votes[k][rgb];}
    }
    auto result=svm::raycast_cuda(rays,map_.config.resolution,zmin_,zmax_,budget_);evidence.free.insert(result.free.begin(),result.free.end());
-   map_.commit(evidence);gpu_ms_=result.milliseconds;scratch_=result.peak_scratch_bytes;
+   auto changed=map_.commit(evidence);for(auto key:changed)exports_->update(map_,key);input_points_=size_t(msg.width)*msg.height;ray_count_=rays.size();gpu_ms_=result.milliseconds;scratch_=result.peak_scratch_bytes;
    total_ms_=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
    last_stamp_=stamp;last_wall_=start;++integrated_;dirty_=true;
   }catch(const std::exception& e){++errors_;++dropped_;RCLCPP_WARN_THROTTLE(get_logger(),*get_clock(),5000,"Whole frame rejected: %s",e.what());}
  }
  void publish(){
   if(!dirty_)return;
+  auto export_start=std::chrono::steady_clock::now();
   try{
    auto stamp=now();Cloud cloud;cloud.header.frame_id=frame_;cloud.header.stamp=stamp;cloud.height=1;cloud.is_dense=true;
    sensor_msgs::PointCloud2Modifier modifier(cloud);modifier.setPointCloud2Fields(6,"x",1,7,"y",1,7,"z",1,7,"rgb",1,6,"semantic_confidence",1,7,"occupancy",1,7);
-   size_t occupied=0;for(auto& entry:map_.cells)if(map_.occupied(entry.second))++occupied;modifier.resize(occupied);
+   size_t occupied=exports_->occupied().size();modifier.resize(occupied);
    visualization_msgs::msg::Marker marker;marker.header=cloud.header;marker.ns="semantic_voxels";marker.id=0;marker.type=visualization_msgs::msg::Marker::CUBE_LIST;marker.action=visualization_msgs::msg::Marker::ADD;marker.pose.orientation.w=1;marker.scale.x=marker.scale.y=marker.scale.z=map_.config.resolution;
    sensor_msgs::PointCloud2Iterator<float> px(cloud,"x"),py(cloud,"y"),pz(cloud,"z"),prob(cloud,"occupancy"),conf(cloud,"semantic_confidence");sensor_msgs::PointCloud2Iterator<uint32_t> rgb(cloud,"rgb");
    // Octree is a compatibility export only, never the canonical fusion state.
-   octomap::ColorOcTree tree(map_.config.resolution);
-   std::unordered_map<uint64_t,int> projection;int minx=INT_MAX,miny=INT_MAX,maxx=INT_MIN,maxy=INT_MIN;
-   for(auto& entry:map_.cells){auto position=svm::center(entry.first,map_.config.resolution);auto label=map_.label(entry.second);
-    auto node=tree.updateNode(octomap::point3d(position.x,position.y,position.z),map_.occupied(entry.second),true);if(!node)throw std::runtime_error("Voxel outside OctoMap export extent");node->setLogOdds(entry.second.odds);node->setColor((label.color>>16)&255,(label.color>>8)&255,label.color&255);
-    int ix=svm::coordinate(entry.first,0),iy=svm::coordinate(entry.first,1);minx=std::min(minx,ix);miny=std::min(miny,iy);maxx=std::max(maxx,ix);maxy=std::max(maxy,iy);
-    uint64_t xy=(uint64_t(uint32_t(ix))<<32)|uint32_t(iy);auto& value=projection[xy];value=std::max(value,map_.occupied(entry.second)?100:0);
-    if(map_.occupied(entry.second)){
-     *px=position.x;*py=position.y;*pz=position.z;*rgb=label.color;*conf=label.fraction;*prob=1/(1+std::exp(-entry.second.odds));++px;++py;++pz;++rgb;++conf;++prob;
-     geometry_msgs::msg::Point p;p.x=position.x;p.y=position.y;p.z=position.z;marker.points.push_back(p);std_msgs::msg::ColorRGBA color;color.r=((label.color>>16)&255)/255.f;color.g=((label.color>>8)&255)/255.f;color.b=(label.color&255)/255.f;color.a=1;marker.colors.push_back(color);
+   auto& tree=exports_->tree();
+   octomap::OcTree collision_tree(map_.config.resolution);
+   collision_tree.setOccupancyThres(map_.config.occupied);
+   const auto excluded=class_colors_.find(excluded_class_);
+   // A carried object's occupied volume belongs to the robot state, not the
+   // static world. Remove only overlapping cells from the planning export;
+   // canonical semantic evidence remains unchanged, and fixtures still collide.
+   struct PayloadBox {tf2::Transform inverse;tf2::Vector3 half;};
+   std::vector<PayloadBox> payload_boxes;
+   std::vector<moveit_msgs::msg::CollisionObject> owned_boxes;
+   for(const auto& entry:payloads_)owned_boxes.push_back(entry.second.object);
+   if(target_box_.operation!=moveit_msgs::msg::CollisionObject::REMOVE&&!target_box_.primitives.empty())owned_boxes.push_back(target_box_);
+   for(const auto& obj:owned_boxes){
+    auto transform=tf_->lookupTransform(frame_,obj.header.frame_id,rclcpp::Time(0),rclcpp::Duration::from_seconds(.1));
+    tf2::Transform parent,origin;tf2::fromMsg(transform.transform,parent);tf2::fromMsg(obj.pose,origin);
+    for(size_t i=0;i<obj.primitives.size();++i){const auto& shape=obj.primitives[i];
+     if(shape.type!=shape_msgs::msg::SolidPrimitive::BOX||shape.dimensions.size()!=3||i>=obj.primitive_poses.size())continue;
+     tf2::Transform local;tf2::fromMsg(obj.primitive_poses[i],local);
+     const double pad=map_.config.resolution;
+     payload_boxes.push_back({(parent*origin*local).inverse(),tf2::Vector3(shape.dimensions[0]/2+pad,shape.dimensions[1]/2+pad,shape.dimensions[2]/2+pad)});
     }
    }
-   static_cast<octomap::OccupancyOcTreeBase<octomap::ColorOcTreeNode>&>(tree).updateInnerOccupancy();octomap_msgs::msg::Octomap octree;octree.header=cloud.header;octomap_msgs::fullMapToMsg(tree,octree);
+   const auto& projection=exports_->columns();
+   int minx=exports_->minx,miny=exports_->miny,maxx=exports_->maxx,maxy=exports_->maxy;
+   for(const auto& entry:exports_->occupied()){
+    auto position=svm::center(entry.first,map_.config.resolution);const auto& label=entry.second;
+    const auto& cell_state=map_.cells.at(entry.first);
+     // Selected target is excluded only from the planning export; canonical
+     // occupancy and semantic history remain intact for subsequent observations.
+     bool carried=false;
+     for(const auto& box:payload_boxes){auto p=box.inverse*tf2::Vector3(position.x,position.y,position.z);
+      if(std::abs(p.x())<=box.half.x()&&std::abs(p.y())<=box.half.y()&&std::abs(p.z())<=box.half.z()){carried=true;break;}}
+     if(publish_moveit_&&!carried&&(excluded==class_colors_.end()||label.color!=excluded->second)){
+      auto cell=collision_tree.updateNode(octomap::point3d(position.x,position.y,position.z),true,true);
+      if(!cell)throw std::runtime_error("MoveIt OctoMap export extent exceeded");
+      cell->setLogOdds(cell_state.odds);
+     }
+     *px=position.x;*py=position.y;*pz=position.z;*rgb=label.color;*conf=label.fraction;*prob=1/(1+std::exp(-cell_state.odds));++px;++py;++pz;++rgb;++conf;++prob;
+     geometry_msgs::msg::Point p;p.x=position.x;p.y=position.y;p.z=position.z;marker.points.push_back(p);std_msgs::msg::ColorRGBA color;color.r=((label.color>>16)&255)/255.f;color.g=((label.color>>8)&255)/255.f;color.b=(label.color&255)/255.f;color.a=1;marker.colors.push_back(color);
+    }
+   octomap_msgs::msg::Octomap octree;octree.header=cloud.header;octomap_msgs::fullMapToMsg(tree,octree);
    nav_msgs::msg::OccupancyGrid grid;grid.header=cloud.header;grid.info.resolution=map_.config.resolution;grid.info.origin.orientation.w=1;
    if(!projection.empty()){
     auto width=int64_t(maxx)-minx+1,height=int64_t(maxy)-miny+1;if(width*height>16000000)throw std::runtime_error("2D projection exceeds output budget");
     grid.info.width=width;grid.info.height=height;grid.info.origin.position.x=minx*map_.config.resolution;grid.info.origin.position.y=miny*map_.config.resolution;grid.data.assign(width*height,-1);
-    for(auto entry:projection){int x=int32_t(entry.first>>32),y=int32_t(entry.first&0xffffffff);grid.data[size_t(y-miny)*width+x-minx]=entry.second;}
+    for(auto entry:projection){int x=int32_t(entry.first>>32),y=int32_t(entry.first&0xffffffff);grid.data[size_t(y-miny)*width+x-minx]=entry.second?100:0;}
    }
-   voxels_->publish(cloud);visualization_msgs::msg::MarkerArray array;array.markers.push_back(marker);markers_->publish(array);octomap_->publish(octree);grid_->publish(grid);dirty_=false;
+   if(publish_moveit_){
+    collision_tree.updateInnerOccupancy();moveit_msgs::msg::PlanningScene scene;scene.is_diff=true;scene.robot_state.is_diff=true;
+    auto base_from_map=tf_->lookupTransform(planning_frame_,frame_,rclcpp::Time(0),rclcpp::Duration::from_seconds(.1));
+    // MoveIt Transforms uses header=source, child=planning frame (unlike TF).
+    // The matrix still maps points from map coordinates into planning coordinates.
+    auto moveit_transform=base_from_map;
+    moveit_transform.header.frame_id=frame_;moveit_transform.child_frame_id=planning_frame_;
+    scene.fixed_frame_transforms.push_back(moveit_transform);
+    auto& map=scene.world.octomap;map.header=cloud.header;map.header.frame_id=planning_frame_;
+    map.origin.position.x=base_from_map.transform.translation.x;
+    map.origin.position.y=base_from_map.transform.translation.y;
+    map.origin.position.z=base_from_map.transform.translation.z;
+    map.origin.orientation=base_from_map.transform.rotation;
+    map.octomap.header=cloud.header;octomap_msgs::fullMapToMsg(collision_tree,map.octomap);
+    scene_->publish(scene);
+   }
+   voxels_->publish(cloud);visualization_msgs::msg::MarkerArray array;array.markers.push_back(marker);markers_->publish(array);octomap_->publish(octree);grid_->publish(grid);dirty_=false;export_ms_=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-export_start).count();
   }catch(const std::exception& e){++errors_;RCLCPP_ERROR_THROTTLE(get_logger(),*get_clock(),5000,"Map export failed: %s",e.what());}
  }
  void diagnose(){
   diagnostic_msgs::msg::DiagnosticArray array;array.header.stamp=now();diagnostic_msgs::msg::DiagnosticStatus status;status.name="semantic_voxel_map";status.hardware_id="cuda:"+std::to_string(device_);status.level=clock_fault_?2:0;status.message=clock_fault_?"clock rewind; reset required":"CUDA active";
-  for(auto entry:std::vector<std::pair<std::string,std::string>>{{"integrated_frames",std::to_string(integrated_)},{"dropped_frames",std::to_string(dropped_)},{"errors",std::to_string(errors_)},{"voxels",std::to_string(map_.cells.size())},{"gpu_ms",std::to_string(gpu_ms_)},{"integration_ms",std::to_string(total_ms_)},{"scratch_bytes_upper_bound",std::to_string(scratch_)}}){diagnostic_msgs::msg::KeyValue kv;kv.key=entry.first;kv.value=entry.second;status.values.push_back(kv);}array.status.push_back(status);diagnostics_->publish(array);
+  for(auto entry:std::vector<std::pair<std::string,std::string>>{{"integrated_frames",std::to_string(integrated_)},{"dropped_frames",std::to_string(dropped_)},{"errors",std::to_string(errors_)},{"voxels",std::to_string(map_.cells.size())},{"gpu_ms",std::to_string(gpu_ms_)},{"integration_ms",std::to_string(total_ms_)},{"export_ms",std::to_string(export_ms_)},{"input_points",std::to_string(input_points_)},{"rays",std::to_string(ray_count_)},{"occupied_voxels",std::to_string(exports_->occupied().size())},{"scratch_bytes_upper_bound",std::to_string(scratch_)}}){diagnostic_msgs::msg::KeyValue kv;kv.key=entry.first;kv.value=entry.second;status.values.push_back(kv);}array.status.push_back(status);diagnostics_->publish(array);
  }
 };
 int main(int argc,char** argv){rclcpp::init(argc,argv);try{rclcpp::spin(std::make_shared<SemanticMapNode>());}catch(const std::exception& e){std::cerr<<"Semantic CUDA map startup failed: "<<e.what()<<std::endl;rclcpp::shutdown();return 1;}rclcpp::shutdown();return 0;}

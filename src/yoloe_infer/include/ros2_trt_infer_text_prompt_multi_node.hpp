@@ -34,7 +34,7 @@ public:
     ~YoloeMultiTextPromptNode() override = default;
 
 private:
-    void image_callback(const sensor_msgs::msg::Image::SharedPtr msg);
+    void image_callback(const sensor_msgs::msg::Image::ConstSharedPtr& msg);
     
     void sync_callback(
         const sensor_msgs::msg::Image::ConstSharedPtr& image_msg,
@@ -92,6 +92,7 @@ private:
     std::shared_ptr<message_filters::Synchronizer<LidarSyncPolicy>> lidar_sync_;
     std::string semantic_cloud_source_, lidar_frame_, projection_fixed_frame_;
     double lidar_sync_slop_, occlusion_tolerance_;
+    int semantic_depth_stride_ = 1;
     
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_pointcloud_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_semantic_cloud_;

@@ -49,6 +49,8 @@ ament_target_dependencies(robot_actions
   std_msgs
 )
 
+target_link_libraries(robot_actions yaml-cpp::yaml-cpp)
+
 install(TARGETS robot_actions
   DESTINATION lib/${PROJECT_NAME})
 
@@ -64,6 +66,9 @@ install(DIRECTORY
   isaac_sim
   DESTINATION share/${PROJECT_NAME}
 )
+
+install(FILES scripts/gripper_action.py
+  scripts/physical_pick_verification.py DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS
   scripts/pick_and_place_demo.py

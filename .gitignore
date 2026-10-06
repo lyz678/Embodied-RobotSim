@@ -1,29 +1,49 @@
-# ROS2 Build Artifacts
+# ROS 2 / CMake build artifacts
 /build/
 /install/
 /log/
 /swp/
+/src/graspnet_infer/tensorrt_plugins/build/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+*.o
+*.a
+*.so
+*.so.*
 
-# Python
+# Python environments and caches
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
 .Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 env/
 venv/
+.venv/
 .env
+.env.*
+!.env.example
+!.env.sample
 
-# Editor/IDE
+# Editor / IDE and local tools
 .vscode/
 .idea/
 .claude/
 *.swp
+*.swo
 *~
+.DS_Store
+/cmd
 
-# Deep Learning Models & Weights
+# Downloaded models and generated inference engines
 *.engine
 *.plan
+*.trt
 *.onnx
 *.pt
 *.pth
@@ -33,24 +53,27 @@ venv/
 *.data
 *.caffemodel
 
-# Datasets & Large Files
-*.jpg
-*.png
-*.mp4
+# Isaac vendor dependencies and local asset/import caches
+/src/isaac_vendor/
+/isaacsim_assets/
+.cache/
+
+# Runtime maps, recordings, logs and temporary files
+/maps/
+/docs/
+*.svm
+*.svm.tmp
+*.bt
+*.ot
 *.bag
 *.mcap
-# *.gz
+*.db3
+*.log
+*.tmp
+*.mp4
 *.zip
-*.pdf
 *.gv
-*.so
-
-*.trt
-*.engine
-*.onnx
-
 /assets/OctoMap.gif
-/src/graspnet_infer/tensorrt_plugins/build/
-cmd
-/src/isaac_vendor/
-/maps/
+
+# Keep source textures and required compressed resources trackable.
+# Do not globally ignore PNG/JPG/PDF/GZ: tokenizer_data.json.gz is required.

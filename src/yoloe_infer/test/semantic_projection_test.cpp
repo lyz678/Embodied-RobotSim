@@ -1,4 +1,5 @@
 #include "pointcloud_colorizer.hpp"
+#include "compact_cloud.hpp"
 #include <cstring>
 #include <iostream>
 #include <limits>
@@ -55,6 +56,20 @@ int main() {
         cloud=colorizer.semantic_cloud(depth,info,{sofa},header);
         require(cloud.width==64*48 && field<uint32_t>(cloud,24*64+32,12)==0x00ff00 &&
             field<uint32_t>(cloud,0,12)==0xffffff, "Depth source remains supported");
+        auto sampled=colorizer.semantic_cloud(depth,info,{sofa},header,2);
+        require(sampled.width==32*24, "Stride two should reduce geometry payload fourfold");
+        for(int v=0;v<24;++v)for(int u=0;u<32;++u)for(int offset:{0,4,8,12,16})
+            require(field<uint32_t>(sampled,v*32+u,offset)==field<uint32_t>(cloud,(v*2)*64+u*2,offset),
+                "Sampling cannot change measured endpoints, colors, or confidence");
+        pcl::PointCloud<pcl::PointXYZRGB> dense;
+        pcl::PointXYZRGB point;point.x=1.25f;point.y=-2.5f;point.z=.75f;point.rgba=0xff00ff00;dense.push_back(point);
+        auto packed=compact_xyzrgb(dense,header);
+        require(packed.point_step==16 && packed.width==1 && packed.data.size()==16 &&
+            field<float>(packed,0,0)==point.x && field<float>(packed,0,4)==point.y && field<float>(packed,0,8)==point.z &&
+            field<uint32_t>(packed,0,12)==point.rgba && packed.header.frame_id==header.frame_id,
+            "Compact legacy cloud must retain exact full-density XYZ, RGB/alpha and header");
+        bool rejected=false;try{colorizer.semantic_cloud(depth,info,{},header,0);}catch(const std::invalid_argument&){rejected=true;}
+        require(rejected,"Invalid stride must fail");
         std::cout << "PASS: lidar FOV/mask projection, occlusion, geometry, headers, and depth compatibility\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
