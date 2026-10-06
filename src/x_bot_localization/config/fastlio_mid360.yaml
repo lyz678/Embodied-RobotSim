@@ -18,7 +18,7 @@
       scan_line: 4
       blind: 0.1
       timestamp_unit: 3
-      scan_rate: 10
+      scan_rate: 20 # launch derives this from x_bot/config/mid360.yaml
     mapping:
       acc_cov: 0.1
       gyr_cov: 0.1

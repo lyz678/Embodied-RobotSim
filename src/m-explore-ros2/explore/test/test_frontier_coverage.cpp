@@ -1,3 +1,4 @@
+#include <explore/frontier_observation.hpp>
 #include <explore/frontier_retry.h>
 #include <explore/frontier_search.h>
 #include <gtest/gtest.h>
@@ -101,4 +102,89 @@ TEST(FrontierRetry, SuccessfulObservationCanBeRevisited) {
   retry.record(point, 10, true);
   EXPECT_TRUE(retry.blocked(point, 15));
   EXPECT_FALSE(retry.blocked(point, 16));
+}
+
+#include "explore/progress_watchdog.hpp"
+TEST(ProgressWatchdog, SlowCumulativeMotionIsNotStuck) {
+  explore::ProgressWatchdog progress;
+  for(int i=0;i<100;++i) EXPECT_FALSE(progress.stalled(.034*i,0.,0.,2.*i));
+}
+TEST(ProgressWatchdog, PauseRewindAndStationaryTimeout) {
+  explore::ProgressWatchdog progress;
+  EXPECT_FALSE(progress.stalled(0.,0.,0.,10.));
+  EXPECT_FALSE(progress.stalled(0.,0.,0.,10.)); // paused clock
+  EXPECT_FALSE(progress.stalled(0.,0.,0.,29.));
+  EXPECT_TRUE(progress.stalled(0.,0.,0.,30.));
+  EXPECT_FALSE(progress.stalled(0.,0.,0.,1.)); // rewind resets
+  EXPECT_FALSE(progress.stalled(0.,0.,.2,20.)); // turn is progress
+  EXPECT_FALSE(progress.stalled(0.,0.,.2,39.));
+}
+
+
+TEST(FrontierObservation, ChecksUnknownBoundaryNotFreeNavigationGoal) {
+  nav_msgs::msg::OccupancyGrid map;
+  map.info.width = 5;
+  map.info.height = 1;
+  map.info.resolution = 1.;
+  map.info.origin.orientation.w = 1.;
+  map.data = {0, 0, -1, -1, 100};
+  geometry_msgs::msg::Point boundary;
+  boundary.x = 2.5;
+  boundary.y = .5;
+  const std::vector<geometry_msgs::msg::Point> points{boundary};
+  EXPECT_FALSE(explore::frontierObserved(map, points));
+  map.data[2] = 100;  // Observed obstacle counts, no need to reach it.
+  EXPECT_TRUE(explore::frontierObserved(map, points));
+  boundary.x = 3.5;
+  EXPECT_FALSE(explore::frontierObserved(map, {points.front(), boundary}));
+  map.data[3] = 0;
+  EXPECT_TRUE(explore::frontierObserved(map, {points.front(), boundary}));
+}
+
+TEST(FrontierObservation, HandlesResizedMapAndMissingDataConservatively) {
+  nav_msgs::msg::OccupancyGrid map;
+  map.info.width = 3;
+  map.info.height = 1;
+  map.info.resolution = 1.;
+  map.info.origin.position.x = 10.;
+  map.info.origin.position.y = 20.;
+  map.info.origin.orientation.w = 1.;
+  map.data = {0, -1, 100};
+  geometry_msgs::msg::Point boundary;
+  boundary.x = 11.5;
+  boundary.y = 20.5;
+  EXPECT_FALSE(explore::frontierObserved(map, {boundary}));
+  map.info.width = 4;
+  map.info.origin.position.x = 9.;
+  map.data = {-1, 0, 0, 100};
+  EXPECT_TRUE(explore::frontierObserved(map, {boundary}));
+  map.info.origin.position.x = 20.;
+  EXPECT_FALSE(explore::frontierObserved(map, {boundary}));
+  map.data.clear();
+  EXPECT_FALSE(explore::frontierObserved(map, {boundary}));
+  EXPECT_FALSE(explore::frontierObserved(map, {}));
+}
+
+TEST(FrontierObservation, ObservationDoesNotExhaustRetryBudget) {
+  explore::FrontierRetry retry;
+  geometry_msgs::msg::Point point;
+  for (int i = 0; i < 10; ++i) retry.observed(point, i * 10.);
+  EXPECT_TRUE(retry.blocked(point, 90.));
+  EXPECT_FALSE(retry.blocked(point, 97.));
+}
+
+TEST(FrontierObservation, HandlesRotatedMapOrigin) {
+  nav_msgs::msg::OccupancyGrid map;
+  map.info.width = 2;
+  map.info.height = 1;
+  map.info.resolution = 1.;
+  map.info.origin.orientation.z = std::sqrt(.5);
+  map.info.origin.orientation.w = std::sqrt(.5);
+  map.data = {0, -1};
+  geometry_msgs::msg::Point point;
+  point.x = -.5;
+  point.y = 1.5;
+  EXPECT_FALSE(explore::frontierObserved(map, {point}));
+  map.data[1] = 0;
+  EXPECT_TRUE(explore::frontierObserved(map, {point}));
 }

@@ -17,7 +17,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT/'src/x_bot_localization'), str(ROOT/'src/x_bot/isaac_sim')]
-from mid360_sampling import Packet, POINT, directions, direction_array, settled_at_rest
+from mid360_sampling import Packet, POINT, period_for_rate, directions, direction_array, settled_at_rest
 from x_bot_localization.core import matrix, quaternion, transform, decode_cloud, Grid, ray_cells, Health, save_bundle, VelocityArbiter
 
 
@@ -60,6 +60,28 @@ class Sampling(unittest.TestCase):
         ns,data=packet.add(105_000_000,[(1,0,0,100,0)])
         self.assertEqual(ns,5_000_000)
         self.assertEqual([p['offset_time'] for p in decode_cloud(cloud(data))],list(range(0,100_000_000,5_000_000)))
+
+    def test_faster_frames_keep_true_time_and_all_samples(self):
+        for hz in (10, 20, 25, 40):
+            period = period_for_rate(hz)
+            packet = Packet(period)
+            frames = []
+            for ns in range(0, 1_000_000_001, 5_000_000):
+                completed = packet.add(ns, [(1, 0, 0, 100, 0)])
+                if completed: frames.append(completed)
+            self.assertEqual(len(frames), hz)
+            self.assertEqual(sum(len(data)//POINT.size for _, data in frames), 200)
+            for start, data in frames:
+                offsets = [p['offset_time'] for p in decode_cloud(cloud(data))]
+                self.assertEqual(offsets, list(range(0, period, 5_000_000)))
+            packet.reset()
+            self.assertEqual(packet.period_ns, period)
+
+    def test_frame_rate_validation(self):
+        for hz in (0, 6, 15, 19.5, 50, True, math.nan, math.inf):
+            with self.assertRaises(ValueError): period_for_rate(hz)
+        for period in (0, 4_000_000, 105_000_000):
+            with self.assertRaises(ValueError): Packet(period)
 
     def test_clock_rewind(self):
         p=Packet()
@@ -301,9 +323,25 @@ class Contracts(unittest.TestCase):
         params=yaml.safe_load((ROOT/'src/x_bot_localization/config/nav2_isaac.yaml').read_text())
         controller=params['controller_server']['ros__parameters']['FollowPath']
         limits=params['velocity_smoother']['ros__parameters']['max_velocity']
-        self.assertLessEqual(controller['desired_linear_vel'], limits[0])
-        self.assertLessEqual(controller['rotate_to_heading_angular_vel'], limits[2])
+        self.assertLessEqual(controller['vx_max'], limits[0])
+        self.assertLessEqual(controller['wz_max'], limits[2])
+        self.assertAlmostEqual(controller['model_dt'], 1.0/params['controller_server']['ros__parameters']['controller_frequency'])
+        smoother=params['velocity_smoother']['ros__parameters']
+        self.assertLessEqual(controller['ax_max'], smoother['max_accel'][0])
+        self.assertGreaterEqual(controller['ax_min'], smoother['max_decel'][0])
+        self.assertLessEqual(controller['az_max'], smoother['max_accel'][2])
+        self.assertTrue(smoother['scale_velocities'])
         self.assertEqual(params['velocity_smoother']['ros__parameters']['max_velocity'],[1.,0,1.2])
+
+    def test_planning_margin_prevents_collision_monitor_contact_deadlock(self):
+        params=yaml.safe_load((ROOT/'src/x_bot_localization/config/nav2_isaac.yaml').read_text())
+        local=params['local_costmap']['local_costmap']['ros__parameters']
+        global_map=params['global_costmap']['global_costmap']['ros__parameters']
+        self.assertEqual(local['robot_radius'], global_map['robot_radius'])
+        points=ast.literal_eval(params['collision_monitor']['ros__parameters']['FootprintApproach']['points'])
+        radii=[math.hypot(x,y) for x,y in points]
+        self.assertGreaterEqual(min(radii),.42)
+        self.assertGreater(local['robot_radius']+local['footprint_padding']-max(radii),.04)
 
     def test_rviz_goal_tool_has_navigation_panel(self):
         # GoalTool updates GoalUpdater; Navigation 2 consumes that event and

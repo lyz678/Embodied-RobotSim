@@ -36,6 +36,19 @@ class FrontierRetry {
                          return e.attempts < max_attempts && now < e.until;
                        });
   }
+  // Observation completion is progress, not an unsuccessful navigation attempt.
+  void observed(const geometry_msgs::msg::Point& point, double now) {
+    auto entry = std::find_if(entries_.begin(), entries_.end(),
+        [this, &point](const Entry& e) {
+          return std::hypot(point.x - e.point.x, point.y - e.point.y) < radius;
+        });
+    if (entry == entries_.end()) {
+      entries_.push_back({point, now + success_cooldown, 0});
+    } else {
+      entry->until = now + success_cooldown;
+      entry->attempts = 0;
+    }
+  }
   void record(const geometry_msgs::msg::Point& point, double now,
               bool succeeded) {
     auto entry = std::find_if(

@@ -29,6 +29,8 @@ def main():
     odometry = []
     counts = {'imu': 0, 'lidar': 0, 'camera': 0}
     previous = {}
+    first_sample = {}
+    last_sample = {}
     commands = []
     state = {'ready': False}
     offsets = []
@@ -46,6 +48,9 @@ def main():
         if previous.get(name) != stamp:
             counts[name] += 1
             previous[name] = stamp
+            sample = (time.monotonic(), stamp)
+            first_sample.setdefault(name, sample)
+            last_sample[name] = sample
         if name == 'lidar' and msg.width:
             field = next(f for f in msg.fields if f.name == 'offset_time')
             values = np.ndarray((msg.width,), dtype='>u4' if msg.is_bigendian else '<u4',
@@ -73,12 +78,18 @@ def main():
         if sim <= 0:
             raise RuntimeError('Simulation clock is paused or reset during measurement')
         distance = sum(math.hypot(b[1]-a[1], b[2]-a[2]) for a, b in zip(odometry, odometry[1:]))
+        def observed_rate(name, axis):
+            if counts[name] < 2:
+                return 0.0
+            duration = last_sample[name][axis] - first_sample[name][axis]
+            return (counts[name]-1)/duration if duration > 0 else 0.0
         result = dict(wall_seconds=wall, sim_seconds=sim, real_time_factor=sim/wall,
                       localization_ready=state['ready'], path_m=distance,
                       mean_speed_wall_m_s=distance/wall, mean_speed_sim_m_s=distance/sim,
                       peak_speed_sim_m_s=max((r[3] for r in odometry), default=0),
                       max_command_m_s=max(commands, default=0),
-                      rates_per_sim_second={k: v/sim for k, v in counts.items()},
+                      rates_per_sim_second={k: observed_rate(k, 1) for k in counts},
+                      rates_per_wall_second={k: observed_rate(k, 0) for k in counts},
                       lidar_mean_points=sum(widths)/len(widths) if widths else None,
                       lidar_offset_range_ns=[min(r[0] for r in offsets), max(r[1] for r in offsets)] if offsets else None)
         text = json.dumps(result, indent=2)

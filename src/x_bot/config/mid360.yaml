@@ -1,0 +1,3 @@
+# Both backends: 200 Hz sampling, 1000 rays/step and 200 Hz IMU remain unchanged.
+# 20 Hz = 50 ms/frame; use 10 to restore 100 ms, or 25/40 for smaller frames.
+publish_hz: 20

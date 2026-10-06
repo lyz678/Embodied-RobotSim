@@ -16,6 +16,8 @@ for _name, _value in _parameters.items():
     if not math.isfinite(_value) or _value < 0:
         raise ValueError(f'Invalid base motion parameter: {_name}')
     globals()[_name.upper()] = float(_value)
+if YAW_INTEGRAL_RELEASE_TIME <= 0 or WHEEL_YAW_ACCEL <= 0:
+    raise ValueError('Yaw release time and wheel acceleration must be positive')
 
 
 def wheel_velocities(linear, angular):
@@ -33,10 +35,12 @@ Intentional pure rotations are supported; this is not a blanket spin filter.
     def __init__(self):
         self.linear = self.angular = 0.
         self.yaw_integral = 0.
+        self.wheel_angular = 0.
 
     def reset(self):
         self.linear = self.angular = 0.
         self.yaw_integral = 0.
+        self.wheel_angular = 0.
         return [0.] * 4
 
     def advance(self, linear, angular, dt, enabled=True, measured_angular=None):
@@ -54,10 +58,17 @@ Intentional pure rotations are supported; this is not a blanket spin filter.
         decelerating = linear * self.linear >= 0 and abs(linear) < abs(self.linear)
         acceleration = LINEAR_DECEL if decelerating else LINEAR_ACCEL
         braking_yaw = angular*self.angular < 0 or abs(angular) < abs(self.angular)
-        if abs(angular) < .02 or angular*self.angular < 0:
-            self.yaw_integral = 0.
-        elif braking_yaw:
-            self.yaw_integral *= math.exp(-dt/.15)
+        # MPPI changes its command every cycle. Small reductions are normal
+        # tracking corrections, not a reason to discard steady skid compensation.
+        # Unload it continuously only for an actual stop, reversal, decisive
+        # slowdown, or body overspeed. Emergency zero still resets above.
+        unloading = (abs(angular) < .02 or angular*self.angular < 0
+                     or abs(angular) < .5*abs(self.angular)
+                     or (braking_yaw and measured_angular is not None
+                         and measured_angular*self.angular > 0
+                         and abs(measured_angular) > abs(self.angular) + .1))
+        if unloading:
+            self.yaw_integral *= math.exp(-dt/YAW_INTEGRAL_RELEASE_TIME)
         angular_acceleration = ANGULAR_DECEL if braking_yaw else ANGULAR_ACCEL
         fraction = min(1., acceleration*dt/abs(dv) if dv else 1., angular_acceleration*dt/abs(dw) if dw else 1.)
         self.linear += fraction * dv
@@ -69,9 +80,15 @@ Intentional pure rotations are supported; this is not a blanket spin filter.
             # drive kinematics; otherwise Nav2 substantially understeers.
             error = self.angular - measured_angular
             demand = YAW_FEED_FORWARD*self.angular + YAW_KP*error + self.yaw_integral
-            if not braking_yaw and abs(angular)>=.02 and (abs(demand) < MAX_WHEEL_YAW_DEMAND or demand*error < 0):
+            if not unloading and abs(angular)>=.02 and (abs(demand) < MAX_WHEEL_YAW_DEMAND or demand*error < 0):
                 self.yaw_integral = max(-YAW_INTEGRAL_LIMIT, min(YAW_INTEGRAL_LIMIT,
                     self.yaw_integral + YAW_KI*error*dt))
             wheel_angular = max(-MAX_WHEEL_YAW_DEMAND, min(MAX_WHEEL_YAW_DEMAND,
                 YAW_FEED_FORWARD*self.angular + YAW_KP*error + self.yaw_integral))
+            # Bound actuator changes too: the body command ramp alone does not
+            # bound PI correction jumps from IMU feedback or integral unloading.
+            step = WHEEL_YAW_ACCEL*dt
+            wheel_angular = max(self.wheel_angular-step,
+                                min(self.wheel_angular+step, wheel_angular))
+        self.wheel_angular = wheel_angular
         return wheel_velocities(self.linear, wheel_angular)

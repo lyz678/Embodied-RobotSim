@@ -1,6 +1,7 @@
 """Only this launch owns the Isaac localization TF chain; no AMCL/Cartographer."""
 import json
 import math
+import yaml
 from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
@@ -19,9 +20,14 @@ def setup(context):
     if not all(math.isfinite(v) for v in initial):
         raise ValueError('Initial pose must be finite')
     common = {'use_sim_time':True}
+    sensor_config = yaml.safe_load((Path(get_package_share_directory('x_bot'))/
+                                    'config/mid360.yaml').read_text())
+    rate = sensor_config['publish_hz']
+    if isinstance(rate, bool) or rate not in (10, 20, 25, 40):
+        raise ValueError('MID360 publish_hz must be 10, 20, 25 or 40')
     nodes = [
         Node(package='fast_lio', executable='fastlio_mapping', output='screen',
-             parameters=[str(share/'config/fastlio_mid360.yaml')],
+             parameters=[str(share/'config/fastlio_mid360.yaml'), {'preprocess.scan_rate': int(rate)}],
              remappings=[('/tf','/fastlio/tf_internal'), ('/tf_static','/fastlio/tf_static_internal'),
                          ('/Odometry','/fastlio/odometry'), ('/cloud_registered','/fastlio/cloud_registered'),
                          ('/cloud_registered_body','/fastlio/cloud_body'), ('/path','/fastlio/path')]),

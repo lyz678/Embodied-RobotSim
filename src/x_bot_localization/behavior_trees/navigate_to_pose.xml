@@ -1,0 +1,54 @@
+<!-- Adapted from Nav2 Jazzy (Apache-2.0): collision-checked smoothing and retreat before spin. -->
+<root BTCPP_format="4" main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateRecovery">
+      <PipelineSequence name="NavigateWithReplanning">
+        <ControllerSelector selected_controller="{selected_controller}" default_controller="FollowPath" topic_name="controller_selector" />
+        <PlannerSelector selected_planner="{selected_planner}" default_planner="GridBased" topic_name="planner_selector" />
+        <RateController hz="1.0">
+          <RecoveryNode number_of_retries="1" name="ComputePathToPose">
+            <Sequence name="PlanAndSmooth">
+              <ComputePathToPose goal="{goal}" path="{raw_path}" planner_id="{selected_planner}" error_code_id="{compute_path_error_code}" />
+              <Fallback name="UseCollisionCheckedSmoothPath">
+                <Sequence>
+                  <SmoothPath unsmoothed_path="{raw_path}" smoothed_path="{candidate_path}" smoother_id="simple_smoother" max_smoothing_duration="0.2" check_for_collisions="true" error_code_id="{smooth_path_error_code}" />
+                  <SetBlackboard output_key="path" value="{candidate_path}" />
+                </Sequence>
+                <SetBlackboard output_key="path" value="{raw_path}" />
+              </Fallback>
+            </Sequence>
+            <Sequence>
+              <WouldAPlannerRecoveryHelp error_code="{compute_path_error_code}" />
+              <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap" />
+            </Sequence>
+          </RecoveryNode>
+        </RateController>
+        <RecoveryNode number_of_retries="1" name="FollowPath">
+          <FollowPath path="{path}" controller_id="{selected_controller}" error_code_id="{follow_path_error_code}" />
+          <Sequence>
+            <WouldAControllerRecoveryHelp error_code="{follow_path_error_code}" />
+            <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap" />
+          </Sequence>
+        </RecoveryNode>
+      </PipelineSequence>
+      <Sequence>
+        <Fallback>
+          <WouldAControllerRecoveryHelp error_code="{follow_path_error_code}" />
+          <WouldAPlannerRecoveryHelp error_code="{compute_path_error_code}" />
+        </Fallback>
+        <ReactiveFallback name="RecoveryFallback">
+          <GoalUpdated />
+          <RoundRobin name="RecoveryActions">
+            <Sequence name="ClearingActions">
+              <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap" />
+              <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap" />
+            </Sequence>
+            <BackUp backup_dist="0.20" backup_speed="0.10" error_code_id="{backup_code_id}" />
+            <Spin spin_dist="1.57" error_code_id="{spin_error_code}" />
+            <Wait wait_duration="5.0" />
+          </RoundRobin>
+        </ReactiveFallback>
+      </Sequence>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

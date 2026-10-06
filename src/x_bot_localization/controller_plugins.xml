@@ -1,0 +1,5 @@
+<library path="forward_heading_controller">
+  <class name="x_bot_localization::ForwardHeadingController" type="x_bot_localization::ForwardHeadingController" base_class_type="nav2_core::Controller">
+    <description>Continuous path-controller wrapper with bounded latest TF, velocity limits and optional heading alignment.</description>
+  </class>
+</library>

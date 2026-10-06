@@ -17,10 +17,13 @@ explore_node:
     # 规划器配置
     planner_frequency: 0.5                        # 规划器频率（Hz）- 每2秒检测一次
     # 🔄 导航决策逻辑：
-    # - 只有检测到卡住时才重新规划并发送新导航目标
-    # - 正常移动时继续当前导航目标，不会被定时器中断
-    stuck_distance_threshold: 0.05               # 卡住距离检测阈值（米）- 位置变化<5cm认为卡住
-    stuck_angle_threshold: 0.17                   # 卡住角度检测阈值（弧度）- 角度变化<10度认为卡住
+    # - 目标前沿已被地图观测到时，提前取消导航并选择下一个前沿
+    # - 尚未观测到时继续导航；卡住时交给脱困/重试机制
+    finish_on_observation: true
+    observation_map_topic: /map                  # 原始二维地图，避免膨胀代价误判
+    stuck_timeout: 20.0                          # 仿真秒；给 Nav2 脱困时间，暂停不计时
+    stuck_distance_threshold: 0.05               # 卡住距离检测阈值（米）- 累计进展阈值 5cm，非单次检测位移
+    stuck_angle_threshold: 0.17                   # 卡住角度检测阈值（弧度）- 累计朝向进展阈值约10度
 
     # 探索评分权重
     potential_scale: 5.0                          # 势场权重 - 吸引机器人向未知区域移动

@@ -180,7 +180,7 @@ Gazebo 首批支持 `simple_room`、`manipulation_test`，不支持 Office 或�
 
 `DEPTH_SOURCE=sim` 表示当前仿真器的深度图；Isaac 后端兼容旧值 `isaac`，Gazebo 使用 `sim`，两者继续支持 `lsm`。三维雷达和 IMU 输出共用 FAST-LIO，二维地图及扫描从去畸变点云派生。Gazebo 原生真值不发布导航 TF。
 
-Gazebo MID-360 插件在每个 5 ms 物理步采集 1,000 条真实碰撞几何射线，100 ms 组帧；扫描方向、范围、字段及真实采样偏移与当前 Isaac 近似算法一致。Embree 查询使用 Gazebo 原生网格加载器，动态物体和机械臂位姿持续更新；命中机器人自身的射线不进入输出。动态场景网格使用凸分解，物理引擎和 Embree 共用 Gazebo 的网格加载接口；瓶子阻尼通过真实力和力矩实现。两种物理引擎的接触与运行速度可能不同。
+Gazebo MID-360 插件在每个 5 ms 物理步采集 1,000 条真实碰撞几何射线，默认 50 ms 组帧（20 Hz）；扫描方向、范围、字段及真实采样偏移与当前 Isaac 近似算法一致。Embree 查询使用 Gazebo 原生网格加载器，动态物体和机械臂位姿持续更新；命中机器人自身的射线不进入输出。动态场景网格使用凸分解，物理引擎和 Embree 共用 Gazebo 的网格加载接口；瓶子阻尼通过真实力和力矩实现。两种物理引擎的接触与运行速度可能不同。
 
 源码资产固定来自提交 `92b0409ccf83549e74d03966bdde7f0f700ff927`，不依赖未来 main 的文件布局。浅克隆需获取包含该提交的完整历史；模型及许可证保留在缓存内。Gazebo 提取资产不需要 Isaac Python：
 
@@ -212,7 +212,7 @@ ros2 service call /localization/save_map std_srvs/srv/Trigger '{}'
 
 Isaac 探索默认输出 `maps/gazebo_simple_room`，Gazebo 默认输出 `maps/gazebo/simple_room`。导航类入口要求目录同时包含 `bundle.json`、`map.pcd`、`map.yaml`、`map.pgm`；只有二维地图无法启动当前 ICP 定位。保存不会覆盖已有目录。导航类任务含固定地图目标点，换地图后须检查任务坐标。
 
-RViz 显示 FAST-LIO 点云、里程计轨迹、语义体素、导航地图及规划路径。导航服务器就绪后使用 **Nav2 Goal**。自动探索默认开启；手动设目标前可将脚本的 `AUTO_EXPLORE=false`，或暂停运行中的探索：
+RViz 显示 FAST-LIO 点云、里程计轨迹、语义体素、导航地图及规划路径。导航服务器就绪后使用 **Nav2 Goal**。探索的卡住检测按累计 5 cm / 0.17 rad 进展及 20 秒仿真时间判断，不再按连续三次小位移提前打断 Nav2 脱困。探索点仅作为观测位置：当前目标对应的未知边界全部在 `/map` 中变为已知（空地或障碍）后，提前取消该导航目标并选择下一个，不要求抵达探索点。未观测到的边界继续探索；`params_costmap.yaml` 中 `finish_on_observation` 默认开启，`observation_map_topic` 指定原始二维地图。自动探索默认开启；手动设目标前可将脚本的 `AUTO_EXPLORE=false`，或暂停运行中的探索：
 
 ```bash
 ros2 topic pub --once /explore/resume std_msgs/msg/Bool '{data: false}'
@@ -235,6 +235,10 @@ LLM 模式启动前设置 `DASHSCOPE_API_KEY`，接口配置见 `llm_agent/`；W
 | `src/x_bot/config/pick_and_place_demo.yaml` | 抓取任务与物理验收参数 |
 | `src/LSM_depth_infer/config/isaac_params.yaml` | 可选本地 LSM 模块的 ROS 输入与输出，需自行提供模块及配置 |
 
+两种后端默认使用 Nav2 **Graceful Controller**，以连续曲率控制律同时生成前进和转向速度，前视距离 0.3–1.0 m。`initial_rotation: false`、`enable_heading_alignment: false` 关闭“先原地对准再前进”的切换；路径仍通过碰撞检查和速度平滑器，空间不足时可以停止，目标末端保留最终朝向停车。外层 `ForwardHeadingController` 保留 TF 新鲜度检查与速度上限，`tracking_goal_tolerance_margin: 0.08` 修正 Jazzy Graceful 用最近路径栅格点计算剩余距离时提前进入原地转向的问题，控制服务器的目标容差仍是 0.25 m。
+
+公共上限为 1 m/s、1.2 rad/s；底盘仍为四轮滑移转向，前进和转向同时执行，不启用侧移。规划半径为 0.47 m（另有 0.01 m padding），碰撞监控固定保留原 0.42 m + 0.01 m padding 多边形。障碍物附近与目标末端会减速，碰撞保护及定位失效停车保持启用。参数在 `src/x_bot_localization/config/nav2_isaac.yaml`，修改后重启导航服务。依赖由 `rosdep install --from-paths src --ignore-src -r -y` 安装，Jazzy 包名为 `ros-jazzy-nav2-graceful-controller`。文件保留 MPPI 参数供对比；切回 MPPI 时将 `FollowPath.primary_controller` 改为 `nav2_mppi_controller::MPPIController`，同时将 `tracking_goal_tolerance_margin` 设为 `0.0`。
+
 ### FAST-LIO 仿真配置
 
 外部仓库的默认 `config/mid360.yaml` **不是项目启动时加载的配置**。修改 `src/x_bot_localization/config/fastlio_mid360.yaml` 后重新构建或通过现有 symlink install 更新配置即可；无需改 vendor 源码。
@@ -250,7 +254,7 @@ LLM 模式启动前设置 `DASHSCOPE_API_KEY`，接口配置见 `llm_agent/`；W
 | `filter_size_surf` / `filter_size_map` | `0.15` m |
 | `point_filter_num` / `max_iteration` | `3` / `4` |
 
-雷达通过 PhysX 碰撞几何近似 MID-360 非重复扫描；物理及 IMU 为 200 Hz、点云为 10 Hz（仿真时间），逐点采样偏移为 5 ms 分辨率。它不是官方 Livox 光学模型。机器人内部 TF 由 robot_state_publisher 发布，FAST-LIO 原生 TF 重映射为私有话题；导航链为 `map → odom → base_footprint → mid360_imu_link`。`map → odom` 在建图时由地图节点提供、定位时由 ICP 提供。真值 `/debug/ground_truth/odom` 仅用于调试。
+雷达通过 PhysX 碰撞几何近似 MID-360 非重复扫描；物理及 IMU 为 200 Hz、点云默认 20 Hz（仿真时间），逐点采样偏移为 5 ms 分辨率。Isaac 底盘轮速使用缓存的 OmniGraph 运行时属性写入，避免每个物理步创建 USD 修改和撤销记录。发布频率在 `src/x_bot/config/mid360.yaml` 的 `publish_hz` 中配置，两种后端和 FAST-LIO 共用；支持 10/20/25/40 Hz，修改后重启完整仿真。射线采样总量不变，提高组帧频率会减少每帧点数。`ros2 topic hz` 显示真实时间频率，等于配置频率 × 仿真实时率，例如实时率 0.68 时，20 Hz 雷达约输出 13.6 Hz。它不是官方 Livox 光学模型。机器人内部 TF 由 robot_state_publisher 发布，FAST-LIO 原生 TF 重映射为私有话题；导航链为 `map → odom → base_footprint → mid360_imu_link`。`map → odom` 在建图时由地图节点提供、定位时由 ICP 提供。真值 `/debug/ground_truth/odom` 仅用于调试。
 
 `INITIAL_X/Y/YAW` 是底盘在地图中的先验位姿；已知地图定位不支持无先验全局搜索，初值不准时在 RViz 用 **2D Pose Estimate** 修正。定位不健康时安全门控停止底盘。仿真时钟重置后需重启完整定位链路。
 
@@ -266,11 +270,22 @@ PCA 顶抓使用同帧分割深度的中心和方向；回收机械臂保持已�
 
 夹爪闭合接触可接受停滞，张开必须到位；动作成功不等同于抓住物体。默认物理校验检查抬升、搬运保持和入桶后停留，`/simulation/debug/object_states` 为两种后端的只读验收数据（Isaac 保留 `/isaac/debug/object_states` 别名），不参与检测、目标计算或物体移动。MoveIt 桌子碰撞配置在 `manipulation_fixture.yaml`，搬运物体边界来自分割深度点云。
 
+单点与多点导航行为树位于 `src/x_bot_localization/behavior_trees/`，每次全局规划后调用 `simple_smoother` 再跟踪，减少栅格折线的转向突变；开启平滑结果碰撞检查，平滑失败时回退原规划路径，重规划期间继续跟踪已有路径。
+
+`bt_navigator.default_server_timeout: 200` 的单位是毫秒，仅控制动作请求应答等待；原 20 ms 容易在重规划调度抖动时中断导航。它不修改定位健康检查或速度命令超时停车规则。
+
+脱困顺序为清理代价地图、低速倒退 0.20 m、旋转、等待。`contact_scan_guard` 保留 `/x_bot/scan_collision` 调试输出，并将扫描时刻的障碍点转换到 `odom`，发布碰撞监控专用 `/x_bot/collision_points`：仅在新鲜定位和扫描、低速直退（不超过 0.10 m/s）、后方有充分扫描覆盖且 0.30 m 倒退扫掠范围没有新障碍时，允许退离已有前方接触。侧面或后方接触、转动、数据过期均保留完整碰撞扫描。规划和建图始终使用原始扫描；该节点未启动时碰撞监控因缺少输入而停车。碰撞监控使用最新可用的 `odom → base_link` 变换处理每条平滑速度指令，避免等待下一帧定位而把速度输出降到扫描频率；点云保留原扫描时间戳，超过 0.3 秒仿真时间即停车。原始扫描不变，扫描期间到最新定位的运动补偿通过 `odom` 中的固定障碍点保留。
+
+底盘的打滑转向反馈保留小幅指令调整时的积分补偿，明显减速、反向或实际超速时平滑卸载，避免正常路径修正反复丢失转向力。`base_motion.yaml` 中 `yaw_integral_release_time: 0.08` 是补偿卸载时间，`wheel_yaw_accel: 12.0` 限制轮差速指令的变化率；它们不改变车身 1 m/s、1.2 rad/s 上限。零指令、定位失效与命令超时仍立即停止。修改这些底盘参数后需重启仿真器。
+
 ## 验证与排查
 
 ```bash
 # 离线回归；不启动仿真、不控制机器人
 python3 -m unittest discover -s tests -v
+
+# 连续曲线、90° 起步及取消停车；79 必须是未使用的 ROS domain
+bash -c 'source /opt/ros/jazzy/setup.bash && source install/setup.bash && ROS_DOMAIN_ID=79 python3 tests/check_nav2_motion.py --initial-yaw 1.5708 --odom-hz 10 --tf-lag 0.05'
 
 # 已编译工作空间中的 C++ 回归
 bash -c 'source /opt/ros/jazzy/setup.bash && source install/setup.bash && colcon test --packages-select x_bot_localization semantic_voxel_mapping yoloe_infer x_bot_gazebo'

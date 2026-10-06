@@ -13,3 +13,8 @@ yaw_kp: 2.0
 yaw_ki: 2.0
 yaw_integral_limit: 2.5
 max_wheel_yaw_demand: 3.5
+# Isaac skid feedback: preserve compensation for small Nav2 corrections;
+# smoothly unload it on braking. Wheel yaw is the differential-drive demand,
+# not the body angular speed limit above.
+yaw_integral_release_time: 0.08
+wheel_yaw_accel: 12.0

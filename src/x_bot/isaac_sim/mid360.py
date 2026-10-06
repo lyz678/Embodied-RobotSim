@@ -3,6 +3,8 @@
 Uses native C++ batched collision queries, not RTX material optics.
 """
 import numpy as np
+import yaml
+from pathlib import Path
 import math
 import time
 import carb
@@ -19,7 +21,7 @@ from isaacsim.sensors.experimental.physics import IMU, IMUSensor, Raycast, Rayca
 from omni.physx import get_physx_scene_query_interface
 from pxr import Gf, Vt
 from robot_importer import find_prim, ROBOT_PRIM_PATH
-from mid360_sampling import Packet, POINT, directions, direction_array, settled_at_rest, ray_matches_surface, native_hit_mask
+from mid360_sampling import Packet, POINT, period_for_rate, directions, direction_array, settled_at_rest, ray_matches_surface, native_hit_mask
 from base_motion import BaseMotion
 
 
@@ -50,6 +52,10 @@ class Mid360:
         self.node = rclpy.create_node('isaac_mid360')
         self.command = (0., 0.)
         self.motion = BaseMotion()
+        # Runtime wheel targets belong in Fabric, not USD/undo history. Cache
+        # the attribute once; Controller.set otherwise edits USD 200 times/s.
+        self.wheel_target = og.AttributeValueHelper(og.Controller.attribute(
+            '/World/ROS2ControlGraph/BaseWheels.inputs:velocityCommand'))
         self.measured_angular = 0.
         self.command_sim_time = None
         self.command_time = -math.inf
@@ -58,7 +64,10 @@ class Mid360:
         # Upstream FAST-LIO uses a reliable IMU subscription (not SensorDataQoS).
         self.imu_pub = self.node.create_publisher(Imu, '/livox/imu', 1000)
         self.query = get_physx_scene_query_interface()
-        self.packet = Packet()
+        config = yaml.safe_load((Path(__file__).resolve().parents[1]/'config/mid360.yaml').read_text())
+        self.packet = Packet(period_for_rate(config['publish_hz']))
+        self.node.get_logger().info(
+            f"MID360: {config['publish_hz']} Hz frames; 200 Hz physics/IMU, 1000 rays per step")
         self.index = 0
         self.last_imu = None
         self.ready = False
@@ -101,7 +110,7 @@ class Mid360:
             enabled=playing and self.ready and time.monotonic()-self.command_time < .5,
             measured_angular=self.measured_angular)
         # One articulation writer applies all four wheel targets atomically.
-        og.Controller.set(og.Controller.attribute('/World/ROS2ControlGraph/BaseWheels.inputs:velocityCommand'), speeds)
+        self.wheel_target.set(speeds, update_usd=False)
 
     def control_step(self, dt, context):
         try:

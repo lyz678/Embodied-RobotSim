@@ -62,13 +62,12 @@ Explore::Explore()
   , tf_listener_(tf_buffer_)
   , costmap_client_(*this, &tf_buffer_)
   , last_markers_count_(0)
-  , prev_robot_yaw_(0.0)             // 初始化角度记录
   , has_prev_robot_position_(false)  // 初始化位置记录标志
   , return_to_init_retry_count_(0)   // 初始化返回初始位置重试计数
 {
   double min_frontier_size;
   this->declare_parameter<float>("planner_frequency", 1.0);
-  // 移除progress_timeout参数，不再使用超时逻辑
+  progress_watchdog_.timeout = this->declare_parameter<double>("stuck_timeout", 20.0);
   this->declare_parameter<float>("stuck_distance_threshold", 0.05);  // 卡住距离检测阈值（米）
   this->declare_parameter<float>("stuck_angle_threshold", 0.17);  // 卡住角度检测阈值（弧度，约10度）
   this->declare_parameter<bool>("visualize", false);
@@ -97,6 +96,12 @@ Explore::Explore()
   this->get_parameter("planner_frequency", planner_frequency_);
   this->get_parameter("stuck_distance_threshold", stuck_distance_threshold_);  // 获取卡住距离检测阈值
   this->get_parameter("stuck_angle_threshold", stuck_angle_threshold_);  // 获取角度阈值
+  progress_watchdog_.distance = stuck_distance_threshold_;
+  progress_watchdog_.angle = stuck_angle_threshold_;
+  if (!std::isfinite(progress_watchdog_.timeout) || progress_watchdog_.timeout <= 0 ||
+      !std::isfinite(progress_watchdog_.distance) || progress_watchdog_.distance <= 0 ||
+      !std::isfinite(progress_watchdog_.angle) || progress_watchdog_.angle <= 0)
+    throw std::invalid_argument("Invalid exploration progress watchdog parameters");
   // 移除progress_timeout获取
   this->get_parameter("visualize", visualize_);
   this->get_parameter("potential_scale", potential_scale_);
@@ -127,6 +132,15 @@ Explore::Explore()
                                                                      "s",
                                                                      10);
   }
+
+  finish_on_observation_ = this->declare_parameter<bool>("finish_on_observation", true);
+  const auto observation_topic =
+      this->declare_parameter<std::string>("observation_map_topic", "/map");
+  observation_subscription_ = this->create_subscription<nav_msgs::msg::OccupancyGrid>(
+      observation_topic, rclcpp::QoS(1).transient_local().reliable(),
+      [this](nav_msgs::msg::OccupancyGrid::ConstSharedPtr map) {
+        observation_map_ = map;
+      });
 
   // Subscription to resume or stop exploration
   resume_subscription_ = this->create_subscription<std_msgs::msg::Bool>(
@@ -274,6 +288,22 @@ void Explore::makePlan()
   auto pose = costmap_client_.getRobotPose(&pose_valid);
   if (!pose_valid) { empty_checks_ = 0; return; }
 
+  if (navigating_ && finish_on_observation_ && observation_map_ &&
+      observation_map_->header.frame_id == costmap_client_.getGlobalFrameID() &&
+      frontierObserved(*observation_map_, active_frontier_points_)) {
+    RCLCPP_INFO(logger_,
+                "Frontier observed (%zu boundary cells); canceling travel to (%.2f, %.2f)",
+                active_frontier_points_.size(), prev_goal_.x, prev_goal_.y);
+    ++goal_generation_;  // Ignore the canceled goal's late result/acceptance.
+    if (navigation_goal_handle_) move_base_client_->async_cancel_goal(navigation_goal_handle_);
+    navigation_goal_handle_.reset();
+    frontier_retry_.observed(prev_goal_, this->now().seconds());
+    active_frontier_points_.clear();
+    navigating_ = false;
+    has_prev_robot_position_ = false;
+    progress_watchdog_.reset();
+  }
+
   // 🔍 前沿检测 - 寻找已知区域与未知区域的边界
   // search_.searchFrom() 返回按代价排序的前沿列表（每次都会重新计算）
   auto frontiers = search_.searchFrom(pose.position);
@@ -339,44 +369,18 @@ void Explore::makePlan()
   bool robot_is_stuck = false;
   bool first_goal = !has_prev_robot_position_;  // 首次运行标志（在位置记录前计算）
 
-  // 检查机器人是否卡住（位置或角度变化都很小）
-  if (has_prev_robot_position_ && navigating_) {
-    // 计算位置变化
-    double dx = current_robot_position.x - prev_robot_position_.x;
-    double dy = current_robot_position.y - prev_robot_position_.y;
-    double distance_moved = sqrt(dx * dx + dy * dy);
-
-    // 计算角度变化（考虑角度的周期性，-π到π）
-    double angle_diff = current_robot_yaw - prev_robot_yaw_;
-    // 规范化角度差到[-π, π]范围
-    while (angle_diff > M_PI) angle_diff -= 2 * M_PI;
-    while (angle_diff < -M_PI) angle_diff += 2 * M_PI;
-    double angle_changed = fabs(angle_diff);
-
-    // 如果位置变化很小且角度变化也很小，增加卡住计数
-    if (distance_moved < stuck_distance_threshold_ && angle_changed < stuck_angle_threshold_) {
-      stuck_count_++;
-      RCLCPP_DEBUG(logger_, "Potential stuck detected (%d/%d): moved %.3fm, rotated %.3f rad",
-                   stuck_count_, STUCK_THRESHOLD, distance_moved, angle_changed);
-      
-      // 只有连续多次检测到卡住才触发重新规划
-      if (stuck_count_ >= STUCK_THRESHOLD) {
-        RCLCPP_WARN(logger_,
-                    "Robot confirmed stuck (moved only %.3fm, rotated only %.3f rad for %d checks), replanning...",
-                    distance_moved, angle_changed, stuck_count_);
-        frontier_retry_.record(prev_goal_, this->now().seconds(), false);  // 将当前目标加入黑名单
-        robot_is_stuck = true;  // 标记为卡住状态
-        stuck_count_ = 0;  // 重置计数器
-      }
-    } else {
-      // 机器人正常移动，重置计数器
-      stuck_count_ = 0;
-    }
+  // Let Nav2 complete its recovery sequence; slow cumulative motion is progress.
+  if (!navigating_ || first_goal) progress_watchdog_.reset();
+  if (navigating_ && progress_watchdog_.stalled(
+        current_robot_position.x, current_robot_position.y, current_robot_yaw,
+        this->now().seconds())) {
+    RCLCPP_WARN(logger_, "No cumulative motion progress for %.1f simulation seconds; changing frontier",
+                progress_watchdog_.timeout);
+    frontier_retry_.record(prev_goal_, this->now().seconds(), false);
+    robot_is_stuck = true;
+    progress_watchdog_.reset();
   }
 
-  // 📍 记录当前规划时的机器人位置和朝向，用于下次比较
-  prev_robot_position_ = current_robot_position;
-  prev_robot_yaw_ = current_robot_yaw;
   has_prev_robot_position_ = true;
 
   // 🔄 状态重置
@@ -384,9 +388,7 @@ void Explore::makePlan()
     resuming_ = false;  // 清除恢复标志
   }
 
-  // A frontier centroid can lie in known space, even while its boundary is
-  // still unexplored. Keep the active goal until Nav2 finishes or progress
-  // stalls instead of testing unknown cells around that centroid.
+  // Hold this goal while its original unknown boundary still needs observation.
 
   if (robot_is_stuck) {
     // The blacklist changed after selecting the candidate above.
@@ -432,6 +434,7 @@ void Explore::makePlan()
 
   // 更新目标历史（只有在真正要发送新导航时才更新）
   prev_goal_ = target_position;
+  active_frontier_points_ = frontier->points;
 
   RCLCPP_DEBUG(logger_, "Sending goal to move base nav2");
 
@@ -640,6 +643,7 @@ bool Explore::goalOnBlacklist(const geometry_msgs::msg::Point& goal)
 void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
                           const geometry_msgs::msg::Point& frontier_goal)
 {
+  active_frontier_points_.clear();
   // 🎯 导航结果处理回调函数 - 根据导航结果决定下一步行动
   
   // 🔍 检查导航结果状态
@@ -650,7 +654,7 @@ void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
       frontier_retry_.record(frontier_goal, this->now().seconds(), true);
       navigating_ = false;
       has_prev_robot_position_ = false;
-      stuck_count_ = 0;
+      progress_watchdog_.reset();
       break;
 
     case rclcpp_action::ResultCode::ABORTED:
@@ -659,7 +663,7 @@ void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
       frontier_retry_.record(frontier_goal, this->now().seconds(), false);
       navigating_ = false;
       has_prev_robot_position_ = false;
-      stuck_count_ = 0;
+      progress_watchdog_.reset();
       return;
 
     case rclcpp_action::ResultCode::CANCELED:
@@ -690,6 +694,7 @@ void Explore::start()
 void Explore::stop(bool finished_exploring)
 {
   ++goal_generation_;  // Ignore late results from the previous session/goal.
+  active_frontier_points_.clear();
   navigating_ = false;
   // 🛑 停止探索
   RCLCPP_INFO(logger_, "Exploration stopped.");
@@ -722,7 +727,7 @@ void Explore::stop(bool finished_exploring)
 void Explore::resume()
 {
   has_prev_robot_position_ = false;
-  stuck_count_ = 0;
+  progress_watchdog_.reset();
   // ▶️ 恢复探索
   resuming_ = true;  // 设置恢复标志（影响进度检查）
   RCLCPP_INFO(logger_, "Exploration resuming.");

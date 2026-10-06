@@ -59,8 +59,21 @@ def native_hit_mask(points, paths, robot_prefix='/World/x_bot/'):
             & np.fromiter((bool(p) and not str(p).startswith(robot_prefix) for p in paths), bool, count=len(points)))
 
 
+def period_for_rate(hz):
+    """Frame boundaries must coincide with real 5 ms samples (no fake stamps)."""
+    if (isinstance(hz, bool) or not isinstance(hz, (int, float))
+            or not math.isfinite(hz) or not 10 <= hz <= 40
+            or hz != int(hz) or 200 % int(hz)):
+        raise ValueError('MID360 publish_hz must be 10, 20, 25 or 40')
+    return 1_000_000_000 // int(hz)
+
+
 class Packet:
-    def __init__(self):
+    def __init__(self, period_ns=PERIOD_NS):
+        if (not isinstance(period_ns, int) or period_ns <= 0
+                or period_ns > PERIOD_NS or period_ns % 5_000_000):
+            raise ValueError('Packet period must align with 5 ms samples, at most 100 ms')
+        self.period_ns = period_ns
         self.reset()
 
     def reset(self):
@@ -74,7 +87,7 @@ class Packet:
         if self.start is None:
             self.start = stamp_ns
         completed = None
-        if stamp_ns - self.start >= PERIOD_NS:
+        if stamp_ns - self.start >= self.period_ns:
             completed = (self.start, bytes(self.data))
             self.start, self.data = stamp_ns, bytearray()
         self.last = stamp_ns

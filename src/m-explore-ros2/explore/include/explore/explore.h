@@ -38,6 +38,8 @@
 #ifndef NAV_EXPLORE_H_
 #define NAV_EXPLORE_H_
 
+#include "explore/progress_watchdog.hpp"
+#include "explore/frontier_observation.hpp"
 #include <explore/costmap_client.h>
 #include <explore/frontier_search.h>
 #include <geometry_msgs/msg/pose_stamped.h>
@@ -126,6 +128,11 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr resume_subscription_;
   void resumeCallback(const std_msgs::msg::Bool::SharedPtr msg);
 
+  bool finish_on_observation_ = true;
+  nav_msgs::msg::OccupancyGrid::ConstSharedPtr observation_map_;
+  rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr observation_subscription_;
+  std::vector<geometry_msgs::msg::Point> active_frontier_points_;
+
   FrontierRetry frontier_retry_;
   int empty_checks_ = 0;
   int completion_checks_ = 5;
@@ -133,8 +140,7 @@ private:
   size_t last_markers_count_;
 
   // 智能卡住检测：记录上一次规划时的机器人位置和朝向
-  geometry_msgs::msg::Point prev_robot_position_;
-  double prev_robot_yaw_;  // 上一次的机器人朝向（弧度）
+  ProgressWatchdog progress_watchdog_;
   bool has_prev_robot_position_;
   double stuck_distance_threshold_;  // 卡住距离检测阈值（米）
   double stuck_angle_threshold_;  // 卡住角度检测阈值（弧度）
@@ -149,8 +155,6 @@ private:
   // 导航状态跟踪
   bool navigating_ = false;  // 是否有活跃的导航任务
   uint64_t goal_generation_ = 0;
-  int stuck_count_ = 0;      // 连续卡住检测计数器
-  static constexpr int STUCK_THRESHOLD = 3;  // 连续3次才认为卡住
 
   // parameters
   double planner_frequency_;

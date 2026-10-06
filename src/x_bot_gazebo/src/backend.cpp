@@ -72,6 +72,7 @@ class GazeboBackend : public sim::System,
   std::unordered_map<std::string, math::Pose3d> telemetry_poses;
   std::string robot_name = "x_bot";
   Packet packet;
+  int64_t frame_period_ns = period_ns;
   uint64_t index = 0;
   int64_t next = -1, previous = -1, last_telemetry = -1;
   math::Pose3d old_sensor;
@@ -79,7 +80,7 @@ class GazeboBackend : public sim::System,
   bool initialized = false, ready = false;
   int64_t stable_start = -1;
   double linear = 0, angular = 0, command_time = -1, current_time = 0, v = 0,
-         w = 0, yaw_integral = 0, measured_yaw = 0;
+         w = 0, yaw_integral = 0, measured_yaw = 0, wheel_yaw = 0;
   YAML::Node motion, physics;
   sim::Entity bottle_body = sim::kNullEntity;
   double setting(const char *name) const { return motion[name].as<double>(); }
@@ -490,6 +491,17 @@ public:
     motion =
         YAML::LoadFile(ament_index_cpp::get_package_share_directory("x_bot") +
                        "/config/base_motion.yaml");
+    for (const char *name : {"yaw_integral_release_time", "wheel_yaw_accel"}) {
+      if (!std::isfinite(setting(name)) || setting(name) <= 0)
+        throw std::runtime_error("Invalid yaw smoothing parameter");
+    }
+    const auto sensor_config = YAML::LoadFile(
+        ament_index_cpp::get_package_share_directory("x_bot") + "/config/mid360.yaml");
+    const double rate = sensor_config["publish_hz"].as<double>();
+    if (!std::isfinite(rate) || rate < 10 || rate > 40 || rate != std::floor(rate) ||
+        200 % static_cast<int>(rate) != 0)
+      throw std::runtime_error("MID360 publish_hz must be 10, 20, 25 or 40");
+    frame_period_ns = 1000000000 / static_cast<int>(rate);
     physics =
         YAML::LoadFile(ament_index_cpp::get_package_share_directory("x_bot") +
                        "/config/gazebo_physics.yaml");
@@ -529,7 +541,7 @@ public:
     index = 0;
     initialized = ready = false;
     stable_start = -1;
-    linear = angular = v = w = yaw_integral = measured_yaw = 0;
+    linear = angular = v = w = yaw_integral = measured_yaw = wheel_yaw = 0;
     command_time = -1;
     last_telemetry = -1;
   }
@@ -549,7 +561,7 @@ public:
                 ready && std::isfinite(linear) && std::isfinite(angular);
     double demand = 0;
     if (!live || (linear == 0 && angular == 0))
-      v = w = yaw_integral = 0;
+      v = w = yaw_integral = wheel_yaw = 0;
     else {
       double ratio =
           std::max({1.,
@@ -560,10 +572,14 @@ public:
              dw = wa - w;
       bool decelerating = vl * v >= 0 && std::abs(vl) < std::abs(v),
            braking = wa * w < 0 || std::abs(wa) < std::abs(w);
-      if (std::abs(wa) < .02 || wa * w < 0)
-        yaw_integral = 0;
-      else if (braking)
-        yaw_integral *= std::exp(-dt / .15);
+      // Keep steady skid compensation across small planner corrections.
+      // Decisive braking unloads continuously; emergency zero resets above.
+      bool unloading = std::abs(wa) < .02 || wa * w < 0 ||
+                       std::abs(wa) < .5 * std::abs(w) ||
+                       (braking && measured_yaw * w > 0 &&
+                        std::abs(measured_yaw) > std::abs(w) + .1);
+      if (unloading)
+        yaw_integral *= std::exp(-dt / setting("yaw_integral_release_time"));
       double fraction = std::min(
           {1.,
            dv ? setting(decelerating ? "linear_decel" : "linear_accel") * dt /
@@ -577,7 +593,7 @@ public:
       double error = w - measured_yaw;
       demand = setting("yaw_feed_forward") * w + setting("yaw_kp") * error +
                yaw_integral;
-      if (!braking && std::abs(wa) >= .02 &&
+      if (!unloading && std::abs(wa) >= .02 &&
           (std::abs(demand) < setting("max_wheel_yaw_demand") ||
            demand * error < 0))
         yaw_integral = std::clamp(yaw_integral + setting("yaw_ki") * error * dt,
@@ -587,6 +603,9 @@ public:
                               setting("yaw_kp") * error + yaw_integral,
                           -setting("max_wheel_yaw_demand"),
                           setting("max_wheel_yaw_demand"));
+      double step = setting("wheel_yaw_accel") * dt;
+      demand = std::clamp(demand, wheel_yaw - step, wheel_yaw + step);
+      wheel_yaw = demand;
     }
     for (int i = 0; i < 4; i++) {
       if (wheels[i] == sim::kNullEntity)
@@ -612,7 +631,7 @@ public:
       index = 0;
       // Commands from the previous timeline must never become live again.
       command_time = -1;
-      linear = angular = v = w = yaw_integral = measured_yaw = 0;
+      linear = angular = v = w = yaw_integral = measured_yaw = wheel_yaw = 0;
       last_telemetry = -1;
     }
     if (next >= 0 && ns < next)
@@ -666,7 +685,7 @@ public:
     im.linear_acceleration.y = acceleration.Y();
     im.linear_acceleration.z = acceleration.Z();
     imu->publish(im);
-    if (packet.start >= 0 && ns - packet.start >= period_ns) {
+    if (packet.start >= 0 && ns - packet.start >= frame_period_ns) {
       publishCloud();
       packet.reset();
     }
