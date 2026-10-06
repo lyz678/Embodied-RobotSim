@@ -1,92 +1,37 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# ========================================
-# 机器人自动探索建图模式启动脚本 (Cartographer 版本)
-# ========================================
-# 功能：启动 Gazebo + Cartographer SLAM + Nav2 + 自动探索
-# 用途：在未知环境中使用 Cartographer (2D LiDAR + IMU) 自动探索并生成地图
-# 
-# 与 SLAM Toolbox 版本的区别：
-#   - 使用 Cartographer 进行 SLAM (支持 IMU 数据融合)
-#   - TF 由 Cartographer 提供 (map -> odom -> base_footprint)
-#   - 地图由 cartographer_occupancy_grid_node 提供
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-echo "========================================"
-echo "  启动机器人自动探索建图模式 (Cartographer)"
-echo "========================================"
+# 默认配置：公共参数以 Isaac Sim 为基准，--sim gazebo 可选择后端。
+SIM_BACKEND=isaac
+WORLD=simple_room
+MAP_BUNDLE="$ROOT_DIR/maps/gazebo_simple_room"
+INITIAL_X=0.0
+INITIAL_Y=0.0
+INITIAL_YAW=1.5708
+HEADLESS=false
+BUILD=true
+AUTO_EXPLORE=true
+DEPTH_SOURCE=sim #lsm
+SEMANTIC_CLOUD_SOURCE=fastlio #depth：depth 时由 DEPTH_SOURCE 选择仿真器/LSM。
+LSM_CONFIG_FILE="$ROOT_DIR/src/LSM_depth_infer/config/config.yaml"
+LSM_PARAMS_FILE="$ROOT_DIR/src/LSM_depth_infer/config/isaac_params.yaml"
+# 深度输入空值按 DEPTH_SOURCE 选择，lsm 默认 nn_depth。
+# OCTOMAP_CLOUD_TOPIC 留空使用 SEMANTIC_MAP_CONFIG 中的语义点云输入。
+DEPTH_IMAGE_TOPIC=""
+OCTOMAP_CLOUD_TOPIC=""
+OCTOMAP_BACKEND=semantic_cuda
+SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/semantic_voxel_mapping/config/map.yaml"
 
-# 0. 停止之前的进程
-echo "🛑 正在清理残留进程..."
-bash stop_robot_sim.sh
-sleep 2
-
-echo "Step 2: Building remaining packages..."
-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
-
-# 检查构建是否成功
-if [ $? -ne 0 ]; then
-    echo "❌ 构建失败，请检查错误信息"
-    exit 1
-fi
-
-echo "✅ 构建成功！"
-echo ""
-
-# Load the freshly built workspace for every child terminal.
-source /opt/ros/jazzy/setup.bash || exit 1
-source install/setup.bash || exit 1
-
-# An IDE terminal may inherit references to a GNOME window that has closed.
-# Let gnome-terminal choose its current server and create a new window.
-unset GNOME_TERMINAL_SCREEN GNOME_TERMINAL_SERVICE
-
-# Stop if a terminal cannot be created instead of reporting startup success.
-set -e
-
-# 启动所有服务在多个终端标签页中
-echo "📡 启动 Gazebo 仿真环境..."
-gnome-terminal --title="Gazebo" -- bash -c "source /opt/ros/jazzy/setup.bash && source install/setup.bash && ros2 launch x_bot gz.launch.py world_name:=simple_room orientation_yaw:=1.5708; exec bash"
-sleep 5
-
-echo "🗺️  启动 Cartographer SLAM 建图..."
-gnome-terminal --title="Cartographer SLAM" -- bash -c "ros2 launch x_bot cartographer.launch.py; exec bash"
-
-# echo "👁️  启动立体匹配..."
-# gnome-terminal --title="Stereo Matching" -- bash -c "ros2 launch stereo_matching stereo_matching.launch.py; exec bash"
-
-sleep 3
-echo "🧭 启动 Nav2 导航 (Cartographer 模式)..."
-gnome-terminal --title="Nav2 (Cartographer)" -- bash -c "ros2 launch x_bot nav2_cartographer.launch.py; exec bash"
-
-echo "👁️  启动 YOLOE 视觉检测..."
-gnome-terminal --title="YOLOE Vision" -- bash -c "ros2 run yoloe_infer ros2_trt_infer_text_prompt_multi_node --ros-args \
-    -p config_path:=$(pwd)/src/yoloe_infer/configs/config.yaml; exec bash"
-
-sleep 3
-echo "🔍 启动自动探索..."
-gnome-terminal --title="Auto Explore" -- bash -c "ros2 launch explore_lite explore.launch.py; exec bash"
-
-echo "🔍 启动OctoMap建图..."
-gnome-terminal --title="OctoMap" -- bash -c "ros2 launch x_bot octomap_server.launch.py; exec bash"
-
-
-echo ""
-echo "========================================="
-echo "  ✅ 所有服务已启动完成！"
-echo "========================================="
-echo ""
-echo "🤖 机器人将自动探索未知环境并实时建图"
-echo "📊 使用 Cartographer (2D LiDAR + IMU) 进行 SLAM"
-echo ""
-echo "📊 监控探索进度："
-echo "   ros2 topic echo /explore/frontiers"
-echo ""
-echo "💾 保存地图 (Cartographer 格式)："
-echo "   ros2 service call /write_state cartographer_ros_msgs/srv/WriteState \"{filename: '$(pwd)/src/x_bot/maps/cartographer_map.pbstream'}\""
-echo ""
-echo "💾 保存地图 (标准格式)："
-echo "   ros2 run nav2_map_server map_saver_cli -f $(pwd)/src/x_bot/maps/cartographer_map"
-echo ""
-echo "🛑 停止所有服务："
-echo "   bash stop_robot_sim.sh"
-echo ""
+DEFAULT_ARGS=(--sim "$SIM_BACKEND" --world "$WORLD" --bundle "$MAP_BUNDLE"
+    --initial-x "$INITIAL_X" --initial-y "$INITIAL_Y" --initial-yaw "$INITIAL_YAW"
+    --depth-source "$DEPTH_SOURCE" --lsm-config "$LSM_CONFIG_FILE" --lsm-params "$LSM_PARAMS_FILE"
+    --semantic-cloud-source "$SEMANTIC_CLOUD_SOURCE"
+    --octomap-backend "$OCTOMAP_BACKEND" --semantic-map-config "$SEMANTIC_MAP_CONFIG")
+[[ -n "$DEPTH_IMAGE_TOPIC" ]] && DEFAULT_ARGS+=(--depth-image-topic "$DEPTH_IMAGE_TOPIC")
+[[ -n "$OCTOMAP_CLOUD_TOPIC" ]] && DEFAULT_ARGS+=(--octomap-cloud-topic "$OCTOMAP_CLOUD_TOPIC")
+[[ "$HEADLESS" == true ]] && DEFAULT_ARGS+=(--headless)
+[[ "$BUILD" == true ]] && DEFAULT_ARGS+=(--build)
+[[ "$AUTO_EXPLORE" == false ]] && DEFAULT_ARGS+=(--no-explore)
+exec bash "$ROOT_DIR/scripts/robot_services.sh" explore "${DEFAULT_ARGS[@]}" "$@"

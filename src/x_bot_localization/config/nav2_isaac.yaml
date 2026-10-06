@@ -1,0 +1,360 @@
+# Nav2 配置文件 (FAST-LIO SLAM 版本)
+# 用于搭配 FAST-LIO 进行 SLAM 建图和导航
+# 主要区别：不启动内置 SLAM，使用外部 FAST-LIO 提供的 /map 和 TF
+#
+# TF 树结构：
+#   map -> odom -> base_footprint -> base_link (由 FAST-LIO 提供)
+# 地图话题：/map (建图时 map_builder，定位时 map_server)
+# 里程计话题：/odom (由 fastlio_adapter 转换 FAST-LIO 里程计及安装外参)
+
+# Nav2行为树导航器配置
+bt_navigator:
+  ros__parameters:
+    enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+    global_frame: map                       # 全局坐标系
+    robot_base_frame: base_link             # 机器人基座坐标系
+    odom_topic: /odom                     # 里程计话题 (由 fastlio_adapter 节点提供)
+    bt_loop_duration: 10                    # 行为树循环持续时间（秒）
+    default_server_timeout: 20             # 默认服务器超时时间（秒）
+    wait_for_service_timeout: 1000          # 等待服务超时时间（毫秒）
+    action_server_result_timeout: 900.0    # 动作服务器结果超时时间（秒）
+    navigators: ["navigate_to_pose", "navigate_through_poses"]  # 支持的导航器类型
+    navigate_to_pose:                       # 单点导航配置
+      plugin: "nav2_bt_navigator::NavigateToPoseNavigator"
+    navigate_through_poses:                 # 多点导航配置
+      plugin: "nav2_bt_navigator::NavigateThroughPosesNavigator"
+    error_code_names:                       # 错误代码名称列表
+      - compute_path_error_code              # 路径规划错误
+      - follow_path_error_code               # 路径跟随错误
+
+# Nav2控制器服务器配置
+controller_server:
+  ros__parameters:
+    enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+    controller_frequency: 20.0              # 控制器运行频率（Hz）
+    min_x_velocity_threshold: 0.001         # X方向最小速度阈值
+    min_y_velocity_threshold: 0.5           # Y方向最小速度阈值
+    min_theta_velocity_threshold: 0.001     # 角度最小速度阈值
+    failure_tolerance: 0.3                  # 失败容忍度（米）
+    progress_checker_plugins: ["progress_checker"]    # 进度检查器插件
+    goal_checker_plugins: ["general_goal_checker"]    # 目标检查器插件
+    controller_plugins: ["FollowPath"]      # 控制器插件列表
+    use_realtime_priority: false            # 是否使用实时优先级
+
+    # 进度检查器配置
+    progress_checker:
+      plugin: "nav2_controller::PoseProgressChecker"
+      required_movement_angle: 0.15
+      required_movement_radius: 0.5         # 所需移动半径
+      movement_time_allowance: 10.0         # 允许移动时间
+
+    # Installed Jazzy RotationShim initializes its private checker before assigning the plugin name.
+    # Re-evaluate XY after skid/coasting rather than latching heading-only control outside tolerance.
+    ".position_checker.stateful": false
+
+    # 通用目标检查器配置
+    general_goal_checker:
+      stateful: true                        # 是否有状态
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25               # XY目标容忍度（米）
+      yaw_goal_tolerance: 0.4               # About 23 degrees; avoid unnecessary final heading corrections.
+    FollowPath:
+      plugin: "nav2_rotation_shim_controller::RotationShimController"
+      primary_controller: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
+      position_checker:
+        stateful: false # Also cover builds that correctly namespace the private checker.
+      # Let RPP steer while moving for ordinary turns; reserve a spin for large heading errors.
+      # Hysteresis: start alignment above 69 degrees, resume motion below 17 degrees.
+      angular_dist_threshold: 1.2
+      angular_disengage_threshold: 0.3
+      forward_sampling_distance: 0.5
+      rotate_to_goal_heading: true
+      rotate_to_heading_once: false
+      # Use commanded ramp for startup; noisy skid-steer odometry must not
+      # pin the first command below static-friction breakaway indefinitely.
+      closed_loop: false
+      simulate_ahead_time: 1.5
+      desired_linear_vel: 1.0
+      # Shorter carrots reduce corner cutting in the original room's doors.
+      lookahead_dist: 0.4
+      min_lookahead_dist: 0.3
+      max_lookahead_dist: 0.8
+      lookahead_time: 0.4
+      use_velocity_scaled_lookahead_dist: true
+      transform_tolerance: 0.5
+      use_rotate_to_heading: false # RotationShim owns path/goal alignment.
+      rotate_to_heading_min_angle: 0.5
+      rotate_to_heading_angular_vel: 1.0
+      max_angular_accel: 1.5
+      allow_reversing: false
+      use_collision_detection: true
+      max_allowed_time_to_collision_up_to_carrot: 1.5
+      use_regulated_linear_velocity_scaling: true
+      regulated_linear_scaling_min_radius: 2.5 # Regulate tight-curve yaw to about 0.4 rad/s at 1 m/s.
+      regulated_linear_scaling_min_speed: 0.08
+      use_cost_regulated_linear_velocity_scaling: true
+      cost_scaling_dist: 1.0
+      cost_scaling_gain: 1.0
+      inflation_cost_scaling_factor: 1.8 # Must match the local inflation layer.
+      min_approach_linear_velocity: 0.05
+      approach_velocity_scaling_dist: 2.0
+
+# 本地代价地图配置（用于局部路径规划和避障）
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+      update_frequency: 5.0                   # 代价地图更新频率（Hz）
+      publish_frequency: 2.0                  # 代价地图发布频率（Hz）
+      global_frame: odom                      # 全局坐标系（使用里程计坐标系）
+      robot_base_frame: base_link             # 机器人基座坐标系
+      rolling_window: true                    # 是否使用滚动窗口（跟随机器人移动）
+      width: 10                               # 代价地图宽度（米）
+      height: 10                              # 代价地图高度（米）
+      resolution: 0.04                        # 减少窄通道障碍格的离散误差
+      # Stowed collision envelope is 0.3686 m; retain >5 cm radial margin
+      # plus explicit padding. Global and local geometry must agree.
+      robot_radius: 0.42
+      footprint_padding: 0.01
+      # /x_bot/scan is already height-filtered and projected into 2D.
+      # VoxelLayer rejects a scan origin slightly below z=0 after LIO drift,
+      # leaving stale lethal cells that make RPP stop indefinitely.
+      # Historical SLAM occupancy belongs in the global planner. Keeping it
+      # locally reintroduces old lethal cells after laser/footprint clearing,
+      # blocking spin and backup even when the current scan is clear.
+      plugins: ["obstacle_layer", "inflation_layer"]
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 1.8
+        inflation_radius: 1.5
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        footprint_clearing_enabled: true
+        min_obstacle_height: -0.2
+        max_obstacle_height: 2.0
+        observation_sources: scan
+        scan:
+          topic: /x_bot/scan
+          min_obstacle_height: -0.2
+          max_obstacle_height: 2.0
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+          raytrace_max_range: 6.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 5.0
+          obstacle_min_range: 0.0
+      always_send_full_costmap: true
+
+# 全局代价地图配置（用于全局路径规划）
+# 重要：对于动态 SLAM 场景，static_layer 会实时跟踪 /map 更新
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      enable_stamped_cmd_vel: false
+      update_frequency: 5.0
+      publish_frequency: 5.0                  # 提高发布频率以支持 explore_lite
+      global_frame: map
+      robot_base_frame: base_link
+      robot_radius: 0.42
+      footprint_padding: 0.01
+      resolution: 0.05                        # 匹配 FAST-LIO 地图分辨率
+      rolling_window: false                   # 不使用滚动窗口，使用全局地图
+      track_unknown_space: true
+      # FAST-LIO 输出概率值: -1=unknown, 0-100=占用概率
+      # 需要使用 trinary_costmap 将概率转换为 FREE/LETHAL/UNKNOWN
+      lethal_cost_threshold: 65               # 概率>65视为障碍 (LETHAL)
+      unknown_cost_value: 255                 # 未知区域代价 (NO_INFORMATION)
+      trinary_costmap: true                   # 启用三值模式供 explore_lite 使用
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+        map_topic: /map
+        subscribe_to_updates: true
+        enabled: true
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        footprint_clearing_enabled: true
+        min_obstacle_height: -0.2
+        max_obstacle_height: 2.0
+        observation_sources: scan
+        scan:
+          topic: /x_bot/scan
+          sensor_frame: base_footprint
+          max_obstacle_height: 2.0
+          min_obstacle_height: -0.2
+          clearing: true
+          marking: true
+          data_type: "LaserScan"
+          raytrace_max_range: 12.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 10.0
+          obstacle_min_range: 0.0
+          inf_is_valid: false
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 1.8             # Broad gradient prefers clearance over wall-hugging shortcuts.
+        inflation_radius: 1.5                 # Soft costs; retain the existing inscribed collision radius.
+      always_send_full_costmap: true
+
+# Nav2路径规划服务器配置
+planner_server:
+  ros__parameters:
+    enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+    #expected_planner_frequency: 20.0      # 期望的规划器频率（已注释）
+    planner_plugins: ["GridBased"]          # 路径规划器插件列表
+
+    # 基于网格的路径规划器配置
+    GridBased:
+      plugin: "nav2_navfn_planner::NavfnPlanner"  # NavFn规划器插件
+      tolerance: 0.5                        # 目标点容忍度（米）
+      use_astar: true                      # 是否使用A*算法（false=使用Dijkstra）
+      allow_unknown: true                   # 是否允许在未知空间规划路径
+
+# Nav2路径平滑服务器配置
+smoother_server:
+  ros__parameters:
+    enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+    smoother_plugins: ["simple_smoother"]   # 路径平滑器插件列表
+
+    # 简单路径平滑器配置
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10                    # 平滑容忍度（收敛阈值）
+      max_its: 1000                        # 最大迭代次数
+      do_refinement: true                   # 是否进行细化
+
+# Nav2行为服务器配置（处理恢复行为）
+behavior_server:
+  ros__parameters:
+    enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+    local_costmap_topic: local_costmap/costmap_raw      # 本地代价地图话题
+    global_costmap_topic: global_costmap/costmap_raw    # 全局代价地图话题
+    local_footprint_topic: local_costmap/published_footprint    # 本地足迹话题
+    global_footprint_topic: global_costmap/published_footprint   # 全局足迹话题
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    spin:
+      plugin: "nav2_behaviors::Spin"
+    backup:
+      plugin: "nav2_behaviors::BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors::DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors::Wait"
+    assisted_teleop:
+      plugin: "nav2_behaviors::AssistedTeleop"
+    global_frame: map
+    local_frame: odom
+    robot_base_frame: base_link
+    transform_tolerance: 0.5
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 1.2
+    min_rotational_vel: 0.15
+    rotational_acc_lim: 1.5
+
+waypoint_follower:
+  ros__parameters:
+    enable_stamped_cmd_vel: false
+    loop_rate: 20
+    stop_on_failure: false
+    action_server_result_timeout: 900.0
+    waypoint_task_executor_plugin: "wait_at_waypoint"
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: true
+      waypoint_pause_duration: 200
+
+velocity_smoother:
+  ros__parameters:
+    enable_stamped_cmd_vel: false
+    smoothing_frequency: 20.0
+    scale_velocities: False
+    feedback: "OPEN_LOOP"
+    max_velocity: [1.0, 0.0, 1.2]
+    min_velocity: [-0.2, 0.0, -1.2]
+    max_accel: [1.0, 0.0, 1.5]
+    max_decel: [-2.0, 0.0, -2.0]
+    odom_topic: "/odom"
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0
+
+collision_monitor:
+  ros__parameters:
+    enable_stamped_cmd_vel: false
+    base_frame_id: "base_link"
+    odom_frame_id: "odom"
+    cmd_vel_in_topic: "/cmd_vel_smoothed"
+    # Separate automatic commands from manual /cmd_vel and /x_bot/cmd_vel.
+    cmd_vel_out_topic: "/x_bot/cmd_vel_nav"
+    state_topic: "collision_monitor_state"
+    transform_tolerance: 0.5
+    source_timeout: 1.0
+    base_shift_correction: True
+    stop_pub_timeout: 2.0
+    # Polygons represent zone around the robot for "stop", "slowdown" and "limit" action types,
+    # and robot footprint for "approach" action type.
+    polygons: ["FootprintApproach"]
+    FootprintApproach:
+      type: "polygon"
+      action_type: "approach"
+      footprint_topic: "local_costmap/published_footprint"
+      # Slow before the physical acceleration/deceleration ramp can overshoot
+      # the footprint and make both spin and backup recovery impossible.
+      time_before_collision: 2.0
+      simulation_time_step: 0.1
+      min_points: 6
+      visualize: False
+      enabled: true
+    observation_sources: ["scan"]
+    scan:
+      type: "scan"
+      topic: "/x_bot/scan"
+      min_height: 0.15
+      max_height: 2.0
+      enabled: True
+
+# 停靠服务器配置（用于自动充电/停靠功能）
+docking_server:
+  ros__parameters:
+    enable_stamped_cmd_vel: false           # 是否使用带时间戳的速度命令
+    controller_frequency: 50.0              # 控制器频率（Hz）
+    initial_perception_timeout: 5.0         # 初始感知超时时间（秒）
+    wait_charge_timeout: 5.0                # 等待充电超时时间（秒）
+    dock_approach_timeout: 30.0             # 停靠接近超时时间（秒）
+    undock_linear_tolerance: 0.05           # 脱离停靠线性容忍度（米）
+    undock_angular_tolerance: 0.1           # 脱离停靠角度容忍度（弧度）
+    max_retries: 3                          # 最大重试次数
+    base_frame: "base_link"                 # 机器人基座坐标系
+    fixed_frame: "odom"                     # 固定坐标系（里程计）
+    dock_backwards: false                   # 是否倒退停靠
+    dock_prestaging_tolerance: 0.5          # 停靠预定位容忍度（米）
+
+    # 停靠类型配置
+    dock_plugins: ['simple_charging_dock']  # 启用的停靠插件列表
+    simple_charging_dock:                   # 简单充电停靠配置
+      plugin: 'opennav_docking::SimpleChargingDock'  # 插件类型
+      docking_threshold: 0.05               # 停靠阈值（米）
+      staging_x_offset: -0.7                # 预定位X轴偏移（米）
+      use_external_detection_pose: true     # 是否使用外部检测位姿
+      use_battery_status: false             # 是否使用电池状态（已禁用）
+      use_stall_detection: false            # 是否使用堵转检测（已禁用）
+
+      # 外部检测参数
+      external_detection_timeout: 1.0       # 外部检测超时时间（秒）
+      external_detection_translation_x: -0.18    # 外部检测X轴平移
+      external_detection_translation_y: 0.0      # 外部检测Y轴平移
+      external_detection_rotation_roll: -1.57    # 外部检测滚转角
+      external_detection_rotation_pitch: -1.57   # 外部检测俯仰角
+      external_detection_rotation_yaw: 0.0       # 外部检测偏航角
+      filter_coef: 0.1                     # 滤波器系数
+
+    controller:
+      k_phi: 3.0
+      k_delta: 2.0
+      v_linear_min: 0.15
+      v_linear_max: 0.15

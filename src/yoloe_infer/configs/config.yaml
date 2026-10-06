@@ -58,3 +58,11 @@ detections_3d_topic: "~/detections_3d"
 
 # Ground filtering for pointcloud_colored (in odom frame)
 ground_filter_z_min: 0.0
+
+# 语义几何来源：depth 兼容 Isaac/LSM；探索入口覆盖为 fastlio。
+semantic_cloud_source: depth
+semantic_lidar_topic: /fastlio/cloud_odom # adapter 转到 odom 的单帧去畸变点云，不是累积地图
+semantic_lidar_frame: mid360_link # 输出局部雷达坐标，raycast 从此原点发射
+projection_fixed_frame: odom
+projection_sync_slop: 0.15 # 图像与扫描的最大时间差，仿真秒
+projection_occlusion_tolerance: 0.15 # 同一图像像素最前点之后允许的深度差，米

@@ -1,0 +1,50 @@
+controller_manager:
+  ros__parameters:
+    # Isaac Sim advances ros2_control on the physics tick, so the effective
+    # update rate is capped by the 200 Hz simulation frequency.
+    update_rate: 200
+
+    fr3_arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+    fr3_gripper_controller:
+      type: position_controllers/GripperActionController
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+fr3_arm_controller:
+  ros__parameters:
+    joints:
+      - fr3_joint1
+      - fr3_joint2
+      - fr3_joint3
+      - fr3_joint4
+      - fr3_joint5
+      - fr3_joint6
+      - fr3_joint7
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    state_publish_rate: 100.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: false
+    constraints:
+      goal_time: 0.6
+      stopped_velocity_tolerance: 0.05
+      fr3_joint1: {trajectory: 0.1, goal: 0.1}
+      fr3_joint2: {trajectory: 0.1, goal: 0.1}
+      fr3_joint3: {trajectory: 0.1, goal: 0.1}
+      fr3_joint4: {trajectory: 0.1, goal: 0.1}
+      fr3_joint5: {trajectory: 0.1, goal: 0.1}
+      fr3_joint6: {trajectory: 0.1, goal: 0.1}
+      fr3_joint7: {trajectory: 0.1, goal: 0.1}
+
+fr3_gripper_controller:
+  ros__parameters:
+    joint: fr3_finger_joint1
+    goal_tolerance: 0.002
+    # Contact may prevent full closure; report stable stalls to the action client.
+    allow_stalling: true
+    # PhysX constraint velocities chatter up to ~0.10 m/s at stable contact.
+    # A full unobstructed 55 mm stroke at 0.2 m/s takes <0.3 s; requiring
+    # 1 s below 0.15 m/s separates contact from that normal stroke.
+    stall_velocity_threshold: 0.15
+    stall_timeout: 1.0

@@ -166,6 +166,14 @@ if(BUILD_TRT_NODE)
     pcl_msgs
   )
 
+  if(BUILD_TESTING)
+    enable_testing()
+    add_executable(test_semantic_projection test/semantic_projection_test.cpp)
+    target_include_directories(test_semantic_projection PRIVATE include ${TENSORRT_INCLUDE_DIR} ${PCL_INCLUDE_DIRS})
+    target_link_libraries(test_semantic_projection pointcloud_colorizer_lib ${OpenCV_LIBRARIES})
+    add_test(NAME semantic_projection COMMAND test_semantic_projection)
+  endif()
+
   install(TARGETS
     trt_engine_lib
     pointcloud_colorizer_lib

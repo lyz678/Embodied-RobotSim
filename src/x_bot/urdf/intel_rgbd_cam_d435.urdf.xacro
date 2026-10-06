@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <xacro:macro name="intel_rgbd_cam_d435" params="parent *origin">
+  <xacro:macro name="intel_rgbd_cam_d435" params="parent sim_isaac:=false *origin">
     
     <xacro:property name="M_PI" value="3.1415926535897931" />
     <xacro:property name="d435_baseline" value="0.050"/>
@@ -69,8 +69,9 @@
 
 
 
-    <!-- Gazebo Sensors -->
-    <gazebo reference="camera_link">
+    <!-- Gazebo sensors are authored by Isaac Sim when sim_isaac is true. -->
+    <xacro:unless value="${sim_isaac}">
+      <gazebo reference="camera_link">
       <!-- Left (RGBD) Sensor -->
       <sensor name="camera_left" type="rgbd_camera">
         <pose>0 0 0 0 0 0</pose> 
@@ -114,7 +115,8 @@
         <topic>x_bot/camera_right</topic>
         <gz_frame_id>camera_right_frame</gz_frame_id>
       </sensor>
-    </gazebo>
+      </gazebo>
+    </xacro:unless>
 
   </xacro:macro>
 </robot>

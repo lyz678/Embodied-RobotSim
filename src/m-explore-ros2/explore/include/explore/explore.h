@@ -44,6 +44,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <chrono>
+#include <cstdint>
 #include <cmath>
 #include <geometry_msgs/msg/point.hpp>
 #include <memory>
@@ -143,6 +144,7 @@ private:
 
   // 导航状态跟踪
   bool navigating_ = false;  // 是否有活跃的导航任务
+  uint64_t goal_generation_ = 0;
   int stuck_count_ = 0;      // 连续卡住检测计数器
   static constexpr int STUCK_THRESHOLD = 3;  // 连续3次才认为卡住
 

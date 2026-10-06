@@ -1,0 +1,19 @@
+pick_and_place_demo:
+  ros__parameters:
+    use_sim_time: true
+    table_classes: [3, 2, 9] # book, cup, coke
+    floor_classes: [4, 6]   # bottle, shoe, using manipulation.yaml palette
+    min_confidence: 0.25
+    detection_timeout: 5.0
+    verify_physical_pick: true
+    # Extended fingers project 45.5 mm beyond the GraspNet reference frame.
+    top_grasp_classes: [6] # estimate narrow closing direction from depth PCA
+    floor_tcp_backoff: 0.035
+    thin_object_classes: [9]
+    thin_object_tcp_backoff: 0.02
+    thin_object_approach_pitch: 0.52 # rad, keep wrist/link6 above the table
+    # Release contact gently before the full opening, avoiding handle sweeps.
+    release_step: 0.003
+    release_pause: 0.35
+    elongated_place_classes: [3, 6]
+    elongated_place_yaw: 0.7853981633974483

@@ -1,0 +1,26 @@
+semantic_voxel_map:
+  ros__parameters:
+    use_sim_time: true
+    cloud_topic: /yoloe_multi_text_prompt/pointcloud_semantic
+    map_frame: odom
+    palette_file: "" # Empty: installed yoloe_infer/configs/config.yaml
+    map_file: maps/semantic_map.svm
+    resolution: 0.10
+    min_range: 0.2
+    max_range: 10.0
+    min_z: 0.1
+    max_z: 2.5
+    hit: 0.7
+    miss: 0.4
+    clamp_min: 0.12
+    clamp_max: 0.97
+    occupied_threshold: 0.5
+    confidence_threshold: 0.35
+    vote_window: 30
+    min_observations: 3
+    majority_threshold: 0.6
+    cuda_device: 0
+    gpu_scratch_mib: 512
+    max_voxels: 2000000
+    integration_rate: 5.0
+    publish_rate: 1.0

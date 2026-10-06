@@ -4,6 +4,7 @@
 #include <opencv2/opencv.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
@@ -30,6 +31,20 @@ class PointCloudColorizer {
 public:
     PointCloudColorizer(const std::map<int, cv::Vec3b>& color_mapping, const cv::Vec3b& default_color, bool use_mad_filter = true, float mad_threshold = 3.0f, float min_depth = 0.0f);
     ~PointCloudColorizer() = default;
+
+    sensor_msgs::msg::PointCloud2 semantic_cloud(
+        const cv::Mat& depth, const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info,
+        const std::vector<Detection>& detections, const std_msgs::msg::Header& header,
+        int pixel_stride = 1);
+
+    // Input coordinates are deskewed into the lidar frame at scan end. Project
+    // a separate camera-frame copy at image time; never replace the geometry.
+    sensor_msgs::msg::PointCloud2 semantic_lidar_cloud(
+        const pcl::PointCloud<pcl::PointXYZ>& lidar_points,
+        const pcl::PointCloud<pcl::PointXYZ>& camera_points,
+        const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info,
+        const std::vector<Detection>& detections, const std_msgs::msg::Header& header,
+        double occlusion_tolerance);
 
     void process(
         const cv::Mat& depth_image,

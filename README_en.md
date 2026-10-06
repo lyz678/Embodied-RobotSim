@@ -1,179 +1,170 @@
-# Embodied-RobotSim: LLM-Driven Embodied Intelligence & Mobile Manipulation Simulation
+# Embodied-RobotSim
 
-[![ROS2](https://img.shields.io/badge/ROS2-Jazzy-brightgreen.svg)](https://docs.ros.org/en/jazzy/index.html)
-[![中文](https://img.shields.io/badge/🌍_Language-中文-blue.svg)](README.md)
+[中文完整配置指南](README.md)
 
-Embodied-RobotSim is a comprehensive ROS 2 (Jazzy) simulation workspace for a differential-drive mobile robot equipped with a **Franka FR3 robotic arm**, a 2D LiDAR, a stereo RGB-D camera, and a rich, advanced sensor suite. The system is deeply optimized for **low hardware requirements** and high efficiency, integrating leading-edge algorithms for mapping, navigation, advanced visual perception, mobile manipulation, and a **Qwen3 LLM-driven embodied intelligence closed-loop**, enabling complex robotic interactions via natural language instructions and a Web UI dashboard.
+ROS 2 Jazzy workspace with Isaac Sim 6.1 and Gazebo Harmonic backends for a differential-drive mobile robot with a Franka FR3 arm, simulated MID-360 lidar and stereo RGB-D cameras. FAST-LIO provides lidar-inertial odometry, Nav2 handles exploration/navigation, and YOLOE + GraspNet + MoveIt handle manipulation. CUDA semantic voxel mapping integrates geometry with hit/miss updates and semantic colors with voting. Qwen3 and the Web UI provide natural-language task control.
 
-## 🎬 Demos
+## Demos
 
-### 1. Large Language Model Embodied Closed-Loop (LLM Agent)
-![LLMAgent](assets/Embodied_LLM.gif)
+### Isaac Sim
 
-*Multi-modal interaction loop via Qwen3 and VLM*
+![Isaac Sim simulation](assets/IssacSim.gif)
 
-### 2. Autonomous Mobile Grasping (Pick & Place)
-![Pick&Place](assets/Pick&Place.gif)
+### Gazebo Harmonic
 
-*Autonomous Grasping via YOLOE & GraspNet*
+![Gazebo Harmonic simulation](assets/GazeboSim.gif)
 
-### 3. Simulation Environment (Gazebo Sim)
-![GazeboSim](assets/GazeboSim.gif)
+Both backends share the entry scripts. Isaac Sim is the default; add `--sim gazebo` to switch:
 
-*Indoor Scene Simulation with Nav2 Autonomous Navigation and OctoMap 3D Mapping*
+```bash
+./start_explore_and_mapping.sh
+./start_explore_and_mapping.sh --sim gazebo
+```
 
-## 🌟 Key Features
+### LLM Agent
 
-* **Mobile Manipulation:** Integration of MoveIt 2 for the Franka FR3 arm with a differential-drive mobile base controller.
-* **Autonomous Exploration & Mapping:** High-precision SLAM with Cartographer (native 2D LiDAR + IMU fusion) and frontier-based autonomous exploration using `m-explore-ros2`.
-* **Advanced Perception (Vision):**
-  * **YOLOE Inference:** Real-time object detection with text prompts (`yoloe_infer`).
-* **Semantic Occupancy & Grasping:**
-  * Generates semantic occupancy mapping using OctoMap.
-  * **Autonomous Grasping Integration:** Combines **YOLOE** (target localization) and **GraspNet** (pose estimation) to produce 6-DoF grasp poses from point clouds for arbitrary objects, with complex collision avoidance at both point cloud and OctoMap levels.
-* **Embodied Intelligence & Multi-modal LLM Interaction:**
-  * **Qwen3 LLM Engine:** Integrates the Qwen3 large language model, capable of parsing natural language instructions into robotic task sequences (navigation, grasping, etc.).
-  * **Scene Pre-recognition:** Utilizes Vision-Language Models (VLM) to automatically "look at" the current environment before executing tasks, dynamically adjusting and planning subsequent operations.
-  * **WebSocket-based Full-featured Web UI:** Provides an intuitive and beautiful browser-based control dashboard (including maps, camera streams, teleop joystick, status display, and an AI chat sidebar), completely eliminating the need for complex terminal operations.
+![LLM Agent](assets/Embodied_LLM.gif)
 
-## 📦 Architecture Overview
+## Setup
 
-### ROS 2 Packages
+Use Ubuntu 24.04, ROS 2 Jazzy and Isaac Sim 6.1. The tested local CUDA/TensorRT versions are 13.3/10.14.1.48. Install the NVIDIA driver and CUDA/TensorRT development libraries compatible with your GPU. Follow NVIDIA's [workstation installation](https://docs.isaacsim.omniverse.nvidia.com/6.1.0/installation/install_workstation.html) and [ROS setup](https://docs.isaacsim.omniverse.nvidia.com/6.1.0/installation/install_ros.html). Runtime code enables the required URDF importer, ROS bridge/control and experimental physics-sensor extensions.
 
-| Package | Purpose |
-|---------|---------|
-| `x_bot` | Main robot package: URDF, Gazebo worlds, launch files, nav configs, and the `robot_actions` MoveIt arm controller. |
-| `yoloe_infer` | TensorRT-based YOLOE object detection with text prompts. |
-| `graspnet_infer` | TensorRT-based GraspNet integration for 6-DoF grasp pose generation from point clouds. |
-| `m-explore-ros2` | `explore_lite` package adapted for ROS 2 to perform autonomous frontier-based exploration. |
-| `franka_description` | Franka FR3 arm URDF and robot meshes. |
-| `franka_ros2` | MoveIt 2 configs for the FR3 arm (`franka_fr3_moveit_config`). |
+Add your local paths to `~/.zshrc` or `~/.bashrc`:
 
-## 🛠️ System Requirements
+```bash
+export ISAAC_SIM_PATH="$HOME/isaacsim"
+export ISAAC_ASSETS_PATH="$HOME/isaacsim_assets/6.1"
+export CUDA_HOME=/usr/local/cuda
+export PATH="$CUDA_HOME/bin:/usr/src/tensorrt/bin:$PATH"
+export LD_LIBRARY_PATH="$CUDA_HOME/lib64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+```
 
-To ensure the simulation system runs correctly, please deploy in the following environment:
+Check `nvidia-smi`, `nvcc --version`, `trtexec --version` and that `$ISAAC_SIM_PATH/python.sh` is executable. Use system Python for ROS builds and Isaac's `python.sh` for asset tools. Deactivate Conda before building ROS packages. In interactive Zsh, source `setup.zsh`; project Bash scripts source `setup.bash` internally.
 
-| Dependency | Recommended Version |
-|---------|---------|
-| **Operating System** | [Ubuntu 24.04 (Noble)](https://ubuntu.com/download/desktop) |
-| **ROS 2** | [Jazzy Jalisco](https://docs.ros.org/en/jazzy/installation.html) ([One-click Install](https://fishros.org.cn/forum/topic/20)) |
-| **Gazebo** | [Harmonic (Gz Sim 8)](https://gazebosim.org/docs/harmonic/install) |
-| **CUDA** | [13.1](https://developer.nvidia.com/cuda-toolkit) |
-| **TensorRT** | [10.14.1.48](https://developer.nvidia.com/tensorrt) |
-| **Python** | 3.12+ |
+From the repository root:
 
-> **💻 Tested Hardware Reference**
->
-> This project runs smoothly on the following mid-range consumer hardware, making it accessible and easy to deploy:
-> *   **CPU**: Intel Core i5-13400F
-> *   **GPU**: NVIDIA GeForce RTX 4060
-> *   **Memory**: 32GB RAM
+```bash
+sudo apt update
+sudo apt install python3-vcstool python3-rosdep python3-colcon-common-extensions \
+  python3-numpy python3-yaml python3-dev libeigen3-dev libpcl-dev \
+  ros-jazzy-moveit ros-jazzy-moveit-ros-perception \
+  ros-jazzy-navigation2 ros-jazzy-nav2-bringup \
+  ros-jazzy-ros2-control ros-jazzy-ros2-controllers
+# Run sudo rosdep init once if rosdep has not been initialized.
+bash scripts/setup_isaac_dependencies.sh
+bash -c 'source /opt/ros/jazzy/setup.bash && rosdep update && rosdep install --from-paths src --ignore-src -r -y'
+```
 
-## 📦 Models Download
+The [dependency manifest](scripts/isaac.repos) pins FAST_LIO_ROS2 commit `2fffc570a25d0df172720bac034fbdb6a13d2162`. The setup script imports it into `src/isaac_vendor/FAST_LIO_ROS2` and initializes the ikd-Tree submodule. Keep this dependency for simulation builds. No Livox hardware SDK is required: `src/isaac_livox_interfaces` supplies the `livox_ros_driver2` message package. Do not add another package with that name.
 
-Since the model files are quite large, please download the pre-trained weights from the following link and place them in the specified directories:
+Download models from the [model folder](https://drive.google.com/drive/folders/1gPPyvKqiYd7cg2vUyqucV1CjLTf6J0y2?usp=drive_link):
 
-*   **Download Link**: [Google Drive Folder](https://drive.google.com/drive/folders/1gPPyvKqiYd7cg2vUyqucV1CjLTf6J0y2?usp=drive_link)
-
-| File Name | Placement Path (Relative to Project Root) |
-| :--- | :--- |
+| Model | Destination |
+|---|---|
 | `yoloe-v8l-text-prompt-multi_nc10_fp16.onnx` | `src/yoloe_infer/models/` |
 | `graspnet.onnx` | `src/graspnet_infer/` |
 
-> **Note**: `.trt` and `.engine` files are no longer provided. Generate them locally from the ONNX files using the instructions below.
-
-## 🚀 Quick Start Instructions
-
-> **IMPORTANT**: Before starting the build process, please ensure you have completed the installation of **ROS 2**, **Gazebo**, **CUDA**, and **TensorRT** as specified in the table above.
-
-### 1. Build the Workspace
+Keep the required `src/yoloe_infer/models/tokenizer_data.json.gz`. Generate engines locally when changing GPU or TensorRT versions:
 
 ```bash
-cd ~/Embodied-RobotSim
-# 1. Build TensorRT Plugins (required for GraspNet)
 bash src/graspnet_infer/tensorrt_plugins/build.sh
-
-# 2. Install dependencies (rosdep + additional system packages)
-rosdep update
-rosdep install --from-paths src --ignore-src -r -y
-sudo apt install ros-jazzy-gz-ros2-control ros-jazzy-moveit-ros-perception
-
-# 3. Build all ROS 2 packages
-colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
-source install/setup.bash
-```
-
-### 3. Generate TensorRT Engine Files
-
-TensorRT engine files are tied to your specific GPU and TensorRT version. They cannot be shared across devices and must be regenerated locally:
-
-```bash
-# YOLOE object detection model
 trtexec --onnx=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.onnx \
   --saveEngine=src/yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.engine
-
-# GraspNet grasping model (requires FPS plugin built in step 2)
 trtexec --onnx=src/graspnet_infer/graspnet.onnx \
   --saveEngine=src/graspnet_infer/graspnet.trt \
   --staticPlugins=src/graspnet_infer/tensorrt_plugins/build/libfps_plugin.so
+bash -c 'source /opt/ros/jazzy/setup.bash && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release'
 ```
 
-### 2. Run the Demos
+Default rooms are converted from the original `main` branch scenes, including textures. Keep a local `main` branch; a single-branch clone may need `git fetch origin main` and `git branch main origin/main` if absent. Missing default assets are converted on first startup, or prepare them explicitly:
 
-We provide three pre-configured one-click bash scripts in the root directory for different workflow modes.
-
-#### Mode 1: Autonomous Exploration & Mapping
-Automatically explore unknown environments using `explore_lite`, Cartographer and generated YOLOE/OctoMap:
 ```bash
-./start_explore_and_mapping.sh
+"$ISAAC_SIM_PATH/python.sh" scripts/assets/migrate_gazebo_scenes.py \
+  --worlds simple_room manipulation_test
+# Optional NVIDIA Office and Simple Room assets:
+"$ISAAC_SIM_PATH/python.sh" scripts/assets/download_isaac_environments.py
 ```
 
-#### Mode 2: Static Navigation
-Navigate the robot in an already mapped environment using Nav2 and Cartographer localization:
+Assets are cached under `$ISAAC_ASSETS_PATH`. `WORLD=simple_room` uses main's room, `WORLD=isaac_simple_room` uses NVIDIA's room, and `WORLD=office` uses the downloaded Office with additional indoor lighting. Change the map bundle and rebuild maps when switching worlds. Gazebo in the migration tool's name refers to the source asset format; Isaac runtime uses its converted USD; Gazebo uses the pinned SDF and source models.
+
+## Gazebo compatibility
+
+Gazebo uses the current Isaac-first task, mapping and motion defaults, FAST-LIO, ICP, Nav2 and the CUDA semantic mapper. Install optional dependencies and rebuild:
+
 ```bash
-./start_navigation.sh
+sudo apt install ros-jazzy-ros-gz ros-jazzy-gz-ros2-control \
+  ros-jazzy-gz-sim-vendor ros-jazzy-gz-common-vendor ros-jazzy-gz-plugin-vendor libembree-dev
+bash -c 'source /opt/ros/jazzy/setup.bash && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release'
+./start_explore_and_mapping.sh --sim gazebo
+./start_pick_and_place_demo.sh --sim gazebo
 ```
 
-#### Mode 3: Autonomous Mobile Grasping (Pick and Place)
-Spawn the robot in the `manipulation_test` world, start perception pipelines (YOLOE, GraspNet), and execute a semantic pick-and-place loop using MoveIt! (for example: identifying, grabbing, and placing a coke, a book, and a cup):
+Set `SIM_BACKEND=gazebo` in an entry script for argument-free Gazebo startup. Supported worlds are `simple_room` and `manipulation_test`; USD-only worlds are rejected. Gazebo maps live under `maps/gazebo/<world>`; existing Isaac map paths remain compatible. Gazebo semantic maps are saved to `semantic_map.svm` in the selected bundle. On completion, Gazebo exploration calls `/localization/save_map` to save the complete paired PCD/2D bundle. Existing bundles are protected from overwrite; choose a new `--bundle` when remapping. Use `DEPTH_SOURCE=sim` for the selected simulator's depth, or `lsm` for inferred depth. The legacy `isaac` depth value remains accepted only by Isaac.
+
+Shared base parameters live in `src/x_bot/config/base_motion.yaml`; Gazebo controller interface overrides live in `gazebo_controllers.yaml`, layered over the existing Isaac controller defaults. Gazebo joint-2 effort-drive gains, finger drives and friction live in `gazebo_physics.yaml`. Controllers load sequentially: manager discovery allows 600 s, each service call 300 s, and activation 120 s, including cold shader compilation and collision decomposition. The optional C++ backend uses Embree and Gazebo's native mesh loader for collision rays: 1,000 actual rays per 5 ms step, 100 ms packets, identical approximate nonrepeating directions and timestamps to Isaac. Dynamic scene meshes use convex decomposition shared by physics and Embree. Bottle damping uses physical forces and torques. Its ground truth never supplies navigation TF. Physical verification uses the neutral telemetry topic on both backends. PCA top grasps pair the depth-derived center and direction; retraction preserves vertical lift clearance with a 1 m minimum. Verification telemetry does not supply motion targets.
+
+Scene extraction is independent of Isaac Python and pinned to `92b0409ccf83549e74d03966bdde7f0f700ff927`, rather than the moving main branch. Keep full Git history for that revision. Missing Gazebo/Embree dependencies disable the optional plugin build, without preventing Isaac builds. See the Chinese guide for detailed setup.
+
+## Run
+
+Edit defaults at the top of the root scripts; no arguments are required. Isaac remains the default; append `--sim gazebo` to select Gazebo.
+
+| Entry point | Default behavior |
+|---|---|
+| `./start_explore_and_mapping.sh` | Automatic exploration/mapping in `simple_room` |
+| `./start_navigation.sh` | ICP localization and Nav2 in `simple_room` |
+| `./start_pick_and_place_demo.sh` | Pick/place book, cup, coke, bottle and shoe in `manipulation_test` |
+| `./start_navigation_and_pick_demo.sh` | Navigation and manipulation in `simple_room` |
+| `./start_llm_agent.sh` | Qwen3 task server and Web UI in `simple_room` |
+| `./stop_robot_sim.sh` | Stop ROS/Isaac/Gazebo services and close project service terminals |
+
+Startup cleans previous sessions and logs. One RViz displays FAST-LIO clouds, odometry trails, semantic voxels, maps and navigation paths. Use **Nav2 Goal** once navigation is ready. Set `AUTO_EXPLORE=false` for manual mapping/navigation, or pause exploration on `/explore/resume` with `std_msgs/msg/Bool {data: false}`.
+
+Save an exploration map from another ROS-enabled terminal:
+
 ```bash
-./start_pick_and_place_demo.sh
+source /opt/ros/jazzy/setup.zsh
+source install/setup.zsh
+ros2 service call /localization/save_map std_srvs/srv/Trigger '{}'
 ```
 
-#### Mode 4: Large Language Model Embodied Closed-Loop (LLM Agent + Web UI)
-> ⚠️ **Preparation before running**: This mode depends on the Qwen Large Language Model service provided by the Alibaba Cloud Bailian platform.
-> 1. Please go to the [Alibaba Cloud Bailian Platform](https://www.aliyun.com/product/bailian) to register/login, and create your **API Key** on the "API-KEY Management" page.
-> 2. Before running the startup script, you must export this API Key as an environment variable in your **current terminal**:
->    ```bash
->    export DASHSCOPE_API_KEY="your_DASHSCOPE_API_KEY"
->    ```
+Isaac default output: `maps/gazebo_simple_room`; Gazebo default: `maps/gazebo/simple_room`. Navigation modes require `bundle.json`, `map.pcd`, `map.yaml` and `map.pgm`; a 2D map alone is insufficient for ICP localization. Saving does not overwrite an existing bundle. Task coordinates must be checked when changing maps. Set `DASHSCOPE_API_KEY` before starting the LLM mode; Web UI runs at `http://localhost:8888`.
 
-This mode launches the full suite of low-level control and perception nodes, mounts the Qwen3 LLM Agent server, and finally opens the Web UI dashboard automatically in your browser. You can directly input natural language commands in the chat sidebar (e.g., "Go to the kitchen to get a coke", "Get a book from the study"), and the system will automatically recognize the scene and plan the execution:
+## Configuration
+
+FAST-LIO uses **`src/x_bot_localization/config/fastlio_mid360.yaml`**, not the vendor repository's default YAML. Topics are `/livox/lidar` and `/livox/imu`, lidar type is 1, scan lines 4, timestamp unit 3 (ns), and scan rate 10 Hz in simulation time. Time synchronization is disabled with zero offset because both sensors share the simulation clock. Simulated lidar/IMU origins are colocated, so extrinsics are zero translation and identity rotation, with online extrinsic estimation disabled. Map/surface filters use 0.15 m and point filtering uses every third point.
+
+The PhysX-raycast lidar approximates MID-360 sampling rather than its optical response. Physics/IMU run at 200 Hz and clouds at 10 Hz in simulation time. Navigation TF is `map → odom → base_footprint → mid360_imu_link`; FAST-LIO's native TF is kept private. Ground truth is debug-only. Known-map ICP requires an approximate initial pose; use RViz **2D Pose Estimate** to correct it. Invalid localization stops the base. Restart the complete localization pipeline after resetting the simulation clock.
+
+| File / setting | Purpose |
+|---|---|
+| Root script defaults | World, map bundle, initial pose, build and headless options |
+| `src/x_bot_localization/config/nav2_isaac.yaml` | Navigation velocity, footprint, inflation and path tracking |
+| `src/semantic_voxel_mapping/config/map.yaml` | Exploration semantic mapping |
+| `src/semantic_voxel_mapping/config/manipulation.yaml` | 2 cm manipulation mapping, 5 Hz integration / 2 Hz publication limits |
+| `src/yoloe_infer/configs/manipulation.yaml` | Manipulation classes/colors and semantic depth sampling |
+| `src/x_bot/config/isaac_controllers.yaml` | Controllers and gripper stall thresholds |
+| `src/x_bot/config/pick_and_place_demo.yaml` | Grasp task and physical verification |
+
+Exploration defaults to FAST-LIO geometry projected into synchronized RGB masks. Manipulation defaults to Isaac depth; set `DEPTH_SOURCE=lsm` with `SEMANTIC_CLOUD_SOURCE=depth` for stereo inferred depth. FAST-LIO mode does not need LSM. All semantic maps use the new CUDA voxel mapper; grasping gates cloud publication while YOLOE inference and images remain active, and occupancy updates resume after release. Semantic depth clouds use stride 2 while GraspNet keeps full density. See [semantic mapping](src/semantic_voxel_mapping/README.md) for details. `src/LSM_depth_infer` is an ignored local optional module; existing local files remain, but new clones must provide the module, configuration and inference engine and build `stereo_matching` before selecting `lsm`.
+
+Physical grasp checks verify lift, retained carry and settled placement. `/simulation/debug/object_states` is read-only validation telemetry (Isaac retains its legacy alias); perception selects targets and contact/friction move objects. An action success alone does not prove a physical grasp.
+
+## Repository organization and checks
+
+`scripts/robot_services.sh`, `isaac_runtime.sh` and `close_robot_terminals.py` implement common runtime/cleanup. `scripts/setup_isaac_dependencies.sh` uses `scripts/isaac.repos`. Asset utilities live in `scripts/assets`; optional read-only profiling lives in `scripts/diagnostics`. Offline regressions stay in `tests`. Historical validation reports and one-off migration validation scripts have been removed. Build products, map bundles and vendor dependencies are ignored.
+
 ```bash
-./start_llm_agent.sh
+python3 -m unittest discover -s tests -v
+# In a ROS-enabled terminal:
+python3 scripts/diagnostics/measure_isaac_performance.py --seconds 30 --output /tmp/isaac_performance.json
+ros2 topic echo /localization/ready
+ros2 topic echo /localization/status
+ros2 control list_controllers
 ```
 
-> **Note:** To quickly kill all related simulation and ROS 2 processes, use the helper script:  
-> `./stop_robot_sim.sh`
+Set `HEADLESS=true` to disable the observation viewport while retaining camera/ROS perception. Configured velocity is measured per simulation second; wall-clock motion depends on real-time factor. Profiling adds overhead. Without desktop terminals, service logs are written to `log/isaac` or `log/gazebo`.
 
-## ⚙️ Key Topics and Services
+During grasping, YOLOE keeps inference and annotated images active. The `/yoloe_multi_text_prompt/enable_pointcloud` (`std_srvs/srv/SetBool`) service gates both colored and semantic clouds; the demo restores publication on completion or failure. Occupancy updates from these clouds pause during grasping and resume afterward.
 
-* **/arm_command/pose** (Topic, `geometry_msgs/msg/PoseStamped`): Move the Franka arm to the desired pose.
-* **/robot_actions/go_home** (Service, `std_srvs/srv/Trigger`): Move the arm to its home standby position.
-* **/robot_actions/scan** (Service, `std_srvs/srv/Trigger`): Move the arm to its scanning pose for optimal camera coverage.
-* **/yoloe_multi_text_prompt/set_cloud_filter** (Topic, `std_msgs/msg/Int32`): Sets the target ID for point cloud filtering based on semantic detections.
-
-## 🤝 Contribution and Customization
-
-* **World Environments:** Modify or add Gazebo worlds inside `src/x_bot/worlds/` (includes `simple_room.sdf`, `ware_house.sdf`, etc.).
-* **Navigation Config:** Tune Nav2 and Cartographer parameters in `src/x_bot/config/`.
-## 👏 Acknowledgements
-
-This project is built upon the following open-source repositories. We sincerely thank the authors and maintainers for their contributions:
-
-* **[YOLOE](https://github.com/THU-MIG/yoloe):** Robust 2D object detection framework.
-* **[GraspNet-Baseline](https://github.com/graspnet/graspnet-baseline):** Foundation for 6-DoF grasp pose estimation.
-* **[m-explore-ros2](https://github.com/robo-friends/m-explore-ros2):** Autonomous exploration components for ROS 2.
-* **[franka_ros2](https://github.com/frankaemika/franka_ros2) & [franka_description](https://github.com/frankaemika/franka_description):** Official ROS 2 support from Franka Emika.
-* **[Cartographer](https://github.com/cartographer-project/cartographer_ros):** Advanced 2D/3D SLAM solution.
-* **[bcr_bot](https://github.com/blackcoffeerobotics/bcr_bot):** Reference for differential drive mobile base simulation.
+Thanks to FAST-LIO, FAST_LIO_ROS2, YOLOE, GraspNet, m-explore-ros2, Franka ROS 2 and bcr_bot. Original asset licenses are retained alongside cached scene sources.

@@ -1,0 +1,15 @@
+# Shared Isaac-first base conditioning; SI units, simulation time.
+radius: 0.06
+track: 0.45
+max_forward: 1.0
+max_reverse: 0.2
+linear_accel: 1.0
+linear_decel: 2.0
+max_angular: 1.2
+angular_accel: 1.5
+angular_decel: 2.0
+yaw_feed_forward: 1.0
+yaw_kp: 2.0
+yaw_ki: 2.0
+yaw_integral_limit: 2.5
+max_wheel_yaw_demand: 3.5

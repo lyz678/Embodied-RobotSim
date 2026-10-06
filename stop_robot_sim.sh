@@ -2,26 +2,24 @@
 
 echo "🛑 正在停止所有机器人仿真服务..."
 
+echo "关闭机器人服务终端窗口..."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 "$SCRIPT_DIR/scripts/close_robot_terminals.py"
+
 # 1. 停止 ROS2 守护进程 (最先停止，防止节点被发现或自动重连)
 echo "清理 ROS2 守护进程..."
 ros2 daemon stop
 pkill --ignore-ancestors -9 -f "ros2-daemon"
 
 # 2. 核心组件清理
-echo "停止核心组件 (Launch, Gazebo, RViz)..."
+echo "停止核心组件 (Launch, Isaac Sim, Gazebo, RViz)..."
 # 先尝试正常停止
 pkill --ignore-ancestors -f "ros2 launch"
 sleep 1
 # 强制停止
 pkill --ignore-ancestors -9 -f "ros2 launch"
-pkill --ignore-ancestors -9 -f "gz sim"
-pkill --ignore-ancestors -9 -f "gz-sim"
-pkill --ignore-ancestors -9 -f "gzserver"
-pkill --ignore-ancestors -9 -f "gzclient"
 pkill --ignore-ancestors -9 -f "rviz2"
 pkill --ignore-ancestors -9 -f "rqt"
-killall -9 gz 2>/dev/null
-killall -9 ruby 2>/dev/null
 
 # 3. 强力清理模式：匹配关键字
 echo "正在强力清理所有 ROS 相关进程..."
@@ -42,8 +40,6 @@ patterns=(
     "joint_state_publisher"
     "static_transform_publisher"
     "component_container"
-    "ros_gz_bridge"
-    "parameter_bridge"
     # 用户项目特定节点
     "yoloe"
     "graspnet"
@@ -52,6 +48,17 @@ patterns=(
     "x_bot"
     "fps_plugin"
     "stereo_matching"
+    "semantic_voxel_node"
+    "color_octomap_server_node"
+    # Gazebo backend
+    "gz sim"
+    "gz-sim-server"
+    "gz-sim-gui"
+    "gazebo_backend.launch.py"
+    # Isaac Sim backend
+    "src/x_bot/isaac_sim/run_sim.py"
+    "isaac-sim"
+    "isaacsim"
 )
 
 for pattern in "${patterns[@]}"; do
@@ -72,9 +79,7 @@ pkill --ignore-ancestors -9 -f "tf2_tools"
 pkill --ignore-ancestors -9 -f "colcon build"
 
 # 6. 清理日志文件 (可选，保持环境整洁)
-echo "清理 ROS2 和 Gazebo 日志..."
+echo "清理 ROS2 日志..."
 rm -rf ~/.ros/log/*
-rm -rf ~/.gazebo/log/*
-rm -rf ~/.gz/sim/log/*
 
 echo "✅ 所有服务已停止，环境清理完成！"

@@ -45,6 +45,10 @@
     <xacro:arg name="sim_gazebo" default="false" />
     <xacro:arg name="sim_ign" default="false" />
     <xacro:arg name="sim_gz" default="false" />
+    <xacro:arg name="mid360_enabled" default="false" />
+    <xacro:arg name="sim_isaac" default="false" />
+    <xacro:arg name="mid360_xyz" default="0.25 0 0.0875" />
+    <xacro:arg name="mid360_rpy" default="0 0 0" />
     <xacro:arg name="odometry_source" default="world" />
 
     <xacro:property name="odometry_source" value="$(arg odometry_source)"/>
@@ -69,12 +73,29 @@
     <!-- ................................ BASE LINK .................................. -->
     <link name="base_footprint"/>
 
-    <link name="base_link"/>
+    <link name="base_link">
+        <!-- Give Isaac a physical root above both chassis and wheel branches. -->
+        <xacro:if value="$(arg sim_isaac)">
+            <inertial>
+                <!-- A tiny root body is ill-conditioned against the 70 kg
+                     chassis. Allocate 1 kg of chassis mass to the root. -->
+                <mass value="1"/>
+                <xacro:cylinder_inertia m="1" r="${chassis_radius}" h="${chassis_height}"/>
+            </inertial>
+        </xacro:if>
+    </link>
 
     <joint name="base_joint" type="fixed">
         <parent link="base_footprint"/>
         <child link="base_link"/>
-        <origin xyz="0.0 0 ${chassis_height/2 + traction_wheel_radius}" rpy="0 0 0.0" />
+        <!-- Isaac spawns base_footprint on z=0: wheel centres must be one
+             radius above that plane (wheel joints are 0.09 m below base_link). -->
+        <xacro:if value="${'$(arg sim_isaac)' == 'true' or '$(arg mid360_enabled)' == 'true'}">
+            <origin xyz="0 0 ${chassis_height/2 + 1.5*traction_wheel_radius}" rpy="0 0 0"/>
+        </xacro:if>
+        <xacro:unless value="${'$(arg sim_isaac)' == 'true' or '$(arg mid360_enabled)' == 'true'}">
+            <origin xyz="0.0 0 ${chassis_height/2 + traction_wheel_radius}" rpy="0 0 0.0" />
+        </xacro:unless>
     </joint>
 
     <link name="chassis_link">
@@ -95,8 +116,14 @@
         </visual>
 
         <inertial>
-            <mass value="${chassis_mass}" />
-            <xacro:cylinder_inertia m="${chassis_mass}" r="${chassis_radius}" h="${chassis_height}"/>
+            <xacro:if value="$(arg sim_isaac)">
+                <mass value="${chassis_mass-1}"/>
+                <xacro:cylinder_inertia m="${chassis_mass-1}" r="${chassis_radius}" h="${chassis_height}"/>
+            </xacro:if>
+            <xacro:unless value="$(arg sim_isaac)">
+                <mass value="${chassis_mass}" />
+                <xacro:cylinder_inertia m="${chassis_mass}" r="${chassis_radius}" h="${chassis_height}"/>
+            </xacro:unless>
         </inertial>
 
     </link>
@@ -118,6 +145,7 @@
 
     <!-- ............................. 2D LIDAR ........................................ -->
 
+    <xacro:unless value="$(arg sim_isaac)">
     <xacro:if value="$(arg two_d_lidar_enabled)">
 
         <link name="two_d_lidar">
@@ -155,8 +183,33 @@
 
     </xacro:if>
 
-    <!-- ............................. IMU ........................................ -->
+    </xacro:unless>
 
+    <!-- Shared roof sensor; Gazebo explicitly enables it. -->
+    <xacro:if value="${'$(arg sim_isaac)' == 'true' or '$(arg mid360_enabled)' == 'true'}">
+        <link name="mid360_link">
+            <visual><geometry><box size="0.065 0.065 0.060"/></geometry><material name="black"/></visual>
+            <collision><geometry><box size="0.065 0.065 0.060"/></geometry></collision>
+            <!-- 50 mm standoff below the sensor housing. -->
+            <visual><origin xyz="0 0 -0.055"/><geometry><box size="0.020 0.020 0.050"/></geometry><material name="black"/></visual>
+            <collision><origin xyz="0 0 -0.055"/><geometry><box size="0.020 0.020 0.050"/></geometry></collision>
+            <inertial>
+                <mass value="0.265"/>
+                <inertia ixx="0.00017280" ixy="0" ixz="0" iyy="0.00017280" iyz="0" izz="0.00018660"/>
+            </inertial>
+        </link>
+        <joint name="mid360_joint" type="fixed">
+            <parent link="roof_link"/><child link="mid360_link"/>
+            <origin xyz="$(arg mid360_xyz)" rpy="$(arg mid360_rpy)"/>
+        </joint>
+        <link name="mid360_imu_link"/>
+        <joint name="mid360_imu_joint" type="fixed">
+            <parent link="mid360_link"/><child link="mid360_imu_link"/>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+        </joint>
+    </xacro:if>
+
+    <!-- Legacy Gazebo IMU frame is retained for backend compatibility. -->
     <link name="imu_frame"/>
 
     <joint name="imu_joint" type="fixed">
@@ -212,6 +265,13 @@
             </geometry>
             <material name="grey"/>
         </visual>
+        <xacro:if value="$(arg sim_isaac)">
+            <collision>
+                <geometry>
+                    <cylinder radius="0.02" length="0.08"/>
+                </geometry>
+            </collision>
+        </xacro:if>
     </link>
     <joint name="pillar_fl_joint" type="fixed">
         <parent link="chassis_link"/>
@@ -228,6 +288,13 @@
             </geometry>
             <material name="grey"/>
         </visual>
+        <xacro:if value="$(arg sim_isaac)">
+            <collision>
+                <geometry>
+                    <cylinder radius="0.02" length="0.08"/>
+                </geometry>
+            </collision>
+        </xacro:if>
     </link>
     <joint name="pillar_fr_joint" type="fixed">
         <parent link="chassis_link"/>
@@ -244,6 +311,13 @@
             </geometry>
             <material name="grey"/>
         </visual>
+        <xacro:if value="$(arg sim_isaac)">
+            <collision>
+                <geometry>
+                    <cylinder radius="0.02" length="0.08"/>
+                </geometry>
+            </collision>
+        </xacro:if>
     </link>
     <joint name="pillar_bl_joint" type="fixed">
         <parent link="chassis_link"/>
@@ -260,6 +334,13 @@
             </geometry>
             <material name="grey"/>
         </visual>
+        <xacro:if value="$(arg sim_isaac)">
+            <collision>
+                <geometry>
+                    <cylinder radius="0.02" length="0.08"/>
+                </geometry>
+            </collision>
+        </xacro:if>
     </link>
     <joint name="pillar_br_joint" type="fixed">
         <parent link="chassis_link"/>
@@ -316,37 +397,69 @@
     </joint>
 
     <xacro:include filename="$(find franka_description)/robots/common/franka_robot.xacro"/>
-    <xacro:include filename="$(find x_bot)/urdf/fr3_ros2_control.xacro"/>
+    <xacro:unless value="$(arg sim_isaac)">
+        <xacro:include filename="$(find x_bot)/urdf/fr3_ros2_control.xacro"/>
+    </xacro:unless>
 
     <!-- Instantiate FR3 Arm -->
     <!-- Using robot_type='fr3', connected to 'fr3_mount_link' -->
     <!-- Setting ros2_control=false to suppress default franka_ros2 control loading -->
     <!-- Setting gazebo=true to enabling gazebo mechanics (mass/inertia) -->
-    <xacro:franka_robot 
-        robot_type="fr3"
-        parent="fr3_mount_link"
-        xyz="0 0 0" 
-        rpy="0 0 0"
-        rpy_ee="0 0 ${-pi/4}"
-        hand="true"
-        ee_id="franka_hand"
-        gazebo="true"
-        ros2_control="false"
-        with_sc="false"
-        joint_limits="${xacro.load_yaml('$(find franka_description)/robots/fr3/joint_limits.yaml')}"
-        inertials="${xacro.load_yaml('$(find franka_description)/robots/fr3/inertials.yaml')}"
-        kinematics="${xacro.load_yaml('$(find franka_description)/robots/fr3/kinematics.yaml')}"
-        dynamics="${xacro.load_yaml('$(find franka_description)/robots/fr3/dynamics.yaml')}"
-    />
+    <xacro:if value="$(arg sim_isaac)">
+        <xacro:franka_robot
+            robot_type="fr3"
+            parent="fr3_mount_link"
+            connected_to=""
+            xyz="0 0 0"
+            rpy="0 0 0"
+            rpy_ee="0 0 ${-pi/4}"
+            hand="true"
+            ee_id="franka_hand"
+            gazebo="false"
+            ros2_control="false"
+            with_sc="false"
+            joint_limits="${xacro.load_yaml('$(find franka_description)/robots/fr3/joint_limits.yaml')}"
+            inertials="${xacro.load_yaml('$(find franka_description)/robots/fr3/inertials.yaml')}"
+            kinematics="${xacro.load_yaml('$(find franka_description)/robots/fr3/kinematics.yaml')}"
+            dynamics="${xacro.load_yaml('$(find franka_description)/robots/fr3/dynamics.yaml')}"
+        />
+        <!-- With gazebo=false, the Franka macro does not use parent and would
+             otherwise create a disconnected default base link. -->
+        <joint name="fr3_base_joint" type="fixed">
+            <parent link="fr3_mount_link"/>
+            <child link="fr3_link0"/>
+            <origin xyz="0 0 0" rpy="0 0 0"/>
+        </joint>
+    </xacro:if>
+    <xacro:unless value="$(arg sim_isaac)">
+        <xacro:franka_robot
+            robot_type="fr3"
+            parent="fr3_mount_link"
+            xyz="0 0 0"
+            rpy="0 0 0"
+            rpy_ee="0 0 ${-pi/4}"
+            hand="true"
+            ee_id="franka_hand"
+            gazebo="true"
+            ros2_control="false"
+            with_sc="false"
+            joint_limits="${xacro.load_yaml('$(find franka_description)/robots/fr3/joint_limits.yaml')}"
+            inertials="${xacro.load_yaml('$(find franka_description)/robots/fr3/inertials.yaml')}"
+            kinematics="${xacro.load_yaml('$(find franka_description)/robots/fr3/kinematics.yaml')}"
+            dynamics="${xacro.load_yaml('$(find franka_description)/robots/fr3/dynamics.yaml')}"
+        />
+    </xacro:unless>
 
     <!-- Load Custom FR3 ROS2 Control Plugin for Gazebo -->
-    <xacro:fr3_ros2_control arm_id="fr3"/>
+    <xacro:unless value="$(arg sim_isaac)">
+        <xacro:fr3_ros2_control arm_id="fr3"/>
+    </xacro:unless>
 
     <!-- ........................... CAMERA (On Arm) .................................. -->
     <!-- Optional: Add camera to arm flange if needed. FR3 flange link is 'fr3_link8' or 'fr3_hand' -->
     <xacro:if value="$(arg camera_enabled)">
          <xacro:include filename="$(find x_bot)/urdf/intel_rgbd_cam_d435.urdf.xacro"/>
-         <xacro:intel_rgbd_cam_d435 parent="fr3_hand">
+         <xacro:intel_rgbd_cam_d435 parent="fr3_hand" sim_isaac="$(arg sim_isaac)">
              <origin xyz="0.03 0 0.06" rpy="${pi} ${-pi/2} 0"/>
          </xacro:intel_rgbd_cam_d435>
     </xacro:if>

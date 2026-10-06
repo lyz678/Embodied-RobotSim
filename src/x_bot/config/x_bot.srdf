@@ -55,6 +55,16 @@
     </group_state>
 
     <!-- Collisions -->
+    <!-- Fixed chassis supports overlap at their bolted connections. -->
+    <disable_collisions link1="pillar_bl" link2="chassis_link" reason="Adjacent"/>
+    <disable_collisions link1="pillar_bl" link2="roof_link" reason="Adjacent"/>
+    <disable_collisions link1="pillar_br" link2="chassis_link" reason="Adjacent"/>
+    <disable_collisions link1="pillar_br" link2="roof_link" reason="Adjacent"/>
+    <disable_collisions link1="pillar_fl" link2="chassis_link" reason="Adjacent"/>
+    <disable_collisions link1="pillar_fl" link2="roof_link" reason="Adjacent"/>
+    <disable_collisions link1="pillar_fr" link2="chassis_link" reason="Adjacent"/>
+    <disable_collisions link1="pillar_fr" link2="roof_link" reason="Adjacent"/>
+
     <!-- FR3 internal collisions are handled by its own URDF but we need to handle robot-base collisions -->
     <disable_collisions link1="fr3_link0" link2="base_link" reason="Adjacent"/>
     <disable_collisions link1="fr3_link0" link2="roof_link" reason="Adjacent"/>

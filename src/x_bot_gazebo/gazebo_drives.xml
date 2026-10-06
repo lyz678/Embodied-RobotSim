@@ -1,0 +1,6 @@
+<library path="gazebo_drives">
+  <class name="x_bot_gazebo/GazeboDriveSystem" type="embodied::GazeboDriveSystem"
+         base_class_type="gz_ros2_control::GazeboSimSystemInterface">
+    <description>Native Gazebo drives with independently bounded finger servos.</description>
+  </class>
+</library>
