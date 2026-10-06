@@ -33,7 +33,7 @@ public:
    * @param costmap Reference to costmap data to search.
    */
   FrontierSearch(nav2_costmap_2d::Costmap2D* costmap, double potential_scale,
-                 double gain_scale, double min_frontier_size, rclcpp::Logger logger);
+                 double gain_scale, double min_frontier_size, rclcpp::Logger logger, unsigned char max_travel_cost = 200);
 
   /**
    * @brief Runs search implementation, outward from the start position
@@ -78,6 +78,8 @@ protected:
 private:
   nav2_costmap_2d::Costmap2D* costmap_;
   unsigned char* map_;
+  unsigned char max_travel_cost_ = 200;
+  std::vector<bool> reachable_;
   unsigned int size_x_, size_y_;
   double potential_scale_, gain_scale_;
   double min_frontier_size_;

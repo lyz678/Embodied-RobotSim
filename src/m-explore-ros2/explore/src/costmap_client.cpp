@@ -219,12 +219,14 @@ void Costmap2DClient::updatePartialMap(
   }
 }
 
-geometry_msgs::msg::Pose Costmap2DClient::getRobotPose() const
+geometry_msgs::msg::Pose Costmap2DClient::getRobotPose(bool *valid) const
 {
+  if (valid) *valid = false;
   geometry_msgs::msg::PoseStamped robot_pose;
   geometry_msgs::msg::Pose empty_pose;
+  robot_pose.pose.orientation.w = 1.0;
   robot_pose.header.frame_id = robot_base_frame_;
-  robot_pose.header.stamp = node_.now();
+  robot_pose.header.stamp = rclcpp::Time(0);
 
   auto& clk = *node_.get_clock();
 
@@ -254,6 +256,14 @@ geometry_msgs::msg::Pose Costmap2DClient::getRobotPose() const
     return empty_pose;
   }
 
+  // Lidar odometry arrives at scan rate; request its latest available sample
+  // rather than waiting for a future transform at the timer's current time.
+  const auto stamp = rclcpp::Time(robot_pose.header.stamp, node_.get_clock()->get_clock_type());
+  if (stamp.nanoseconds() != 0 && (node_.now()-stamp).seconds() > transform_tolerance_) {
+    RCLCPP_WARN_THROTTLE(node_.get_logger(), clk, 5000, "Robot transform is stale; waiting for localization");
+    return empty_pose;
+  }
+  if (valid) *valid = true;
   return robot_pose.pose;
 }
 

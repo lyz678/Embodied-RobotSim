@@ -67,6 +67,8 @@ using namespace std::placeholders;
 #else
 #define ACTION_NAME "navigate_to_pose"
 #endif
+#include <explore/frontier_retry.h>
+
 namespace explore
 {
 /**
@@ -124,7 +126,9 @@ private:
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr resume_subscription_;
   void resumeCallback(const std_msgs::msg::Bool::SharedPtr msg);
 
-  std::vector<geometry_msgs::msg::Point> frontier_blacklist_;
+  FrontierRetry frontier_retry_;
+  int empty_checks_ = 0;
+  int completion_checks_ = 5;
   geometry_msgs::msg::Point prev_goal_;
   size_t last_markers_count_;
 

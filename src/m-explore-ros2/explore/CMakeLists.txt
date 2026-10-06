@@ -113,6 +113,9 @@ if(BUILD_TESTING)
 
   find_package(ament_cmake_gtest REQUIRED)
 
+  ament_add_gtest(test_frontier_coverage test/test_frontier_coverage.cpp src/frontier_search.cpp)
+  ament_target_dependencies(test_frontier_coverage ${DEPENDENCIES})
+
   ament_add_gtest(test_explore test/test_explore.cpp)
   target_link_libraries(test_explore ${catkin_LIBRARIES})
   ament_target_dependencies(test_explore ${DEPENDENCIES})

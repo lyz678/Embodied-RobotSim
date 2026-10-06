@@ -14,8 +14,10 @@ using nav2_costmap_2d::NO_INFORMATION;
 
 FrontierSearch::FrontierSearch(nav2_costmap_2d::Costmap2D* costmap,
                                double potential_scale, double gain_scale,
-                               double min_frontier_size, rclcpp::Logger logger)
+                               double min_frontier_size, rclcpp::Logger logger,
+                               unsigned char max_travel_cost)
   : costmap_(costmap)
+  , max_travel_cost_(max_travel_cost)
   , potential_scale_(potential_scale)
   , gain_scale_(gain_scale)
   , min_frontier_size_(min_frontier_size)
@@ -43,42 +45,39 @@ FrontierSearch::searchFrom(geometry_msgs::msg::Point position)
   size_x_ = costmap_->getSizeInCellsX();
   size_y_ = costmap_->getSizeInCellsY();
 
-  // initialize flag arrays to keep track of visited and frontier cells
   std::vector<bool> frontier_flag(size_x_ * size_y_, false);
-  std::vector<bool> visited_flag(size_x_ * size_y_, false);
-
-  // initialize breadth first search
+  reachable_.assign(size_x_ * size_y_, false);
   std::queue<unsigned int> bfs;
-
-  // find closest clear cell to start search
-  unsigned int clear, pos = costmap_->getIndex(mx, my);
-  if (nearestCell(clear, pos, FREE_SPACE, *costmap_)) {
-    bfs.push(clear);
-  } else {
-    bfs.push(pos);
-    RCLCPP_WARN(logger_, "[FrontierSearch] Could not find nearby clear cell to start search");
+  const unsigned int pos = costmap_->getIndex(mx, my);
+  unsigned int start = pos;
+  if (map_[start] > max_travel_cost_ &&
+      !nearestCell(start, pos, FREE_SPACE, *costmap_)) {
+    RCLCPP_WARN(logger_, "No traversable cell near robot; retry after costmap update");
+    return frontier_list;
   }
-  visited_flag[bfs.front()] = true;
-
+  bfs.push(start);
+  reachable_[start] = true;
+  // Inflation gradients are traversable in both directions. The old descending
+  // flood-fill could not cross from clear space into inflated corner cells.
   while (!bfs.empty()) {
-    unsigned int idx = bfs.front();
+    const auto idx = bfs.front();
     bfs.pop();
-
-    // iterate over 4-connected neighbourhood
-    for (unsigned nbr : nhood4(idx, *costmap_)) {
-      // add to queue all free, unvisited cells, use descending search in case
-      // initialized on non-free cell
-      if (map_[nbr] <= map_[idx] && !visited_flag[nbr]) {
-        visited_flag[nbr] = true;
+    for (auto nbr : nhood4(idx, *costmap_)) {
+      if (!reachable_[nbr] && map_[nbr] <= max_travel_cost_) {
+        reachable_[nbr] = true;
         bfs.push(nbr);
-        // check if cell is new frontier cell (unvisited, NO_INFORMATION, free
-        // neighbour)
-      } else if (isNewFrontierCell(nbr, frontier_flag)) {
+      }
+    }
+  }
+  // Only consider unknown boundaries adjacent to the robot's reachable component.
+  for (unsigned int idx = 0; idx < reachable_.size(); ++idx) {
+    if (!reachable_[idx]) continue;
+    for (auto nbr : nhood4(idx, *costmap_)) {
+      if (isNewFrontierCell(nbr, frontier_flag)) {
         frontier_flag[nbr] = true;
-        Frontier new_frontier = buildNewFrontier(nbr, pos, frontier_flag);
-        if (new_frontier.size * costmap_->getResolution() >=
-            min_frontier_size_) {
-          frontier_list.push_back(new_frontier);
+        auto frontier = buildNewFrontier(nbr, pos, frontier_flag);
+        if (frontier.size * costmap_->getResolution() >= min_frontier_size_) {
+          frontier_list.push_back(frontier);
         }
       }
     }
@@ -99,74 +98,60 @@ Frontier FrontierSearch::buildNewFrontier(unsigned int initial_cell,
                                           unsigned int reference,
                                           std::vector<bool>& frontier_flag)
 {
-  // initialize frontier structure
   Frontier output;
-  output.centroid.x = 0;
-  output.centroid.y = 0;
-  output.size = 1;
+  output.size = 0;
+  output.centroid.x = output.centroid.y = 0.;
   output.min_distance = std::numeric_limits<double>::infinity();
-
-  // record initial contact point for frontier
   unsigned int ix, iy;
   costmap_->indexToCells(initial_cell, ix, iy);
   costmap_->mapToWorld(ix, iy, output.initial.x, output.initial.y);
-
-  // push initial gridcell onto queue
   std::queue<unsigned int> bfs;
   bfs.push(initial_cell);
-
-  // cache reference position in world coords
-  unsigned int rx, ry;
-  double reference_x, reference_y;
-  costmap_->indexToCells(reference, rx, ry);
-  costmap_->mapToWorld(rx, ry, reference_x, reference_y);
-
   while (!bfs.empty()) {
-    unsigned int idx = bfs.front();
+    const auto idx = bfs.front();
     bfs.pop();
-
-    // try adding cells in 8-connected neighborhood to frontier
-    for (unsigned int nbr : nhood8(idx, *costmap_)) {
-      // check if neighbour is a potential frontier cell
+    unsigned int mx, my;
+    geometry_msgs::msg::Point point;
+    costmap_->indexToCells(idx, mx, my);
+    costmap_->mapToWorld(mx, my, point.x, point.y);
+    output.points.push_back(point);
+    output.centroid.x += point.x;
+    output.centroid.y += point.y;
+    ++output.size;
+    for (auto nbr : nhood8(idx, *costmap_)) {
       if (isNewFrontierCell(nbr, frontier_flag)) {
-        // mark cell as frontier
         frontier_flag[nbr] = true;
-        unsigned int mx, my;
-        double wx, wy;
-        costmap_->indexToCells(nbr, mx, my);
-        costmap_->mapToWorld(mx, my, wx, wy);
-
-        geometry_msgs::msg::Point point;
-        point.x = wx;
-        point.y = wy;
-        output.points.push_back(point);
-
-        // update frontier size
-        output.size++;
-
-        // update centroid of frontier
-        output.centroid.x += wx;
-        output.centroid.y += wy;
-
-        // determine frontier's distance from robot, going by closest gridcell
-        // to robot
-        double distance = sqrt(pow((double(reference_x) - double(wx)), 2.0) +
-                               pow((double(reference_y) - double(wy)), 2.0));
-        if (distance < output.min_distance) {
-          output.min_distance = distance;
-          output.middle.x = wx;
-          output.middle.y = wy;
-        }
-
-        // add to queue for breadth first search
         bfs.push(nbr);
       }
     }
   }
-
-  // average out frontier centroid
   output.centroid.x /= output.size;
   output.centroid.y /= output.size;
+  // A centroid can lie in a wall, or inside unknown space. Pick a known,
+  // reachable neighbor closest to it, facing the unknown boundary on arrival.
+  double best = std::numeric_limits<double>::infinity();
+  unsigned int rx, ry;
+  double reference_x, reference_y;
+  costmap_->indexToCells(reference, rx, ry);
+  costmap_->mapToWorld(rx, ry, reference_x, reference_y);
+  for (const auto &point : output.points) {
+    unsigned int mx, my;
+    costmap_->worldToMap(point.x, point.y, mx, my);
+    for (auto nbr : nhood4(costmap_->getIndex(mx, my), *costmap_)) {
+      if (!reachable_[nbr]) continue;
+      geometry_msgs::msg::Point candidate;
+      costmap_->indexToCells(nbr, mx, my);
+      costmap_->mapToWorld(mx, my, candidate.x, candidate.y);
+      output.min_distance = std::min(output.min_distance,
+          std::hypot(candidate.x-reference_x, candidate.y-reference_y));
+      const auto score = std::hypot(candidate.x-output.centroid.x,
+                                   candidate.y-output.centroid.y);
+      if (score < best) {
+        best = score;
+        output.middle = candidate;
+      }
+    }
+  }
   return output;
 }
 
@@ -181,7 +166,7 @@ bool FrontierSearch::isNewFrontierCell(unsigned int idx,
   // frontier cells should have at least one cell in 4-connected neighbourhood
   // that is free
   for (unsigned int nbr : nhood4(idx, *costmap_)) {
-    if (map_[nbr] == FREE_SPACE) {
+    if (reachable_[nbr]) {
       return true;
     }
   }
@@ -191,8 +176,7 @@ bool FrontierSearch::isNewFrontierCell(unsigned int idx,
 
 double FrontierSearch::frontierCost(const Frontier& frontier)
 {
-  return (potential_scale_ * frontier.min_distance *
-          costmap_->getResolution()) -
+  return (potential_scale_ * frontier.min_distance) -
          (gain_scale_ * frontier.size * costmap_->getResolution());
 }
 }  // namespace frontier_exploration

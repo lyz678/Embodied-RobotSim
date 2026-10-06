@@ -2,6 +2,31 @@
 
 ROS2 package port for multi-robot autonomous exploration of [m-explore](https://github.com/hrnr/m-explore). Currently tested on Eloquent, Dashing, Foxy, and Galactic distros.
 
+### Embodied-RobotSim：角落覆盖配置
+
+本项目使用 `explore/config/params_costmap.yaml`，默认启动入口为根目录的 `start_explore_and_mapping.sh`，Isaac 和 Gazebo 共用探索逻辑。
+
+前沿搜索遍历已知可通行区域，包含允许通行的膨胀区，避开内切膨胀代价、障碍和未知格子。导航目标使用前沿旁的可达观察点，朝向未知边界；不直接将前沿质心当作目标。到达后等待传感器更新，失败目标延时重试。定位 TF 失效或目标仍在导航时，不触发探索完成。
+
+| 参数 | 默认值 | 用途 |
+|---|---|---|
+| `min_frontier_size` | `0.1` m | 保留小型角落前沿 |
+| `max_travel_cost` | `200` | 搜索允许的最大格子代价，范围 0–252；不改变 Nav2 安全代价地图 |
+| `completion_checks` | `5` | 连续无前沿确认次数；默认 0.5 Hz 下约等待 10 秒 |
+| `retry_cooldown` | `20.0` s | 失败目标的重试等待时间 |
+| `observation_wait` | `6.0` s | 成功到达后等待观测更新 |
+| `blacklist_radius` | `0.25` m | 同一观察点的重试抑制范围 |
+| `max_goal_attempts` | `3` | 同一位置的最多尝试次数，防止不可达前沿无限重试 |
+
+剩余前沿全部超过尝试次数时，日志会说明仍有未解决区域（不可达，或重复到达仍未获得新观测）。完全封闭、没有可通行连接的区域不会强行驶入；前沿优化也不能补出传感器未实际观测到的地图。
+
+构建和功能回归：
+
+```bash
+colcon build --packages-select explore_lite --symlink-install
+colcon test --packages-select explore_lite --ctest-args -R 'test_frontier_coverage|test_explore'
+```
+
 ### Contents
 1. [Autonomous exploration](#Autonomous-exploration)
     * [Demo in simulation with a TB3 robot](#Simulation-with-a-TB3-robot)    

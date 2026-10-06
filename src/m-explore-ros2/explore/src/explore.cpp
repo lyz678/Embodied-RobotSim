@@ -79,6 +79,20 @@ Explore::Explore()
   this->declare_parameter<bool>("return_to_init", false);
   this->declare_parameter<std::string>("map_save_path", "");
   this->declare_parameter<std::string>("map_save_service", "");
+  const auto travel_cost = this->declare_parameter<int>("max_travel_cost", 200);
+  completion_checks_ = this->declare_parameter<int>("completion_checks", 5);
+  frontier_retry_.radius = this->declare_parameter<double>("blacklist_radius", .25);
+  frontier_retry_.failure_cooldown = this->declare_parameter<double>("retry_cooldown", 20.);
+  frontier_retry_.success_cooldown = this->declare_parameter<double>("observation_wait", 6.);
+  const auto attempts = this->declare_parameter<int>("max_goal_attempts", 3);
+  if (travel_cost < 0 || travel_cost >= 253 || completion_checks_ < 1 || attempts < 1 ||
+      !std::isfinite(frontier_retry_.radius) || frontier_retry_.radius <= 0 ||
+      !std::isfinite(frontier_retry_.failure_cooldown) || frontier_retry_.failure_cooldown < 0 ||
+      !std::isfinite(frontier_retry_.success_cooldown) || frontier_retry_.success_cooldown < 0) {
+    throw std::invalid_argument("Invalid frontier traversal/retry parameters");
+  }
+  frontier_retry_.max_attempts = static_cast<unsigned>(attempts);
+
 
   this->get_parameter("planner_frequency", planner_frequency_);
   this->get_parameter("stuck_distance_threshold", stuck_distance_threshold_);  // 获取卡住距离检测阈值
@@ -104,7 +118,7 @@ Explore::Explore()
   // FrontierSearch(costmap, potential_scale, gain_scale, min_frontier_size, logger)
   search_ = frontier_exploration::FrontierSearch(costmap_client_.getCostmap(),
                                                  potential_scale_, gain_scale_,
-                                                 min_frontier_size, logger_);
+                                                 min_frontier_size, logger_, static_cast<unsigned char>(travel_cost));
 
   if (visualize_) {
     marker_array_publisher_ =
@@ -214,7 +228,7 @@ void Explore::visualizeFrontiers(
     m.scale.y = 0.1;
     m.scale.z = 0.1;
     m.points = frontier.points;
-    if (goalOnBlacklist(frontier.centroid)) {
+    if (goalOnBlacklist(frontier.middle)) {
       m.color = red;
     } else {
       m.color = blue;
@@ -256,7 +270,9 @@ void Explore::makePlan()
   // ⚠️ 注意：每次调用都会重新评估当前情况，可能改变导航目标！
 
   // 📍 获取当前机器人位姿
-  auto pose = costmap_client_.getRobotPose();
+  bool pose_valid = false;
+  auto pose = costmap_client_.getRobotPose(&pose_valid);
+  if (!pose_valid) { empty_checks_ = 0; return; }
 
   // 🔍 前沿检测 - 寻找已知区域与未知区域的边界
   // search_.searchFrom() 返回按代价排序的前沿列表（每次都会重新计算）
@@ -268,10 +284,15 @@ void Explore::makePlan()
     RCLCPP_DEBUG(logger_, "frontier %zd cost: %f", i, frontiers[i].cost);
   }
 
-  // ❌ 无前沿可探索 - 停止探索
   if (frontiers.empty()) {
-    RCLCPP_WARN(logger_, "No frontiers found, stopping.");
-    stop(true);  // finished_exploring = true
+    if (navigating_) { empty_checks_ = 0; return; }
+    if (++empty_checks_ < completion_checks_) {
+      RCLCPP_INFO(logger_, "No frontier this tick (%d/%d); waiting for map observations",
+                  empty_checks_, completion_checks_);
+      return;
+    }
+    RCLCPP_INFO(logger_, "No reachable frontiers after %d checks; finishing exploration", empty_checks_);
+    stop(true);
     return;
   }
 
@@ -285,18 +306,25 @@ void Explore::makePlan()
   auto frontier =
       std::find_if_not(frontiers.begin(), frontiers.end(),
                        [this](const frontier_exploration::Frontier& f) {
-                         return goalOnBlacklist(f.centroid);  // 检查是否在黑名单中
+                         return goalOnBlacklist(f.middle);  // 检查是否在黑名单中
                        });
 
-  // ❌ 所有前沿都在黑名单中 - 探索完成
   if (frontier == frontiers.end()) {
-    RCLCPP_WARN(logger_, "All frontiers traversed/tried out, stopping.");
-    stop(true);  // 探索完成
+    if (navigating_ || frontier_retry_.pending(this->now().seconds())) {
+      empty_checks_ = 0;
+      RCLCPP_INFO_THROTTLE(logger_, *get_clock(), 5000,
+                          "Remaining frontiers are cooling down; exploration continues");
+      return;
+    }
+    if (++empty_checks_ >= completion_checks_) {
+      RCLCPP_WARN(logger_, "Remaining frontiers exhausted %u attempts; finishing with unresolved areas",
+                  frontier_retry_.max_attempts);
+      stop(true);
+    }
     return;
   }
-
-  // ✅ 选择最佳前沿的质心作为导航目标
-  geometry_msgs::msg::Point target_position = frontier->centroid;
+  empty_checks_ = 0;
+  geometry_msgs::msg::Point target_position = frontier->middle;
 
   // 🔄 智能卡住检测 - 同时检查位置和角度变化
 
@@ -312,7 +340,7 @@ void Explore::makePlan()
   bool first_goal = !has_prev_robot_position_;  // 首次运行标志（在位置记录前计算）
 
   // 检查机器人是否卡住（位置或角度变化都很小）
-  if (has_prev_robot_position_) {
+  if (has_prev_robot_position_ && navigating_) {
     // 计算位置变化
     double dx = current_robot_position.x - prev_robot_position_.x;
     double dy = current_robot_position.y - prev_robot_position_.y;
@@ -336,7 +364,7 @@ void Explore::makePlan()
         RCLCPP_WARN(logger_,
                     "Robot confirmed stuck (moved only %.3fm, rotated only %.3f rad for %d checks), replanning...",
                     distance_moved, angle_changed, stuck_count_);
-        frontier_blacklist_.push_back(prev_goal_);  // 将当前目标加入黑名单
+        frontier_retry_.record(prev_goal_, this->now().seconds(), false);  // 将当前目标加入黑名单
         robot_is_stuck = true;  // 标记为卡住状态
         stuck_count_ = 0;  // 重置计数器
       }
@@ -364,13 +392,17 @@ void Explore::makePlan()
     // The blacklist changed after selecting the candidate above.
     frontier = std::find_if_not(frontiers.begin(), frontiers.end(),
         [this](const frontier_exploration::Frontier& f) {
-          return goalOnBlacklist(f.centroid);
+          return goalOnBlacklist(f.middle);
         });
     if (frontier == frontiers.end()) {
-      stop(true);
+      ++goal_generation_;
+      if (navigation_goal_handle_) move_base_client_->async_cancel_goal(navigation_goal_handle_);
+      navigation_goal_handle_.reset();
+      navigating_ = false;
+      has_prev_robot_position_ = false;
       return;
     }
-    target_position = frontier->centroid;
+    target_position = frontier->middle;
   }
 
   // 🎯 导航决策逻辑：
@@ -406,9 +438,14 @@ void Explore::makePlan()
   // 🚀 调用Nav2的/navigate_to_pose动作 - 核心导航接口
   // send goal to move_base if we have something new to pursue
   auto goal = nav2_msgs::action::NavigateToPose::Goal();
-  goal.pose.pose.position = target_position;              // 设置目标位置（前沿质心）
-  const double target_yaw = std::atan2(target_position.y - pose.position.y,
-                                      target_position.x - pose.position.x);
+  goal.pose.pose.position = target_position;              // 设置目标位置（可达观察点）
+  const auto boundary = std::min_element(frontier->points.begin(), frontier->points.end(),
+      [&target_position](const geometry_msgs::msg::Point &a, const geometry_msgs::msg::Point &b) {
+        return std::hypot(a.x-target_position.x, a.y-target_position.y) <
+               std::hypot(b.x-target_position.x, b.y-target_position.y);
+      });
+  const double target_yaw = std::atan2(boundary->y - target_position.y,
+                                      boundary->x - target_position.x);
   goal.pose.pose.orientation.z = std::sin(target_yaw / 2.0);
   goal.pose.pose.orientation.w = std::cos(target_yaw / 2.0);
   goal.pose.header.frame_id = costmap_client_.getGlobalFrameID();  // 坐标系（通常是map）
@@ -419,7 +456,7 @@ void Explore::makePlan()
       rclcpp_action::Client<nav2_msgs::action::NavigateToPose>::SendGoalOptions();
   const auto generation = ++goal_generation_;
   send_goal_options.goal_response_callback =
-      [this, generation](NavigationGoalHandle::SharedPtr handle) {
+      [this, generation, target_position](NavigationGoalHandle::SharedPtr handle) {
         if (generation != goal_generation_) {
           if (handle) {
             move_base_client_->async_cancel_goal(handle);
@@ -428,7 +465,8 @@ void Explore::makePlan()
         }
         navigation_goal_handle_ = handle;
         if (!handle) {
-          RCLCPP_WARN(logger_, "Navigation goal rejected; retrying on next planning tick");
+          RCLCPP_WARN(logger_, "Navigation goal rejected; waiting for retry cooldown");
+          frontier_retry_.record(target_position, this->now().seconds(), false);
           navigating_ = false;
           has_prev_robot_position_ = false;
         }
@@ -596,19 +634,7 @@ void Explore::saveMap()
 
 bool Explore::goalOnBlacklist(const geometry_msgs::msg::Point& goal)
 {
-  constexpr static size_t tolerace = 5;
-  nav2_costmap_2d::Costmap2D* costmap2d = costmap_client_.getCostmap();
-
-  // check if a goal is on the blacklist for goals that we're pursuing
-  for (auto& frontier_goal : frontier_blacklist_) {
-    double x_diff = fabs(goal.x - frontier_goal.x);
-    double y_diff = fabs(goal.y - frontier_goal.y);
-
-    if (x_diff < tolerace * costmap2d->getResolution() &&
-        y_diff < tolerace * costmap2d->getResolution())
-      return true;
-  }
-  return false;
+  return frontier_retry_.blocked(goal, this->now().seconds());
 }
 
 void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
@@ -621,7 +647,7 @@ void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
     case rclcpp_action::ResultCode::SUCCEEDED:
       // ✅ 导航成功 - 继续探索下一个前沿
       RCLCPP_INFO(logger_, "[CALLBACK] Goal SUCCEEDED for (%.2f, %.2f)", frontier_goal.x, frontier_goal.y);
-      frontier_blacklist_.push_back(frontier_goal);
+      frontier_retry_.record(frontier_goal, this->now().seconds(), true);
       navigating_ = false;
       has_prev_robot_position_ = false;
       stuck_count_ = 0;
@@ -630,8 +656,10 @@ void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
     case rclcpp_action::ResultCode::ABORTED:
       // ❌ 导航被中止 - 通常是无法到达，将目标加入黑名单
       RCLCPP_INFO(logger_, "[CALLBACK] Goal ABORTED for (%.2f, %.2f)", frontier_goal.x, frontier_goal.y);
-      frontier_blacklist_.push_back(frontier_goal);
+      frontier_retry_.record(frontier_goal, this->now().seconds(), false);
       navigating_ = false;
+      has_prev_robot_position_ = false;
+      stuck_count_ = 0;
       return;
 
     case rclcpp_action::ResultCode::CANCELED:
