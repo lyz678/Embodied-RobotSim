@@ -189,7 +189,7 @@ if [[ "$OCTOMAP_BACKEND" == semantic_cuda ]]; then
     ros2 pkg prefix semantic_voxel_mapping >/dev/null 2>&1 || { echo "错误：缺少 semantic_voxel_mapping，请使用 --build。" >&2; exit 1; }
 fi
 if [[ "$MODE" == explore && "$AUTO_EXPLORE" == true ]]; then
-    for package in explore_lite nav2_bringup nav2_regulated_pure_pursuit_controller nav2_rotation_shim_controller; do
+    for package in explore_lite nav2_bringup nav2_graceful_controller nav2_rotation_shim_controller; do
         ros2 pkg prefix "$package" >/dev/null 2>&1 || { echo "错误：缺少自动探索依赖 $package" >&2; exit 1; }
     done
 fi
@@ -296,7 +296,7 @@ SEMANTIC_SAVE_ARGS=""
 [[ "$SIM_BACKEND" != gazebo ]] || SEMANTIC_SAVE_ARGS="map_file:='$BUNDLE/semantic_map.svm'"
 
 launch_manipulation_stack() {
-    launch_window "MoveIt" "$ROS_ENV && ros2 launch x_bot_moveit_config move_group.launch.py sim_backend:=$SIM_BACKEND use_sim_time:=true use_rviz:=false"
+    launch_window "MoveIt" "$ROS_ENV && ros2 launch x_bot_moveit_config move_group.launch.py sim_backend:=$SIM_BACKEND use_sim_time:=true"
     launch_yoloe
     sleep 2
     launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot_mapping octomap_server.launch.py backend:='$OCTOMAP_BACKEND' $SEMANTIC_SAVE_ARGS semantic_config:='$SEMANTIC_MAP_CONFIG' palette_file:='$YOLOE_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC' resolution:='$OCTOMAP_RESOLUTION' use_sim_time:=true use_rviz:=false"

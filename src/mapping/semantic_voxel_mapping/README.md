@@ -1,6 +1,6 @@
 # CUDA 多帧语义体素地图
 
-探索入口默认使用本包。直接运行 `./start_mapping.sh`；入口顶部的 `OCTOMAP_BACKEND=semantic_cuda` 和 `SEMANTIC_MAP_CONFIG` 控制后端和配置路径。所有启动入口的三维建图统一使用本包。抓取、导航抓取和 LLM 使用 `config/manipulation.yaml`（2 cm、2 m 范围），探索使用 `config/map.yaml`（10 cm、10 m 范围）。
+探索入口默认使用本包。直接运行 `./start_mapping_and_explore.sh`；入口顶部的 `OCTOMAP_BACKEND=semantic_cuda` 和 `SEMANTIC_MAP_CONFIG` 控制后端和配置路径。所有启动入口的三维建图统一使用本包。抓取、导航抓取和 LLM 使用 `config/manipulation.yaml`（2 cm、2 m 范围），探索使用 `config/map.yaml`（10 cm、10 m 范围）。
 
 本包使用自己的稀疏体素状态融合地图，CUDA 执行三维 DDA 射线遍历、排序和去重。CPU 负责每帧证据合并、占据概率、语义投票和 ROS 输出。`ColorOcTree` 只用于兼容导出，不参与融合；不会通过平均 RGB 生成不存在的类别颜色。必须有可用 CUDA 设备，启动失败会明确报错，不自动回退 CPU。
 

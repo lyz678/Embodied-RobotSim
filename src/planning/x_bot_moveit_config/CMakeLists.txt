@@ -4,4 +4,6 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(ament_cmake REQUIRED)
 install(DIRECTORY config launch DESTINATION share/${PROJECT_NAME})
 
+install(FILES LICENSE NOTICE DESTINATION share/${PROJECT_NAME})
+
 ament_package()

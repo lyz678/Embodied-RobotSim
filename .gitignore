@@ -53,8 +53,8 @@ venv/
 *.data
 *.caffemodel
 
-# Isaac vendor dependencies and local asset/import caches
-/src/vendor/
+# Optional external sources and local asset/import caches
+/src/localization/FAST_LIO_ROS2/
 /src/perception/LSM_depth_infer/
 /isaacsim_assets/
 .cache/

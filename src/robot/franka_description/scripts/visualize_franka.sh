@@ -10,7 +10,7 @@ echo
 docker run -it -u $(id -u) \
     --privileged \
     -v /tmp/.X11-unix:/tmp/.X11-unix -e DISPLAY=${DISPLAY} \
-    -v $(pwd):/workspaces/src/description/franka_description \
-    -w /workspaces/src/description/franka_description \
+    -v $(pwd):/workspaces/src/robot/franka_description \
+    -w /workspaces/src/robot/franka_description \
     urdf_creation \
-    .docker/visualize_franka_duo.entrypoint.sh $*
+    .docker/visualize_franka.entrypoint.sh $*

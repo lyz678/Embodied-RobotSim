@@ -273,8 +273,8 @@ class Readiness(unittest.TestCase):
 class Contracts(unittest.TestCase):
     def test_default_entrypoint_starts_isaac_exploration(self):
         with tempfile.TemporaryDirectory() as folder:
-            entry = Path(folder)/'start_mapping.sh'
-            entry.write_text((ROOT/'start_mapping.sh').read_text())
+            entry = Path(folder)/'start_mapping_and_explore.sh'
+            entry.write_text((ROOT/'start_mapping_and_explore.sh').read_text())
             (Path(folder)/'scripts/runtime').mkdir(parents=True)
             (Path(folder)/'scripts/runtime/robot_services.sh').write_text('printf "%s\\n" "$@"\n')
             environment = dict(os.environ)
@@ -293,8 +293,8 @@ class Contracts(unittest.TestCase):
 
     def test_pick_entrypoint_uses_main_manipulation_scene(self):
         with tempfile.TemporaryDirectory() as folder:
-            entry = Path(folder)/'start_pick.sh'
-            entry.write_text((ROOT/'start_pick.sh').read_text())
+            entry = Path(folder)/'start_pick_and_place.sh'
+            entry.write_text((ROOT/'start_pick_and_place.sh').read_text())
             (Path(folder)/'scripts/runtime').mkdir(parents=True)
             (Path(folder)/'scripts/runtime/robot_services.sh').write_text('printf "%s\\n" "$@"\n')
             result = subprocess.run(['bash', str(entry)], check=True, capture_output=True, text=True)
@@ -321,7 +321,7 @@ class Contracts(unittest.TestCase):
     def test_yaml_and_xml(self):
         for path in (ROOT/'src/localization/x_bot_localization').rglob('*.yaml'):
             self.assertIsInstance(yaml.safe_load(path.read_text()),dict)
-        for path in [ROOT/'src/description/x_bot/urdf/x_bot.xacro',ROOT/'src/localization/x_bot_localization/package.xml',ROOT/'src/interfaces/livox_ros_driver2/package.xml']:
+        for path in [ROOT/'src/robot/x_bot/urdf/x_bot.xacro',ROOT/'src/localization/x_bot_localization/package.xml',ROOT/'src/robot/livox_ros_driver2/package.xml']:
             ET.parse(path)
 
     def test_nav2_limits(self):
@@ -336,7 +336,11 @@ class Contracts(unittest.TestCase):
         self.assertGreaterEqual(controller['ax_min'], smoother['max_decel'][0])
         self.assertLessEqual(controller['az_max'], smoother['max_accel'][2])
         self.assertTrue(smoother['scale_velocities'])
-        self.assertEqual(params['velocity_smoother']['ros__parameters']['max_velocity'],[1.,0,1.2])
+        base=yaml.safe_load((ROOT/'src/control/x_bot_control/config/base_motion.yaml').read_text())
+        self.assertEqual(limits,[base['max_forward'],0,base['max_angular']])
+        self.assertEqual(controller['v_angular_max'],base['max_angular'])
+        self.assertEqual(smoother['max_accel'][2],base['angular_accel'])
+        self.assertEqual(smoother['max_decel'][2],-base['angular_decel'])
 
     def test_planning_margin_prevents_collision_monitor_contact_deadlock(self):
         params=yaml.safe_load((ROOT/'src/planning/x_bot_navigation/config/nav2.yaml').read_text())
@@ -362,7 +366,7 @@ class Contracts(unittest.TestCase):
         self.assertNotIn('PublishRawTransformTree',bridge)
         self.assertNotIn('Example_Rotary_2D',bridge)
         self.assertIn('/debug/ground_truth/odom',bridge)
-        launch=(ROOT/'src/common/x_bot_bringup/launch/localization.launch.py').read_text()
+        launch=(ROOT/'src/robot/x_bot_bringup/launch/localization.launch.py').read_text()
         self.assertIn("('/tf','/fastlio/tf_internal')",launch)
         start=(ROOT/'scripts/runtime/robot_services.sh').read_text()
         self.assertNotIn('cartographer.launch.py',start)
@@ -375,7 +379,7 @@ class Contracts(unittest.TestCase):
         self.assertEqual(p['preprocess']['timestamp_unit'],3)
 
     def test_mount_geometry(self):
-        tree=ET.parse(ROOT/'src/description/x_bot/urdf/x_bot.xacro')
+        tree=ET.parse(ROOT/'src/robot/x_bot/urdf/x_bot.xacro')
         joint=tree.find('.//joint[@name="mid360_joint"]')
         self.assertEqual(joint.find('parent').get('link'),'roof_link')
         arg=tree.find('.//{http://www.ros.org/wiki/xacro}arg[@name="mid360_xyz"]')
@@ -388,12 +392,12 @@ class Contracts(unittest.TestCase):
             self.skipTest('Optional xacro package not installed')
         original=xacro.eval_extension
         def local_packages(text):
-            for name, directory in {'x_bot':'description/x_bot','franka_description':'description/franka_description','x_bot_control':'control/x_bot_control'}.items():
+            for name, directory in {'x_bot':'robot/x_bot','franka_description':'robot/franka_description','x_bot_control':'control/x_bot_control'}.items():
                 text=text.replace('$(find '+name+')',str(ROOT/'src'/directory))
             return original(text)
         with patch.object(xacro,'eval_extension',side_effect=local_packages):
             for isaac in ('true','false'):
-                doc=xacro.process_file(str(ROOT/'src/description/x_bot/urdf/x_bot.xacro'),mappings={
+                doc=xacro.process_file(str(ROOT/'src/robot/x_bot/urdf/x_bot.xacro'),mappings={
                     'sim_isaac':isaac,'two_d_lidar_enabled':'true','camera_enabled':'true'})
                 tree=ET.fromstring(doc.toxml())
                 names={n.get('name') for n in tree.findall('link')}

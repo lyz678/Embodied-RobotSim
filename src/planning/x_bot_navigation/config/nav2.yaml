@@ -73,11 +73,11 @@ controller_server:
       max_lookahead: 1.0
       k_phi: 1.0
       k_delta: 2.0
-      beta: 0.2
+      beta: 0.12 # Reduce curvature slowdown so coupled turns can approach the yaw limit.
       lambda: 2.0
       v_linear_min: 0.05
       v_linear_max: 1.0
-      v_angular_max: 1.2
+      v_angular_max: 1.5
       v_angular_min_in_place: 0.1
       slowdown_radius: 0.5
       angular_dist_threshold: 0.8
@@ -89,8 +89,8 @@ controller_server:
       heading_braking_latency: 0.2 # Scan-rate odometry + command/actuator delay, simulation seconds.
       heading_settle_angle: 0.12
       heading_release_rate: 0.2 # Do not start driving with residual spin.
-      rotate_to_heading_angular_vel: 1.0
-      max_angular_accel: 1.5
+      rotate_to_heading_angular_vel: 1.25
+      max_angular_accel: 2.0
       simulate_ahead_time: 1.0
       rotate_to_goal_heading: false
       rotate_to_heading_once: false
@@ -110,12 +110,12 @@ controller_server:
       vx_max: 1.0
       vx_min: 0.0 # Navigation faces the path; backup recovery uses the separate behavior server.
       vy_max: 0.0
-      wz_max: 1.2
+      wz_max: 1.5
       ax_max: 1.0
       ax_min: -1.0 # Symmetric sampling limits; physical braking can still reach 2 m/s^2.
       ay_max: 0.0
       ay_min: 0.0
-      az_max: 1.5
+      az_max: 2.0
       prune_distance: 3.0
       transform_tolerance: 0.5
       temperature: 0.2
@@ -330,9 +330,9 @@ behavior_server:
     robot_base_frame: base_link
     transform_tolerance: 0.5
     simulate_ahead_time: 2.0
-    max_rotational_vel: 1.2
+    max_rotational_vel: 1.5
     min_rotational_vel: 0.15
-    rotational_acc_lim: 1.5
+    rotational_acc_lim: 2.0
 
 waypoint_follower:
   ros__parameters:
@@ -352,10 +352,10 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: True # Preserve curvature when either acceleration limit is reached.
     feedback: "OPEN_LOOP"
-    max_velocity: [1.0, 0.0, 1.2]
-    min_velocity: [-0.2, 0.0, -1.2]
-    max_accel: [1.0, 0.0, 1.5]
-    max_decel: [-2.0, 0.0, -2.0]
+    max_velocity: [1.0, 0.0, 1.5]
+    min_velocity: [-0.2, 0.0, -1.5]
+    max_accel: [1.0, 0.0, 2.0]
+    max_decel: [-2.0, 0.0, -2.5]
     odom_topic: "/odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]

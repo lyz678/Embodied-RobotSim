@@ -252,7 +252,7 @@ private:
         timed.setRobotTrajectoryMsg(*state, trajectory);
         trajectory_processing::TimeOptimalTrajectoryGeneration timing;
         std::unordered_map<std::string,double> velocities, accelerations;
-        auto limits = YAML::LoadFile(ament_index_cpp::get_package_share_directory("franka_fr3_moveit_config") + "/config/fr3_joint_limits.yaml")["joint_limits"];
+        auto limits = YAML::LoadFile(ament_index_cpp::get_package_share_directory("x_bot_moveit_config") + "/config/fr3_joint_limits.yaml")["joint_limits"];
         for (const auto& name : state->getJointModelGroup("fr3_arm")->getVariableNames()) {
           velocities[name] = move_group_->getRobotModel()->getVariableBounds(name).max_velocity_;
           accelerations[name] = limits[name]["max_acceleration"].as<double>();

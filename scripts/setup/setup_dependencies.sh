@@ -2,7 +2,7 @@
 # Explicit target-machine setup; no sudo, ROS installation or system mutation.
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-DEST="$ROOT_DIR/src/vendor"
+DEST="$ROOT_DIR/src/localization"
 command -v vcs >/dev/null || { echo 'Install python3-vcstool first.' >&2; exit 1; }
 mkdir -p "$DEST"
 vcs import "$DEST" < "$ROOT_DIR/scripts/setup/vendor.repos"

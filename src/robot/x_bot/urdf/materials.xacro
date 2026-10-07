@@ -5,6 +5,10 @@
         <color rgba="0.0 0.0 0.0 1.0"/>
     </material>
 
+    <material name="lidar_silver">
+        <color rgba="0.82 0.84 0.87 1.0"/>
+    </material>
+
     <material name="blue">
         <color rgba="0.0 0.0 0.8 1.0"/>
     </material>

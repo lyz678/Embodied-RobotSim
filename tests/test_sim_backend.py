@@ -34,8 +34,8 @@ class BackendTests(unittest.TestCase):
 
     def test_all_entrypoints_select_default_and_override(self):
         for name in (
-            "start_mapping.sh",
-            "start_pick.sh",
+            "start_mapping_and_explore.sh",
+            "start_pick_and_place.sh",
             "start_embodied.sh",
         ):
             with tempfile.TemporaryDirectory() as temp:
@@ -54,7 +54,7 @@ class BackendTests(unittest.TestCase):
                 self.assertEqual(override[-2:], ["--sim", "gazebo"])
 
     def test_task_modes_dispatch_and_reject_invalid_modes(self):
-        for name, expected in (("start_mapping.sh", "navigation"), ("start_pick.sh", "navigation_pick")):
+        for name, expected in (("start_mapping_and_explore.sh", "navigation"), ("start_pick_and_place.sh", "navigation_pick")):
             with tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 (root / "scripts/runtime").mkdir(parents=True)

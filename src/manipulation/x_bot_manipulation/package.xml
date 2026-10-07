@@ -28,7 +28,6 @@
 <export><build_type>ament_cmake</build_type></export>
 <exec_depend>ament_index_python</exec_depend>
 <exec_depend>yoloe_infer</exec_depend>
-<exec_depend>franka_fr3_moveit_config</exec_depend>
 <exec_depend>nav2_msgs</exec_depend>
 <exec_depend>vision_msgs</exec_depend>
 <exec_depend>visualization_msgs</exec_depend>

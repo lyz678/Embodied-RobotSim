@@ -188,10 +188,10 @@
     <!-- Shared roof sensor; Gazebo explicitly enables it. -->
     <xacro:if value="${'$(arg sim_isaac)' == 'true' or '$(arg mid360_enabled)' == 'true'}">
         <link name="mid360_link">
-            <visual><geometry><box size="0.065 0.065 0.060"/></geometry><material name="black"/></visual>
+            <visual><geometry><box size="0.065 0.065 0.060"/></geometry><material name="lidar_silver"/></visual>
             <collision><geometry><box size="0.065 0.065 0.060"/></geometry></collision>
             <!-- 50 mm standoff below the sensor housing. -->
-            <visual><origin xyz="0 0 -0.055"/><geometry><box size="0.020 0.020 0.050"/></geometry><material name="black"/></visual>
+            <visual><origin xyz="0 0 -0.055"/><geometry><box size="0.020 0.020 0.050"/></geometry><material name="lidar_silver"/></visual>
             <collision><origin xyz="0 0 -0.055"/><geometry><box size="0.020 0.020 0.050"/></geometry></collision>
             <inertial>
                 <mass value="0.265"/>

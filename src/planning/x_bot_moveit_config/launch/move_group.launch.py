@@ -2,16 +2,13 @@
 """
 Launch MoveIt 2 for the x_bot robotic arm.
 
-Based on mycobot_moveit_config launch file structure.
+RViz is started once by the common runtime.
 """
 
 import os
 import yaml
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, EmitEvent, RegisterEventHandler, OpaqueFunction
-from launch.conditions import IfCondition
-from launch.event_handlers import OnProcessExit
-from launch.events import Shutdown
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -25,7 +22,6 @@ def generate_launch_description():
 
     # Launch configuration variables
     use_sim_time = LaunchConfiguration('use_sim_time')
-    use_rviz = LaunchConfiguration('use_rviz')
 
     # Get the package share directory
     pkg_share_temp = FindPackageShare(package=package_name)
@@ -35,11 +31,6 @@ def generate_launch_description():
         name='use_sim_time',
         default_value='true',
         description='Use simulation clock if true')
-
-    declare_use_rviz_cmd = DeclareLaunchArgument(
-        name='use_rviz',
-        default_value='false',
-        description='Whether to start RViz')
 
     def configure_setup(context):
         """Configure MoveIt and create nodes with proper string conversions."""
@@ -51,9 +42,8 @@ def generate_launch_description():
         config_path = os.path.join(pkg_share, 'config')
         initial_positions_file_path = os.path.join(FindPackageShare(package='x_bot_control').find('x_bot_control'), 'config', 'initial_positions.yaml')
         
-        # Use Franka FR3 official joint limits configuration
-        fr3_moveit_config_pkg = FindPackageShare(package='franka_fr3_moveit_config').find('franka_fr3_moveit_config')
-        joint_limits_file_path = os.path.join(fr3_moveit_config_pkg, 'config', 'fr3_joint_limits.yaml')
+        # Franka FR3 limits retained unchanged from the upstream configuration.
+        joint_limits_file_path = os.path.join(config_path, 'fr3_joint_limits.yaml')
         kinematics_file_path = os.path.join(config_path, 'kinematics.yaml')
         moveit_controllers_file_path = os.path.join(config_path, 'moveit_controllers.yaml')
         srdf_model_path = os.path.join(config_path, 'x_bot.srdf')
@@ -112,40 +102,7 @@ def generate_launch_description():
             ],
         )
 
-        # Create RViz node (optional)
-        rviz_config_file = os.path.join(pkg_share, 'rviz', 'moveit.rviz')
-        
-        nodes = [start_move_group_node_cmd]
-        
-        if os.path.exists(rviz_config_file):
-            start_rviz_node_cmd = Node(
-                condition=IfCondition(use_rviz),
-                package="rviz2",
-                executable="rviz2",
-                arguments=["-d", rviz_config_file],
-                output="screen",
-                parameters=[
-                    moveit_config.robot_description,
-                    moveit_config.robot_description_semantic,
-                    moveit_config.planning_pipelines,
-                    moveit_config.robot_description_kinematics,
-                    moveit_config.joint_limits,
-                    os.path.join(config_path, 'sensors_3d_x_bot.yaml'),
-                    {'use_sim_time': use_sim_time}
-                ],
-            )
-            
-            exit_event_handler = RegisterEventHandler(
-                condition=IfCondition(use_rviz),
-                event_handler=OnProcessExit(
-                    target_action=start_rviz_node_cmd,
-                    on_exit=EmitEvent(event=Shutdown(reason='rviz exited')),
-                ),
-            )
-            
-            nodes.extend([start_rviz_node_cmd, exit_event_handler])
-
-        return nodes
+        return [start_move_group_node_cmd]
 
     # Create the launch description
     ld = LaunchDescription()
@@ -153,7 +110,6 @@ def generate_launch_description():
     # Add the launch arguments
     ld.add_action(DeclareLaunchArgument('sim_backend', default_value='isaac', choices=['isaac', 'gazebo']))
     ld.add_action(declare_use_sim_time_cmd)
-    ld.add_action(declare_use_rviz_cmd)
 
     # Add the setup and node creation
     ld.add_action(OpaqueFunction(function=configure_setup))

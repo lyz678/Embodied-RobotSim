@@ -17,9 +17,6 @@ from std_srvs.srv import Trigger, SetBool
 from moveit_msgs.msg import CollisionObject
 from tf2_ros import Buffer, TransformListener
 import tf2_geometry_msgs
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from control_msgs.action import GripperCommand, FollowJointTrajectory
-from builtin_interfaces.msg import Duration
 import math
 import time
 import threading
@@ -27,8 +24,9 @@ import yaml
 import os
 from collections import deque
 from gripper_action import control_gripper as execute_gripper
+from robot_action_services import RobotActionServices
 
-class NavigationAndPickDemo(Node):
+class NavigationAndPickDemo(RobotActionServices, Node):
     """使用实时 YOLOE 检测的抓取放置节点"""
     
     def __init__(self):
@@ -51,10 +49,6 @@ class NavigationAndPickDemo(Node):
         self.marker_id = 0
         self.gripper_client = ActionClient(self, GripperCommand, '/fr3_gripper_controller/gripper_cmd')
         
-        # 关节控制
-        self.arm_joint_client = ActionClient(self, FollowJointTrajectory, '/fr3_arm_controller/follow_joint_trajectory')
-        self.arm_joint_names = [f'fr3_joint{i}' for i in range(1, 8)]
-
         # 点云过滤控制
         self.pub_cloud_filter = self.create_publisher(Int32, 'set_cloud_filter', 10)
         
@@ -366,30 +360,6 @@ class NavigationAndPickDemo(Node):
     def control_gripper(self, position: float, timeout: float = 20.0) -> bool:
         return execute_gripper(self, self.gripper_client, position, timeout)
 
-    def perform_scan(self) -> bool:
-        """执行扫描"""
-        self.get_logger().info(">>> Triggering Scan Sequence...")
-        
-        if not self.scan_client.wait_for_service(timeout_sec=2.0):
-            self.get_logger().error("Scan service not available")
-            return False
-        
-        req = Trigger.Request()
-        future = self.scan_client.call_async(req)
-        while not future.done():
-            time.sleep(0.1)
-        
-        try:
-            res = future.result()
-            if res.success:
-                self.get_logger().info(f"Scan Success: {res.message}")
-                return True
-            else:
-                self.get_logger().error(f"Scan Failed: {res.message}")
-                return False
-        except Exception as e:
-            self.get_logger().error(f"Scan call failed: {e}")
-            return False
     
     def control_inference(self, enable: bool) -> bool:
         """控制所有推理节点的启用/禁用状态"""
@@ -456,67 +426,7 @@ class NavigationAndPickDemo(Node):
         
         return success
     
-    def perform_go_home(self) -> bool:
-        """返回初始位置 (使用 Robot Actions Service)"""
-        self.get_logger().info(">>> Triggering Go Home...")
-        
-        if not self.go_home_client.wait_for_service(timeout_sec=2.0):
-            self.get_logger().error("Go Home service not available")
-            return False
-            
-        req = Trigger.Request()
-        future = self.go_home_client.call_async(req)
-        while not future.done():
-            time.sleep(0.1)
-            
-        try:
-            res = future.result()
-            if res.success:
-                self.get_logger().info(f"Go Home Success: {res.message}")
-                return True
-            else:
-                self.get_logger().error(f"Go Home Failed: {res.message}")
-                return False
-        except Exception as e:
-            self.get_logger().error(f"Go Home call failed: {e}")
-            return False
 
-    def move_to_joints(self, positions: list) -> bool:
-        """移动到指定关节位置"""
-        self.get_logger().info(f"Moving to joints: {positions}")
-        
-        if not self.arm_joint_client.wait_for_server(timeout_sec=2.0):
-            self.get_logger().error("Arm joint action server not available")
-            return False
-            
-        goal = FollowJointTrajectory.Goal()
-        goal.trajectory.joint_names = self.arm_joint_names
-        
-        point = JointTrajectoryPoint()
-        point.positions = [float(p) for p in positions]
-        point.time_from_start = Duration(sec=3, nanosec=0)
-        goal.trajectory.points.append(point)
-        
-        future = self.arm_joint_client.send_goal_async(goal)
-        while not future.done():
-            time.sleep(0.1)
-            
-        goal_handle = future.result()
-        if not goal_handle.accepted:
-            self.get_logger().error("Joint goal rejected")
-            return False
-            
-        res_future = goal_handle.get_result_async()
-        while not res_future.done():
-            time.sleep(0.1)
-            
-        res = res_future.result()
-        if res.result.error_code == 0:
-            self.get_logger().info("Joint move SUCCESS")
-            return True
-        else:
-            self.get_logger().error(f"Joint move failed with error code: {res.result.error_code}")
-            return False
     
     def perform_pick_and_place(self, pose, class_id: int) -> bool:
         """执行抓取和放置序列 - Using GraspNet Pose"""

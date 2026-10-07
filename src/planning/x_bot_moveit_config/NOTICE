@@ -1,0 +1,4 @@
+fr3_joint_limits.yaml originates from franka_ros2 / franka_fr3_moveit_config
+by Franka Robotics GmbH (package version 3.2.0), licensed under Apache-2.0.
+The numerical joint limits are preserved unchanged.
+https://github.com/frankaemika/franka_ros2
