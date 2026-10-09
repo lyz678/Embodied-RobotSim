@@ -287,6 +287,15 @@ void Explore::makePlan()
   bool pose_valid = false;
   auto pose = costmap_client_.getRobotPose(&pose_valid);
   if (!pose_valid) { empty_checks_ = 0; return; }
+  unsigned int robot_mx, robot_my;
+  if (!costmap_client_.getCostmap()->worldToMap(
+          pose.position.x, pose.position.y, robot_mx, robot_my)) {
+    // An incomplete sensor map is not evidence that exploration has finished.
+    empty_checks_ = 0;
+    RCLCPP_WARN_THROTTLE(logger_, *get_clock(), 5000,
+                        "Waiting for costmap bounds to include the robot");
+    return;
+  }
 
   if (navigating_ && finish_on_observation_ && observation_map_ &&
       observation_map_->header.frame_id == costmap_client_.getGlobalFrameID() &&

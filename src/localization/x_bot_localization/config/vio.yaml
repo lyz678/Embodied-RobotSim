@@ -1,0 +1,28 @@
+/**:
+  ros__parameters:
+    # Isaac ROS 4.x: tracking_mode=1 enables actual IMU fusion.
+    tracking_mode: 1
+    num_cameras: 2
+    rectified_images: true
+    enable_image_denoising: false
+    # This base operates on flat floors; keep published odometry on its plane.
+    enable_ground_constraint_in_odometry: true
+    enable_localization_n_mapping: false
+    publish_map_to_odom_tf: false
+    publish_odom_to_base_tf: false
+    odom_frame: vio_odom
+    base_frame: base_footprint
+    imu_frame: mid360_imu_link
+    camera_optical_frames: [camera_left_frame, camera_right_optical_frame]
+    calibration_frequency: 200.0
+    gyro_noise_density: 0.000244
+    gyro_random_walk: 0.000019393
+    accel_noise_density: 0.001862
+    accel_random_walk: 0.003
+    image_jitter_threshold_ms: 100.0
+    imu_jitter_threshold_ms: 20.0
+    sync_matching_threshold_ms: 5.0
+    image_buffer_size: 30
+    imu_buffer_size: 1000
+    image_qos: DEFAULT
+    imu_qos: SENSOR_DATA

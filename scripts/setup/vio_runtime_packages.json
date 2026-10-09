@@ -1,0 +1,247 @@
+[
+  {
+    "name": "ros-jazzy-isaac-ros-visual-slam",
+    "version": "4.4.0-0noble.20260428173013818",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-isaac-ros-visual-slam/ros-jazzy-isaac-ros-visual-slam_4.4.0-0noble.20260428173013818_amd64.deb",
+    "sha256": "6d1845adc6bcbf4376fd59ec6571b203635bbf5d338f4fa0c9a98c5531387084",
+    "size": "5788470"
+  },
+  {
+    "name": "ros-jazzy-isaac-ros-visual-slam-interfaces",
+    "version": "4.4.0-0noble.20260428170822575",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-isaac-ros-visual-slam-interfaces/ros-jazzy-isaac-ros-visual-slam-interfaces_4.4.0-0noble.20260428170822575_amd64.deb",
+    "sha256": "a80bf896d0232d44dc0ecc58ce4c585aa279e0b2f9a77660789602ab47101537",
+    "size": "178930"
+  },
+  {
+    "name": "ros-jazzy-isaac-ros-nitros-image-type",
+    "version": "4.4.0-0noble.20260428161012809",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-isaac-ros-nitros-image-type/ros-jazzy-isaac-ros-nitros-image-type_4.4.0-0noble.20260428161012809_amd64.deb",
+    "sha256": "a25ee1af73d073abc5ef591a453a614438e6a5f71c91076d42f1531dc194f793",
+    "size": "114234"
+  },
+  {
+    "name": "vpi4-dev",
+    "version": "4.0.5",
+    "url": "https://repo.download.nvidia.com/jetson/x86_64/noble/pool/main/v/vpi4-dev/vpi4-dev_4.0.5_amd64.deb",
+    "sha256": "f962b787a3c9139ce6a12cba7cc7a463b610bd296448d248d45de9276bbae37e",
+    "size": "92352"
+  },
+  {
+    "name": "ros-jazzy-isaac-ros-vpi-utils",
+    "version": "4.4.0-0noble.20260428160127565",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-isaac-ros-vpi-utils/ros-jazzy-isaac-ros-vpi-utils_4.4.0-0noble.20260428160127565_amd64.deb",
+    "sha256": "6e7e77f2c63f5bbff5094def0cd92fdc23a362cac50b9abce459c3f6a72d1d59",
+    "size": "20274"
+  },
+  {
+    "name": "ros-jazzy-isaac-ros-gxf",
+    "version": "4.4.0-0noble.20260428152831366",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-isaac-ros-gxf/ros-jazzy-isaac-ros-gxf_4.4.0-0noble.20260428152831366_amd64.deb",
+    "sha256": "d11d0d43accddd61588b5a2743baf797942dc5add783f697a765e82b37e93285",
+    "size": "14165506"
+  },
+  {
+    "name": "ros-jazzy-magic-enum",
+    "version": "0.9.5-0noble",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-magic-enum/ros-jazzy-magic-enum_0.9.5-0noble_amd64.deb",
+    "sha256": "c89c6bc8f8bc974c3b09a74e87dd2f58114de11b20e32a7c03dfeb0e525e1df0",
+    "size": "25332"
+  },
+  {
+    "name": "nvsci",
+    "version": "7.0.4.0",
+    "url": "https://repo.download.nvidia.com/jetson/x86_64/noble/pool/main/n/nvsci/nvsci_7.0.4.0_amd64.deb",
+    "sha256": "a4131d6efa8ed1424e7e72f78e75ba436cde9f625655ec362f2eb35419ce2b2c",
+    "size": "2295100"
+  },
+  {
+    "name": "libgnat-23",
+    "version": "23.0.0-1.20251215094233",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/libg/libgnat-23/libgnat-23_23.0.0-1.20251215094233_amd64.deb",
+    "sha256": "bc962e8cbff22e60297cde61d77ee3ac645aa158408abde6b62f74c5b0338a3a",
+    "size": "1628650"
+  },
+  {
+    "name": "libnvvpi4",
+    "version": "4.0.5",
+    "url": "https://repo.download.nvidia.com/jetson/x86_64/noble/pool/main/libn/libnvvpi4/libnvvpi4_4.0.5_amd64.deb",
+    "sha256": "7c6f94dacf9d85a9563a39b3f7f6fb6dbb8554622fd83a9c61fd17bea63f1572",
+    "size": "318537464"
+  },
+  {
+    "name": "ros-jazzy-isaac-ros-nitros",
+    "version": "4.4.0-0noble.20260428155213179",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-isaac-ros-nitros/ros-jazzy-isaac-ros-nitros_4.4.0-0noble.20260428155213179_amd64.deb",
+    "sha256": "fc2e0e165443e8ea84bc3463cc4fd3c0cb895e49ce593b08cd83e5738dc3910d",
+    "size": "9527338"
+  },
+  {
+    "name": "ros-jazzy-negotiated",
+    "version": "0.1.0-0noble",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-negotiated/ros-jazzy-negotiated_0.1.0-0noble_amd64.deb",
+    "sha256": "f5faf1b63af45f8107cd5cdf41e6d3a69f3d83fcd881e694921e1e76183f46e4",
+    "size": "171810"
+  },
+  {
+    "name": "ros-jazzy-negotiated-interfaces",
+    "version": "0.1.0-0noble",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-negotiated-interfaces/ros-jazzy-negotiated-interfaces_0.1.0-0noble_amd64.deb",
+    "sha256": "68217bf17a7bec8572e28223552a7239f978ba8ca3d7f758ae3145d9cc9134dd",
+    "size": "73502"
+  },
+  {
+    "name": "ros-jazzy-gxf-isaac-sight",
+    "version": "4.4.0-0noble.20260428154136443",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-gxf-isaac-sight/ros-jazzy-gxf-isaac-sight_4.4.0-0noble.20260428154136443_amd64.deb",
+    "sha256": "ce67317e5f9e5282e44f3625515e08aefc7f3fd9de283f160eb02800fcfc51e0",
+    "size": "1238370"
+  },
+  {
+    "name": "ros-jazzy-isaac-ros-common",
+    "version": "4.4.0-0noble.20260428151848481",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-isaac-ros-common/ros-jazzy-isaac-ros-common_4.4.0-0noble.20260428151848481_amd64.deb",
+    "sha256": "62e6c1d82d7ad8e2b520bddcd1151f8adbcdd826b2b446bf0eb3bb9bc32ab777",
+    "size": "36856"
+  },
+  {
+    "name": "ros-jazzy-gxf-isaac-optimizer",
+    "version": "4.4.0-0noble.20260428154209314",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-gxf-isaac-optimizer/ros-jazzy-gxf-isaac-optimizer_4.4.0-0noble.20260428154209314_amd64.deb",
+    "sha256": "99431fa2f5b270b0574b5d58719aded30fdb30c68fbbc509d63b2cf5f4fa08a7",
+    "size": "1088560"
+  },
+  {
+    "name": "ros-jazzy-gxf-isaac-message-compositor",
+    "version": "4.4.0-0noble.20260428154207929",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-gxf-isaac-message-compositor/ros-jazzy-gxf-isaac-message-compositor_4.4.0-0noble.20260428154207929_amd64.deb",
+    "sha256": "d5c04670bbeae4f899383fb8ec4a0793b9be06317e3eafcb55f43fd1eb6ffa45",
+    "size": "1013208"
+  },
+  {
+    "name": "ros-jazzy-gxf-isaac-gxf-helpers",
+    "version": "4.4.0-0noble.20260428154207619",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-gxf-isaac-gxf-helpers/ros-jazzy-gxf-isaac-gxf-helpers_4.4.0-0noble.20260428154207619_amd64.deb",
+    "sha256": "88789a38248bcf15a1216821572eeadd2ecc0429813ba6440d2d13a3c8db75a8",
+    "size": "1049848"
+  },
+  {
+    "name": "ros-jazzy-gxf-isaac-gems",
+    "version": "4.4.0-0noble.20260428153508755",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-gxf-isaac-gems/ros-jazzy-gxf-isaac-gems_4.4.0-0noble.20260428153508755_amd64.deb",
+    "sha256": "2ab58e58f0c26dce6e5283799e92ac5a9c78ee08011fe5ad5dc0c3513cc3cab1",
+    "size": "179920"
+  },
+  {
+    "name": "ros-jazzy-gxf-isaac-atlas",
+    "version": "4.4.0-0noble.20260428154213919",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-gxf-isaac-atlas/ros-jazzy-gxf-isaac-atlas_4.4.0-0noble.20260428154213919_amd64.deb",
+    "sha256": "7c1ae31e3cb727a526d3e25d1f9e6ecc537b6f4e207a9fc688ea347a348bc45d",
+    "size": "1932206"
+  },
+  {
+    "name": "ros-jazzy-isaac-ros-managed-nitros",
+    "version": "4.4.0-0noble.20260428161442813",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-isaac-ros-managed-nitros/ros-jazzy-isaac-ros-managed-nitros_4.4.0-0noble.20260428161442813_amd64.deb",
+    "sha256": "4eceff1d74efd53d2ad8520df42fa6650ab2130e8f03c3304a01496cd6416cc4",
+    "size": "12074"
+  },
+  {
+    "name": "ros-jazzy-isaac-ros-nitros-tensor-list-type",
+    "version": "4.4.0-0noble.20260428160126702",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-isaac-ros-nitros-tensor-list-type/ros-jazzy-isaac-ros-nitros-tensor-list-type_4.4.0-0noble.20260428160126702_amd64.deb",
+    "sha256": "93117b9946ea28d2a3028201520cbe25806b9cd4497c0d27d41f51d92709d03f",
+    "size": "53156"
+  },
+  {
+    "name": "ros-jazzy-isaac-ros-tensor-list-interfaces",
+    "version": "4.4.0-0noble.20260428155213191",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-isaac-ros-tensor-list-interfaces/ros-jazzy-isaac-ros-tensor-list-interfaces_4.4.0-0noble.20260428155213191_amd64.deb",
+    "sha256": "7092c23c70dd4b30a7e3dcb14c4ae17b434db188f0bb96cbc01b6b5f0fd9f9a6",
+    "size": "78574"
+  },
+  {
+    "name": "ros-jazzy-isaac-ros-image-proc",
+    "version": "4.4.0-0noble.20260428161929959",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-isaac-ros-image-proc/ros-jazzy-isaac-ros-image-proc_4.4.0-0noble.20260428161929959_amd64.deb",
+    "sha256": "0f94e78d1d9fcc9be50936aabe46301890817e19566b3258f8847d7170ee66e4",
+    "size": "1534408"
+  },
+  {
+    "name": "ros-jazzy-isaac-ros-nitros-camera-info-type",
+    "version": "4.4.0-0noble.20260428160936491",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-isaac-ros-nitros-camera-info-type/ros-jazzy-isaac-ros-nitros-camera-info-type_4.4.0-0noble.20260428160936491_amd64.deb",
+    "sha256": "007b02471638f44c7ae0723ee650ca25533170ec361ba367cf5fe81e55aa402c",
+    "size": "43214"
+  },
+  {
+    "name": "ros-jazzy-gxf-isaac-tensorops",
+    "version": "4.4.0-0noble.20260428160126625",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-gxf-isaac-tensorops/ros-jazzy-gxf-isaac-tensorops_4.4.0-0noble.20260428160126625_amd64.deb",
+    "sha256": "f67d0fef3e15b085d59c41d172075e58a7cadf7dd0a0fd794b44562d0cb331fa",
+    "size": "290320"
+  },
+  {
+    "name": "ros-jazzy-gxf-isaac-messages",
+    "version": "4.4.0-0noble.20260428155212116",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-gxf-isaac-messages/ros-jazzy-gxf-isaac-messages_4.4.0-0noble.20260428155212116_amd64.deb",
+    "sha256": "f2cbe2d1a10c1e87dd3640567bfcde7cd691edb0cab790b51fe365713d851eb9",
+    "size": "2022526"
+  },
+  {
+    "name": "ros-jazzy-gxf-isaac-image-flip",
+    "version": "4.4.0-0noble.20260428160937463",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-gxf-isaac-image-flip/ros-jazzy-gxf-isaac-image-flip_4.4.0-0noble.20260428160937463_amd64.deb",
+    "sha256": "480628821be6858f505dff2241081e89e8f7e5e71076cc3fc7e14fb3f35ead6c",
+    "size": "51540"
+  },
+  {
+    "name": "ros-jazzy-gxf-isaac-camera-utils",
+    "version": "4.4.0-0noble.20260428160936396",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-gxf-isaac-camera-utils/ros-jazzy-gxf-isaac-camera-utils_4.4.0-0noble.20260428160936396_amd64.deb",
+    "sha256": "93436a3a93a4e311b6a4a6b95aeea6167124273d94cd3f2b975398652ff94f4c",
+    "size": "54666"
+  },
+  {
+    "name": "isaac-ros-cli",
+    "version": "2.3.0-1.20260430010641",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/i/isaac-ros-cli/isaac-ros-cli_2.3.0-1.20260430010641_all.deb",
+    "sha256": "07f0f5d79733aa35cc2203766e0fa0ffe91d3aaedf39ad36a7ac477a552dbea1",
+    "size": "83584"
+  },
+  {
+    "name": "cvcuda0-dev",
+    "version": "0.14.0",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/c/cvcuda0-dev/cvcuda0-dev_0.14.0_amd64.deb",
+    "sha256": "fd0dc9d13516461d5607466d3b443838deb5ab71f149c9fc61289e87e75eaa65",
+    "size": "162524"
+  },
+  {
+    "name": "libcvcuda0",
+    "version": "0.14.0",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/libc/libcvcuda0/libcvcuda0_0.14.0_amd64.deb",
+    "sha256": "f1784aa26e0773267a52d48e51f7bf3293ea4c754fb0eae50ba22314129e3496",
+    "size": "38188426"
+  },
+  {
+    "name": "ros-jazzy-isaac-common",
+    "version": "4.4.0-0noble.20260428170816985",
+    "url": "https://isaac.download.nvidia.cn/isaac-ros/release-4.4/pool/main/r/ros-jazzy-isaac-common/ros-jazzy-isaac-common_4.4.0-0noble.20260428170816985_amd64.deb",
+    "sha256": "47b9dc93b041feeea0f8e7c5638e2312838b256d7d071298390b7a1c61b0b005",
+    "size": "8958"
+  },
+  {
+    "name": "ros-jazzy-foxglove-bridge",
+    "version": "3.6.0-1noble.20260930.003057",
+    "url": "https://mirrors.ustc.edu.cn/ros2/ubuntu/pool/main/r/ros-jazzy-foxglove-bridge/ros-jazzy-foxglove-bridge_3.6.0-1noble.20260930.003057_amd64.deb",
+    "sha256": "a41513527adeb5ed416edaa0fa484c7f83804b7a29f53209747e6c2aeb8e72d5",
+    "size": "12984026"
+  },
+  {
+    "name": "ros-jazzy-rosx-introspection",
+    "version": "2.3.0-1noble.20260911.145107",
+    "url": "https://mirrors.ustc.edu.cn/ros2/ubuntu/pool/main/r/ros-jazzy-rosx-introspection/ros-jazzy-rosx-introspection_2.3.0-1noble.20260911.145107_amd64.deb",
+    "sha256": "128f95637e6be020721e351a3fb8560c2b745479838c24ea9bc4121019ef2bbe",
+    "size": "220406"
+  }
+]

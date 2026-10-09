@@ -163,6 +163,23 @@ class Geometry(unittest.TestCase):
 
 
 class Mapping(unittest.TestCase):
+    def test_forward_camera_map_includes_robot_without_clearing_unknown_space(self):
+        grid = Grid(.05)
+        grid.insert([.3,0,.8], [[2,0,.5], [2,1,.5]])
+        observed = dict(grid.cells)
+        grid.include_robot([0,0,0])
+        image, origin = grid.image()
+        self.assertLess(origin[0], 0)
+        self.assertLess(origin[1], 0)
+        self.assertEqual(grid.cells, observed)
+        robot_x = int((0-origin[0])/grid.resolution)
+        robot_y = int((0-origin[1])/grid.resolution)
+        self.assertEqual(image[robot_y,robot_x], -1)
+        grid.include_robot([-3,-2,0])
+        image, origin = grid.image()
+        self.assertLessEqual(origin[0], -4)
+        self.assertLessEqual(origin[1], -3)
+
     def test_bundle_roundtrip_and_no_overwrite(self):
         grid=Grid(1)
         grid.insert([0,0,.3],[[3,0,1],[0,3,1]])
@@ -282,12 +299,13 @@ class Contracts(unittest.TestCase):
             result = subprocess.run(['bash', str(entry)], env=environment,
                                     check=True, capture_output=True, text=True)
             self.assertEqual(result.stdout.splitlines(),
-                             ['explore', '--sim', 'isaac', '--world', 'simple_room', '--bundle', str(Path(folder)/'maps/gazebo_simple_room'),
+                             ['explore', '--sim', 'isaac', '--odometry', 'lio', '--world', 'simple_room', '--bundle', str(Path(folder)/'maps/gazebo_simple_room'),
                               '--initial-x', '0.0', '--initial-y', '0.0',
                               '--initial-yaw', '1.5708', '--depth-source', 'sim',
                               '--lsm-config', str(Path(folder)/'src/perception/LSM_depth_infer/config/config.yaml'),
                               '--lsm-params', str(Path(folder)/'src/perception/LSM_depth_infer/config/isaac_params.yaml'),
                               '--semantic-cloud-source', 'fastlio',
+                              '--yoloe-config', str(Path(folder)/'src/perception/yoloe_infer/configs/tracking.yaml'),
                               '--octomap-backend', 'semantic_cuda', '--semantic-map-config',
                               str(Path(folder)/'src/mapping/semantic_voxel_mapping/config/map.yaml'), '--build'])
 
@@ -299,7 +317,7 @@ class Contracts(unittest.TestCase):
             (Path(folder)/'scripts/runtime/robot_services.sh').write_text('printf "%s\\n" "$@"\n')
             result = subprocess.run(['bash', str(entry)], check=True, capture_output=True, text=True)
             self.assertEqual(result.stdout.splitlines(),
-                             ['pick', '--sim', 'isaac', '--world', 'manipulation_test', '--bundle', str(Path(folder)/'maps/manipulation_test'),
+                             ['pick', '--sim', 'isaac', '--odometry', 'lio', '--world', 'manipulation_test', '--bundle', str(Path(folder)/'maps/manipulation_test'),
                               '--initial-x', '0.0', '--initial-y', '0.0', '--initial-yaw', '0.0',
                               '--yoloe-config', str(Path(folder)/'src/perception/yoloe_infer/configs/manipulation.yaml'),
                               '--depth-source', 'sim', '--semantic-cloud-source', 'depth',

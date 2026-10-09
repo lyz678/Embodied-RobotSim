@@ -8,7 +8,7 @@ USER_ARGS=()
 while (($#)); do
     case "$1" in
         --mode) shift; TASK_MODE="${1:?--mode 缺少模式}" ;;
-        --help|-h) echo "用法：$0 [--sim isaac|gazebo] [--world 场景] [--bundle 地图目录] [--depth-source sim|lsm] [--headless] [--build]"; exit 0 ;;
+        --help|-h) echo "用法：$0 [--sim isaac|gazebo] [--odometry lio|vio] [--world 场景] [--bundle 地图目录] [--depth-source sim|lsm] [--headless] [--build]"; exit 0 ;;
         *) USER_ARGS+=("$1") ;;
     esac
     shift
@@ -18,6 +18,7 @@ MODE=llm
 
 # 默认配置：公共参数以 Isaac Sim 为基准，--sim gazebo 可选择后端。
 SIM_BACKEND=isaac
+ODOMETRY_SOURCE=lio # vio：Isaac ROS 双目惯性里程计；lio：FAST-LIO。
 WORLD=simple_room
 MAP_BUNDLE="$ROOT_DIR/maps/gazebo_simple_room"
 INITIAL_X=0.0
@@ -26,7 +27,7 @@ INITIAL_YAW=1.5708
 HEADLESS=false
 BUILD=false
 
-DEFAULT_ARGS=(--sim "$SIM_BACKEND" --world "$WORLD" --bundle "$MAP_BUNDLE"
+DEFAULT_ARGS=(--sim "$SIM_BACKEND" --odometry "$ODOMETRY_SOURCE" --world "$WORLD" --bundle "$MAP_BUNDLE"
     --initial-x "$INITIAL_X" --initial-y "$INITIAL_Y" --initial-yaw "$INITIAL_YAW")
 [[ "$HEADLESS" == true ]] && DEFAULT_ARGS+=(--headless)
 [[ "$BUILD" == true ]] && DEFAULT_ARGS+=(--build)

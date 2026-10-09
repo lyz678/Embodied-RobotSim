@@ -14,6 +14,9 @@ class Gate(Node):
         super().__init__('localization_safety_gate')
         self.health = Health()
         self.localization = False
+        self.require_vio_health = self.declare_parameter('require_vio_health', False).value
+        self.vio_healthy = False
+        self.vio_wall = -float('inf')
         self.valid_wall = -float('inf')
         self.arbiter = VelocityArbiter()
         self.last_state = None
@@ -27,6 +30,8 @@ class Gate(Node):
         self.create_subscription(Twist, '/x_bot/cmd_vel_nav', self.nav_cmd, 10)
         self.create_subscription(Odometry, '/odom', self.odom, 10)
         self.create_subscription(Bool, '/localization/valid', self.status, 10)
+        if self.require_vio_health:
+            self.create_subscription(Bool, '/vio/healthy', self.vio_status, 10)
         self.timer = self.create_timer(.05, self.tick, clock=Clock(clock_type=ClockType.STEADY_TIME))
 
     def cmd(self, msg):
@@ -49,10 +54,15 @@ class Gate(Node):
     def status(self, msg):
         self.localization, self.valid_wall = msg.data, time.monotonic()
 
+    def vio_status(self, msg):
+        self.vio_healthy, self.vio_wall = msg.data, time.monotonic()
+
     def tick(self):
         wall = time.monotonic()
         sim = self.get_clock().now().nanoseconds * 1e-9
-        ready = self.localization and wall-self.valid_wall < 2 and self.health.ready(sim, wall)
+        ready = (self.localization and wall-self.valid_wall < 2 and self.health.ready(sim, wall)
+                 and (not self.require_vio_health or
+                      (self.vio_healthy and wall-self.vio_wall < 2)))
         self.ready_pub.publish(Bool(data=ready))
         (linear, angular), state = self.arbiter.select(wall)
         out = Twist()

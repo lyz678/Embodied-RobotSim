@@ -21,6 +21,7 @@ class MapBuilder(Node):
     def __init__(self):
         super().__init__('fastlio_map_builder')
         self.output = Path(self.declare_parameter('output_bundle', 'maps/session').value).expanduser().resolve()
+        self.odometry_source = self.declare_parameter('odometry_source', 'lio').value
         self.initial = self.declare_parameter('initial_pose', [0., 0., 0.]).value
         x, y, yaw = self.initial
         self.origin = matrix([x,y,0], [0,0,math.sin(yaw/2),math.cos(yaw/2)])
@@ -37,12 +38,13 @@ class MapBuilder(Node):
         self.status = self.create_publisher(String, '/localization/status', 10)
         self.cloud = Subscriber(self, PointCloud2, '/fastlio/cloud_odom')
         self.sensor = Subscriber(self, Odometry, '/fastlio/sensor_odom')
-        self.sync = TimeSynchronizer([self.cloud, self.sensor], 30)
+        self.base = Subscriber(self, Odometry, '/odom')
+        self.sync = TimeSynchronizer([self.cloud, self.sensor, self.base], 30)
         self.sync.registerCallback(self.insert)
         self.save_srv = self.create_service(Trigger, '/localization/save_map', self.save)
         self.timer = self.create_timer(1., self.publish)
 
-    def insert(self, cloud, sensor):
+    def insert(self, cloud, sensor, base):
         stamp = cloud.header.stamp
         if self.last_stamp and (stamp.sec,stamp.nanosec) <= (self.last_stamp.sec,self.last_stamp.nanosec):
             self.ready.publish(Bool(data=False))
@@ -53,6 +55,9 @@ class MapBuilder(Node):
         p = sensor.pose.pose.position
         origin = transform([[p.x,p.y,p.z]], self.origin)[0]
         self.grid.insert(origin, points)
+        p = base.pose.pose.position
+        base_map = transform([[p.x,p.y,p.z]], self.origin)[0]
+        self.grid.include_robot(base_map)
         for p in points:
             key = tuple(np.floor(p/.05).astype(int))
             self.voxels[key] = tuple(float(v) for v in p)
@@ -77,7 +82,7 @@ class MapBuilder(Node):
 
     def save(self, request, response):
         try:
-            save_bundle(self.output, self.grid, self.voxels.values(), self.initial)
+            save_bundle(self.output, self.grid, self.voxels.values(), self.initial, self.odometry_source)
             response.success, response.message = True, str(self.output)
         except (ValueError, OSError) as exc:
             response.success, response.message = False, str(exc)

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <!-- Fast DDS waits for the client's response reader to be discovered before
+       sending a service reply. The 100 ms default can lose lifecycle replies
+       during simulator startup; Nav2 Jazzy then waits indefinitely. This changes
+       only service reply writers, leaving image/odometry QoS untouched. -->
+  <publisher profile_name="service">
+    <qos>
+      <reliability>
+        <kind>RELIABLE</kind>
+        <max_blocking_time><sec>2</sec><nanosec>0</nanosec></max_blocking_time>
+      </reliability>
+    </qos>
+  </publisher>
+</profiles>

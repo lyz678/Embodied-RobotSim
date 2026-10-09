@@ -4,6 +4,7 @@
 <maintainer email="maintainer@example.com">Embodied RobotSim maintainers</maintainer><license>Apache-2.0</license>
 <buildtool_depend>ament_cmake</buildtool_depend>
 <depend>launch_ros</depend>
+<exec_depend>python3-yaml</exec_depend>
 <depend>nav2_bringup</depend>
 <depend>nav2_common</depend>
 <depend>nav2_graceful_controller</depend>

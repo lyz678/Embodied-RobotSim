@@ -30,6 +30,22 @@ class Grid:
     def __init__(self, resolution=.05, min_height=.1, max_height=1.8):
         self.resolution, self.min_height, self.max_height = resolution, min_height, max_height
         self.cells = {}
+        self.bounds = None
+
+    def include_robot(self, position, margin=1.0):
+        """Keep the robot inside the grid even with a forward-only sensor.
+
+        Extending bounds adds UNKNOWN cells, not fabricated free observations.
+        Nav2's footprint clearing handles the space occupied by the robot.
+        """
+        lower = self.cell([position[0]-margin, position[1]-margin])
+        upper = self.cell([position[0]+margin, position[1]+margin])
+        if self.bounds is None:
+            self.bounds = lower, upper
+        else:
+            old_lower, old_upper = self.bounds
+            self.bounds = (tuple(min(a,b) for a,b in zip(lower,old_lower)),
+                           tuple(max(a,b) for a,b in zip(upper,old_upper)))
 
     def cell(self, point):
         return tuple(math.floor(float(v) / self.resolution) for v in point[:2])
@@ -55,7 +71,11 @@ class Grid:
             raise ValueError('No observed occupancy cells')
         xs, ys = zip(*self.cells)
         lower = min(xs), min(ys)
-        width, height = max(xs)-lower[0]+1, max(ys)-lower[1]+1
+        upper = max(xs), max(ys)
+        if self.bounds is not None:
+            lower = tuple(min(a,b) for a,b in zip(lower,self.bounds[0]))
+            upper = tuple(max(a,b) for a,b in zip(upper,self.bounds[1]))
+        width, height = upper[0]-lower[0]+1, upper[1]-lower[1]+1
         if width * height > 16_000_000:
             raise ValueError('Map exceeds 16 million cells')
         data = np.full((height, width), -1, dtype=np.int8)
@@ -64,7 +84,7 @@ class Grid:
         return data, [lower[0]*self.resolution, lower[1]*self.resolution, 0.]
 
 
-def save_bundle(output, grid, points, initial):
+def save_bundle(output, grid, points, initial, odometry_source='lio'):
     """Save paired maps atomically; never overwrite an existing bundle."""
     output = Path(output)
     if output.exists():
@@ -86,7 +106,9 @@ def save_bundle(output, grid, points, initial):
         (folder/'map.yaml').write_text(f'image: map.pgm\nmode: trinary\nresolution: {grid.resolution}\norigin: {origin}\nnegate: 0\noccupied_thresh: 0.65\nfree_thresh: 0.196\n')
         (folder/'bundle.json').write_text(json.dumps({'version':1, 'frame':'map', 'pcd':'map.pcd',
             'occupancy':'map.yaml', 'initial_pose':list(initial), 'resolution':grid.resolution,
-            'sensor_frame':'mid360_link', 'mapping':'FAST-LIO (no loop closure)',
+            'sensor_frame':'camera_left_frame' if odometry_source == 'vio' else 'mid360_link',
+            'mapping':'cuVSLAM VIO + depth (no loop closure)' if odometry_source == 'vio' else 'FAST-LIO (no loop closure)',
+            'odometry_source':odometry_source,
             'point_count':len(points)}, indent=2)+'\n')
         # A separate reservation prevents a second cooperating saver racing us.
         lock = output.with_name(output.name + '.saving')

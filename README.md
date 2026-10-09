@@ -2,7 +2,7 @@
 
 [English](README_en.md)
 
-基于 **ROS 2 Jazzy + Isaac Sim 6.1 / Gazebo Harmonic** 的移动抓取仿真项目。支持 FAST-LIO 建图定位、Nav2 自动探索与导航、YOLOE 感知、CUDA 语义体素建图、GraspNet 抓取和自然语言任务闭环。
+基于 **ROS 2 Jazzy + Isaac Sim 6.1 / Gazebo Harmonic** 的移动抓取仿真项目。支持 FAST-LIO 建图定位、实验性 Isaac ROS VIO、Nav2 自动探索与导航、YOLOE 感知、CUDA 语义体素建图、GraspNet 抓取和自然语言任务闭环。
 
 ## 演示
 
@@ -19,6 +19,19 @@
 ![具身任务闭环](assets/Embodied_LLM.gif)
 
 ## 启动方式
+
+定位里程计默认 `lio`（FAST-LIO），三个根目录启动脚本均支持 `--odometry lio|vio`。
+`vio` 使用 NVIDIA Isaac ROS 双目惯性里程计，首次使用需安装本地运行库：
+
+```bash
+bash -c 'source /opt/ros/jazzy/setup.bash && python3 scripts/setup/setup_vio_dependencies.py'
+./start_mapping_and_explore.sh --odometry vio
+```
+
+**VIO 当前为实验模式。** 已在本机 RTX 5060 Ti 上完成 GPU / IMU 融合、短程运动、
+建图保存和自主探索启动验证；最新三分钟持续探索仍出现位姿异常并触发安全停车，
+尚未完成稳定的全场景探索。依赖版本、核心实现、实测结果与排障见
+[定位模块说明](src/localization/README.md)。
 
 在项目根目录执行。无参数默认 **Isaac Sim**；添加 `--sim gazebo` 切换后端，也可修改脚本顶部的 `SIM_BACKEND`。
 
@@ -48,7 +61,7 @@ export DASHSCOPE_API_KEY='你的 API Key'
 
 每次启动会先停止上次项目会话。统一只打开一个 RViz，显示点云、轨迹、语义体素、地图与规划路径。建图和抓取入口默认构建；具身入口默认使用已有构建，需要时添加 `--build`。
 
-常用选项：`--sim isaac|gazebo`、`--world 场景`、`--bundle 地图目录`、`--headless`、`--build` / `--no-build`。默认值在各入口脚本顶部。
+常用选项：`--sim isaac|gazebo`、`--odometry lio|vio`、`--world 场景`、`--bundle 地图目录`、`--headless`、`--build` / `--no-build`。默认值在各入口脚本顶部。
 
 ## 依赖与首次配置
 
@@ -156,11 +169,12 @@ Isaac 默认保存到 `maps/gazebo_simple_room`（沿用历史名称），Gazebo
 | `src/planning/x_bot_navigation/config/nav2.yaml` | 导航速度、路径跟随、碰撞尺寸和障碍膨胀 |
 | `src/control/x_bot_control/config/` | 底盘、控制器及后端物理差异 |
 | `src/localization/x_bot_localization/config/fastlio_mid360.yaml` | 实际加载的 FAST-LIO 参数 |
+| `src/localization/x_bot_localization/config/vio.yaml` | VIO 双目、IMU 融合与平面约束参数 |
 | `src/robot/x_bot_sensors/config/mid360.yaml` | 公共雷达配置，默认 20 Hz 仿真时间组帧 |
 | `src/mapping/semantic_voxel_mapping/config/` | 建图输入、分辨率、hit/miss 与语义融合 |
 | `src/perception/yoloe_infer/configs/` | 检测类别、颜色与阈值 |
 | `src/manipulation/x_bot_manipulation/config/` | 抓取放置任务及物理验收 |
 
-建图入口默认使用 FAST-LIO 点云；抓取默认使用所选仿真器的深度，栅格分辨率为 2 cm。切换推理深度使用 `--semantic-cloud-source depth --depth-source lsm`，需自行提供并构建本地可选模块 `src/perception/LSM_depth_infer`。抓取期间 YOLOE 图像持续输出，语义点云暂时停止发布。
+建图入口默认使用 FAST-LIO 点云；VIO 模式自动切换到深度点云，几何建图使用仿真深度；抓取默认使用所选仿真器的深度，栅格分辨率为 2 cm。切换推理深度使用 `--semantic-cloud-source depth --depth-source lsm`，需自行提供并构建本地可选模块 `src/perception/LSM_depth_infer`。抓取期间 YOLOE 图像持续输出，语义点云暂时停止发布。
 
 源码按 `robot`、`localization`、`perception`、`planning`、`control`、`mapping`、`manipulation`、`simulation`、`embodied` 分组；运行工具在 `scripts/runtime/`，安装和资产工具在 `scripts/setup/`、`scripts/assets/`。算法和许可证见各模块。

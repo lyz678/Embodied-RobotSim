@@ -9,12 +9,13 @@ if (($#)); then shift; fi
 case "$MODE" in
     explore|navigation|pick|navigation_pick|llm) ;;
     *)
-        echo "用法：$0 {explore|navigation|pick|navigation_pick|llm} [--sim isaac|gazebo] [--world 场景] [--headless] [--build] [--no-explore] [--bundle 地图目录] [--initial-x X --initial-y Y --initial-yaw RAD]" >&2
+        echo "用法：$0 {explore|navigation|pick|navigation_pick|llm} [--sim isaac|gazebo] [--odometry lio|vio] [--world 场景] [--headless] [--build] [--no-explore] [--bundle 地图目录] [--initial-x X --initial-y Y --initial-yaw RAD]" >&2
         exit 2
         ;;
 esac
 
 SIM_BACKEND=isaac
+ODOMETRY_SOURCE=lio
 HEADLESS=false
 BUILD=false
 AUTO_EXPLORE=true
@@ -45,6 +46,7 @@ SEMANTIC_CLOUD_SOURCE=depth
 while (($#)); do
     case "$1" in
         --sim) shift; SIM_BACKEND="${1:?缺少 isaac/gazebo}" ;;
+        --odometry) shift; ODOMETRY_SOURCE="${1:?缺少 lio/vio}" ;;
         --headless) HEADLESS=true ;;
         --build) BUILD=true ;;
         --no-build) BUILD=false ;;
@@ -74,6 +76,14 @@ case "$SIM_BACKEND" in
     isaac|gazebo) ;;
     *) echo "仿真器必须为 isaac 或 gazebo" >&2; exit 2 ;;
 esac
+case "$ODOMETRY_SOURCE" in
+    lio|vio) ;;
+    *) echo "里程计必须为 lio 或 vio" >&2; exit 2 ;;
+esac
+if [[ "$ODOMETRY_SOURCE" == vio && "$SEMANTIC_CLOUD_SOURCE" == fastlio ]]; then
+    SEMANTIC_CLOUD_SOURCE=depth
+    echo "VIO 模式：语义建图使用 depth 点云"
+fi
 if [[ "$SIM_BACKEND" == gazebo ]]; then
     case "$WORLD" in simple_room|manipulation_test) ;; *) echo "Gazebo 仅支持 simple_room/manipulation_test" >&2; exit 2 ;; esac
     [[ "$DEPTH_SOURCE" != isaac ]] || { echo "Gazebo 深度来源请使用 sim（或 lsm）" >&2; exit 2; }
@@ -125,11 +135,23 @@ done
 cd "$ROOT_DIR"
 # Keep large camera/cloud writes off lifecycle/service callback threads.
 export RMW_FASTRTPS_PUBLICATION_MODE="${RMW_FASTRTPS_PUBLICATION_MODE:-ASYNCHRONOUS}"
-echo "🛑 正在清理残留进程..."
 # Load ROS for the cleanup script even when launched from a fresh shell.
 set +u
 source /opt/ros/jazzy/setup.bash
+[[ ! -f "$INSTALL_DIR/setup.bash" ]] || source "$INSTALL_DIR/setup.bash"
 set -u
+has_runtime_package() (
+    # Keep the relocated native ROS libraries out of Isaac Sim's environment.
+    if [[ "$ODOMETRY_SOURCE" == vio && -f "$ROOT_DIR/.cache/vslam/env.bash" ]]; then
+        source "$ROOT_DIR/.cache/vslam/env.bash"
+    fi
+    ros2 pkg prefix "$1" >/dev/null 2>&1
+)
+if [[ "$ODOMETRY_SOURCE" == vio ]] && ! has_runtime_package isaac_ros_visual_slam; then
+    echo "错误：VIO 需要 Isaac ROS 4.x 的 isaac_ros_visual_slam。安装说明：$ROOT_DIR/src/localization/README.md；尚未停止当前仿真。" >&2
+    exit 1
+fi
+echo "🛑 正在清理残留进程..."
 bash "$ROOT_DIR/stop_robot_sim.sh"
 sleep 2
 
@@ -161,14 +183,19 @@ if [[ "$MODE" == llm && -f "$ROOT_DIR/.cache/embodied_sysroot/env.bash" ]]; then
 fi
 AGENT_PYTHON="${AGENT_PYTHON:-python3}"
 [[ ! -x "$ROOT_DIR/.venv/agent/bin/python" || "$AGENT_PYTHON" != python3 ]] || AGENT_PYTHON="$ROOT_DIR/.venv/agent/bin/python"
-REQUIRED_PACKAGES=(x_bot x_bot_localization x_bot_bringup x_bot_control x_bot_sensors x_bot_mapping x_bot_navigation livox_ros_driver2 fast_lio)
+REQUIRED_PACKAGES=(x_bot x_bot_localization x_bot_bringup x_bot_control x_bot_sensors x_bot_mapping x_bot_navigation)
+if [[ "$ODOMETRY_SOURCE" == lio ]]; then
+    REQUIRED_PACKAGES+=(livox_ros_driver2 fast_lio)
+else
+    REQUIRED_PACKAGES+=(isaac_ros_visual_slam rclcpp_components cv_bridge)
+fi
 [[ "$SIM_BACKEND" != isaac ]] || REQUIRED_PACKAGES+=(x_bot_isaac)
 case "$MODE" in pick|navigation_pick|llm) REQUIRED_PACKAGES+=(x_bot_manipulation x_bot_moveit_config graspnet_ros yoloe_infer) ;; explore) REQUIRED_PACKAGES+=(yoloe_infer) ;; esac
 [[ "$MODE" != llm ]] || REQUIRED_PACKAGES+=(rosbridge_server web_video_server)
 [[ "$SIM_BACKEND" != gazebo ]] || REQUIRED_PACKAGES+=(x_bot_gazebo ros_gz_sim ros_gz_bridge gz_ros2_control)
 for package in "${REQUIRED_PACKAGES[@]}"; do
-    if ! ros2 pkg prefix "$package" >/dev/null 2>&1; then
-        echo "错误：未找到 $SIM_BACKEND 运行依赖 $package；具身 Web 依赖见 scripts/setup/setup_embodied_dependencies.sh，其余依赖见 README。" >&2
+    if ! has_runtime_package "$package"; then
+        echo "错误：未找到 $SIM_BACKEND 运行依赖 $package；具身 Web 依赖见 scripts/setup/setup_embodied_dependencies.sh，其余依赖见 README；VIO 依赖见 src/localization/README.md。" >&2
         exit 1
     fi
 done
@@ -206,6 +233,9 @@ if [[ "$MODE" == navigation || "$MODE" == navigation_pick || "$MODE" == llm ]]; 
 fi
 
 ROS_ENV="source /opt/ros/jazzy/setup.bash && source '$INSTALL_DIR/setup.bash'"
+if [[ "$ODOMETRY_SOURCE" == vio && -f "$ROOT_DIR/.cache/vslam/env.bash" ]]; then
+    ROS_ENV="$ROS_ENV && source '$ROOT_DIR/.cache/vslam/env.bash'"
+fi
 LOG_DIR="$ROOT_DIR/log/$SIM_BACKEND"
 mkdir -p "$LOG_DIR"
 
@@ -271,15 +301,15 @@ SIM_ARGS="--world $WORLD --x $INITIAL_X --y $INITIAL_Y --yaw $INITIAL_YAW"
 SIM_RUNTIME=isaac_runtime.sh
 SIM_TITLE="Isaac Sim"
 if [[ "$SIM_BACKEND" == gazebo ]]; then SIM_RUNTIME=gazebo_runtime.sh; SIM_TITLE="Gazebo"; fi
-echo "启动 $SIM_BACKEND：mode=$MODE world=$WORLD localization=$LOCALIZATION_MODE map=$BUNDLE"
+echo "启动 $SIM_BACKEND：mode=$MODE world=$WORLD localization=$LOCALIZATION_MODE odometry=$ODOMETRY_SOURCE map=$BUNDLE"
 launch_window "$SIM_TITLE" "cd '$ROOT_DIR' && ISAAC_SIM_CLEANUP_DONE=1 bash '$ROOT_DIR/scripts/runtime/$SIM_RUNTIME' $SIM_ARGS"
 sleep 8
 [[ "$SIM_BACKEND" != isaac ]] || launch_window "Isaac Controllers" "$ROS_ENV && ros2 launch x_bot_isaac controllers.launch.py"
-launch_window "FAST-LIO Localization" "$ROS_ENV && ros2 launch x_bot_bringup localization.launch.py mode:=$LOCALIZATION_MODE bundle:='$BUNDLE' initial_x:=$INITIAL_X initial_y:=$INITIAL_Y initial_yaw:=$INITIAL_YAW"
+launch_window "$ODOMETRY_SOURCE Localization" "$ROS_ENV && ros2 launch x_bot_bringup localization.launch.py odometry_source:=$ODOMETRY_SOURCE mode:=$LOCALIZATION_MODE bundle:='$BUNDLE' initial_x:=$INITIAL_X initial_y:=$INITIAL_Y initial_yaw:=$INITIAL_YAW"
 [[ "$HEADLESS" == true ]] || launch_window "RViz" "$ROS_ENV && rviz2 -d '$(ros2 pkg prefix --share x_bot_navigation)/rviz/octomap.rviz' --ros-args -r __node:=rviz2_unified -p use_sim_time:=true"
 READY="ros2 run x_bot_control wait_ready"
 launch_navigation() {
-    launch_window "Nav2 FAST-LIO" "$ROS_ENV && $READY && ros2 launch x_bot_navigation navigation.launch.py"
+    launch_window "Nav2 $ODOMETRY_SOURCE" "$ROS_ENV && $READY && ros2 launch x_bot_navigation navigation.launch.py odometry_source:=$ODOMETRY_SOURCE"
 }
 
 launch_yoloe() {

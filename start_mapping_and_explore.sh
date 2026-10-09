@@ -8,7 +8,7 @@ USER_ARGS=()
 while (($#)); do
     case "$1" in
         --mode) shift; TASK_MODE="${1:?--mode 缺少模式}" ;;
-        --help|-h) echo "用法：$0 [--mode navigation] [--sim isaac|gazebo] [--world 场景] [--bundle 地图目录] [--depth-source sim|lsm] [--headless] [--build]"; exit 0 ;;
+        --help|-h) echo "用法：$0 [--mode navigation] [--sim isaac|gazebo] [--odometry lio|vio] [--world 场景] [--bundle 地图目录] [--depth-source sim|lsm] [--headless] [--build]"; exit 0 ;;
         *) USER_ARGS+=("$1") ;;
     esac
     shift
@@ -18,6 +18,7 @@ case "$TASK_MODE" in default) ;; navigation) MODE=navigation ;; *) echo "模式�
 
 # 默认配置：公共参数以 Isaac Sim 为基准，--sim gazebo 可选择后端。
 SIM_BACKEND=isaac
+ODOMETRY_SOURCE=lio # vio：Isaac ROS 双目惯性里程计；lio：FAST-LIO。
 WORLD=simple_room
 MAP_BUNDLE="$ROOT_DIR/maps/gazebo_simple_room"
 INITIAL_X=0.0
@@ -38,7 +39,7 @@ OCTOMAP_BACKEND=semantic_cuda
 SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/mapping/semantic_voxel_mapping/config/map.yaml"
 
 [[ "$MODE" != navigation ]] || INITIAL_YAW=0.0
-DEFAULT_ARGS=(--sim "$SIM_BACKEND" --world "$WORLD" --bundle "$MAP_BUNDLE"
+DEFAULT_ARGS=(--sim "$SIM_BACKEND" --odometry "$ODOMETRY_SOURCE" --world "$WORLD" --bundle "$MAP_BUNDLE"
     --initial-x "$INITIAL_X" --initial-y "$INITIAL_Y" --initial-yaw "$INITIAL_YAW"
     --depth-source "$DEPTH_SOURCE" --lsm-config "$LSM_CONFIG_FILE" --lsm-params "$LSM_PARAMS_FILE"
     --semantic-cloud-source "$SEMANTIC_CLOUD_SOURCE"

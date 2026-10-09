@@ -29,19 +29,21 @@ def set_pose(pose, m):
 
 
 class Adapter(Node):
-    def __init__(self):
-        super().__init__('fastlio_adapter')
+    def __init__(self, source='lio'):
+        super().__init__('fastlio_adapter' if source == 'lio' else 'vio_adapter')
         self.buffer = Buffer()
         self.listener = TransformListener(self.buffer, self)
         self.tf = TransformBroadcaster(self)
         self.odom_pubs = [self.create_publisher(Odometry, t, 10) for t in ('/odom', '/x_bot/odom')]
-        self.cloud_pub = self.create_publisher(PointCloud2, '/fastlio/cloud_odom', 10)
-        self.sensor_pub = self.create_publisher(Odometry, '/fastlio/sensor_odom', 10)
+        prefix = '/fastlio' if source == 'lio' else '/vio'
+        self.cloud_pub = self.create_publisher(PointCloud2, prefix + '/cloud_odom', 10)
+        self.sensor_pub = self.create_publisher(Odometry, prefix + '/sensor_odom', 10)
         self.scan_pub = self.create_publisher(LaserScan, '/x_bot/scan', 10)
-        self.odom_sub = Subscriber(self, Odometry, '/fastlio/odometry')
-        self.cloud_sub = Subscriber(self, PointCloud2, '/fastlio/cloud_registered')
-        self.sync = TimeSynchronizer([self.odom_sub, self.cloud_sub], 30)
-        self.sync.registerCallback(self.receive)
+        if source == 'lio':
+            self.odom_sub = Subscriber(self, Odometry, '/fastlio/odometry')
+            self.cloud_sub = Subscriber(self, PointCloud2, '/fastlio/cloud_registered')
+            self.sync = TimeSynchronizer([self.odom_sub, self.cloud_sub], 30)
+            self.sync.registerCallback(self.receive)
         self.origin = None
         self.previous = None
         self.fault = False
@@ -65,6 +67,18 @@ class Adapter(Node):
         imu_base = matrix([getattr(t.translation, a) for a in 'xyz'], [getattr(t.rotation, a) for a in 'xyzw'])
         camera_imu = pose_matrix(odom.pose.pose)
         camera_base = camera_imu @ imu_base
+        raw = point_cloud2.read_points_numpy(cloud, field_names=('x', 'y', 'z'), skip_nans=True)
+        self.publish_estimate(odom, camera_base, camera_imu, raw, 'mid360_imu_link')
+
+    def publish_estimate(self, odom, camera_base, camera_sensor, raw, sensor_frame):
+        """Publish a paired pose/cloud sample in the initial base's odom frame."""
+        ns = Time.from_msg(odom.header.stamp).nanoseconds
+        if self.fault:
+            return
+        if self.previous and ns <= self.previous[0]:
+            self.fault = True
+            self.get_logger().error('Time rewind: restart localization; navigation inhibited')
+            return
         if self.origin is None:
             # odom origin = initial base pose, not initial elevated IMU pose.
             self.origin = np.linalg.inv(camera_base)
@@ -91,13 +105,12 @@ class Adapter(Node):
         for pub in self.odom_pubs:
             pub.publish(out)
         sensor = copy.deepcopy(out)
-        sensor.child_frame_id = 'mid360_imu_link'
-        set_pose(sensor.pose.pose, self.origin @ camera_imu)
+        sensor.child_frame_id = sensor_frame
+        set_pose(sensor.pose.pose, self.origin @ camera_sensor)
         self.sensor_pub.publish(sensor)
-        raw = point_cloud2.read_points_numpy(cloud, field_names=('x', 'y', 'z'), skip_nans=True)
         points = transform(raw, self.origin)
         self.cloud_pub.publish(point_cloud2.create_cloud_xyz32(out.header, points.tolist()))
-        # Derive a navigation scan from DESKEWED points at scan-end base pose.
+        # Height-filter the paired cloud into the navigation base frame.
         local = transform(points, np.linalg.inv(odom_base))
         scan = LaserScan()
         scan.header = Header(stamp=odom.header.stamp, frame_id='base_footprint')

@@ -20,6 +20,19 @@ Mobile manipulation simulation with **ROS 2 Jazzy + Isaac Sim 6.1 / Gazebo Harmo
 
 ## Launch
 
+Odometry defaults to FAST-LIO (`lio`). All three root launchers accept `--odometry lio|vio`.
+For experimental NVIDIA Isaac ROS stereo-inertial odometry:
+
+```bash
+bash -c 'source /opt/ros/jazzy/setup.bash && python3 scripts/setup/setup_vio_dependencies.py'
+./start_mapping_and_explore.sh --odometry vio
+```
+
+Local GPU/IMU, short-motion, map-save and exploration-start checks passed on an RTX 5060 Ti.
+The latest three-minute exploration test failed after pose jumps triggered a safety stop;
+sustained VIO tracking remains unresolved. See the [localization guide](src/localization/README.md)
+for pinned dependencies, implementation, test results and troubleshooting.
+
 Run from the repository root. **Isaac Sim is the default**; append `--sim gazebo` or edit `SIM_BACKEND` at the top of the launcher.
 
 | Command | Function | Default world | Additional prerequisite |
@@ -41,7 +54,7 @@ export DASHSCOPE_API_KEY='your-api-key'
 
 Startup stops previous project sessions. One RViz displays clouds, trajectories, semantic voxels, maps and paths. Mapping/picking launchers build by default; the embodied launcher uses an existing build unless `--build` is supplied.
 
-Common options: `--sim isaac|gazebo`, `--world NAME`, `--bundle DIRECTORY`, `--headless`, `--build` / `--no-build`. Edit launcher defaults for argument-free startup.
+Common options: `--sim isaac|gazebo`, `--odometry lio|vio`, `--world NAME`, `--bundle DIRECTORY`, `--headless`, `--build` / `--no-build`. Edit launcher defaults for argument-free startup.
 
 ## Dependencies and setup
 

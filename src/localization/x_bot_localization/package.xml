@@ -5,6 +5,10 @@
 <buildtool_depend>ament_cmake</buildtool_depend>
 <buildtool_depend>ament_cmake_python</buildtool_depend>
 <depend>geometry_msgs</depend>
+<exec_depend>diagnostic_msgs</exec_depend>
+<exec_depend>cv_bridge</exec_depend>
+<exec_depend>launch_ros</exec_depend>
+<exec_depend>rclcpp_components</exec_depend>
 <depend>libpcl-all-dev</depend>
 <depend>message_filters</depend>
 <depend>nav_msgs</depend>
@@ -17,6 +21,10 @@
 <depend>std_msgs</depend>
 <depend>tf2_ros</depend>
 <depend>x_bot_common</depend>
+<depend>moveit_core</depend>
+<depend>moveit_ros_perception</depend>
+<depend>urdf</depend>
+<depend>srdfdom</depend>
 <test_depend>ament_cmake_gtest</test_depend>
 <export><build_type>ament_cmake</build_type></export>
 </package>
