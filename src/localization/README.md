@@ -9,6 +9,28 @@
 
 ## 依赖与构建
 
+### 点云显示与全局校正
+
+RViz 的 `Localization Point Cloud` 使用 `/localization/cloud_map`：定位模式在 ICP
+通过连续确认后，以同一份 `map → odom` 校正变换激光点，再发布 `frame_id=map`
+的点云；建图模式也发布这一显示话题。它保留采集时间，不参与再次配准。
+原始 `/fastlio/cloud_odom`（VIO 为 `/vio/cloud_odom`）继续供定位和语义融合使用。
+这样避免点云先于异步配准 TF 到达时，RViz 直接变换失败。
+Jazzy 的 [PointCloud2 显示实现](https://github.com/ros2/rviz/blob/jazzy/rviz_default_plugins/include/rviz_default_plugins/displays/pointcloud/point_cloud2_display.hpp)
+继承 RosTopicDisplay，未使用等待 TF 的 MessageFilterDisplay。
+
+`map_registration` 的 `correction_time_constant` 默认 0.5 秒，以采集时间差对
+全局校正的平移和四元数旋转做指数平滑。仅平滑通过 ICP 质量检查的校正；
+局部里程计、原始点云时间戳及定位有效性判断保持独立。显式重新设置初始位姿时
+重置滤波器；设为 0 可关闭平滑。无有效配准时不发布新的显示点云或有效状态。
+
+2026-10-09 本机静止采样，修复前后各约 20 秒：校正每帧平均平移变化从
+6.45 mm 降至 0.46 mm，最大旋转步长从 0.344° 降至 0.040°；新显示话题
+211 帧全部可立即转换到 `map`。此为 ROS 数据验证，未做屏幕显示验收。
+报告：`.cache/qwen/tf_jitter_before.json`、`.cache/qwen/tf_jitter_after.json`。
+
+### 编译环境
+
 本机验证环境：Ubuntu 24.04、ROS 2 Jazzy、Isaac Sim 6.1、RTX 5060 Ti 16 GB，
 NVIDIA 驱动 580.178.04、主机 CUDA 13.3，Isaac ROS 4.4 / cuVSLAM 15.0 / VPI 4.0.5。
 本集成使用 `isaac_ros_visual_slam` 的 release-4 组件接口，升级上游时须核对接口及依赖。

@@ -52,34 +52,32 @@ class CameraView {
     this._showImg();
     this._setOverlay('连接 web_video_server...');
 
+    // This web_video_server build passes query values directly to ROS. Keep
+    // legal ROS path separators: percent-encoded slashes make an invalid topic.
+    const topic = encodeURIComponent(this.currentTopic).replace(/%2F/gi, '/');
     const url = `${this.videoServerUrl}/stream` +
-                `?topic=${encodeURIComponent(this.currentTopic)}` +
-                `&type=mjpeg&quality=75`;
+                `?topic=${topic}` +
+                `&type=mjpeg&quality=70&qos_profile=sensor_data`;
     this.imgEl.src = '';
 
     // 5 秒超时 → 切换到原始图像模式
-    const timer = setTimeout(() => {
+    this._connectTimer = setTimeout(() => {
       console.warn('[Camera] web_video_server 超时，切换到原始图像模式');
       this._tryRaw();
     }, 5000);
 
     this.imgEl.onload = () => {
-      clearTimeout(timer);
+      clearTimeout(this._connectTimer);
       this._hideOverlay();
       this._mode = 'mjpeg';
       window.App?.setTopicActive('topic-camera', true);
-      // MJPEG 流持续刷新，用定时器估算 fps
-      clearInterval(this._fpsTimer);
-      this._fpsTimer = setInterval(() => {
-        if (this._mode !== 'mjpeg') { clearInterval(this._fpsTimer); return; }
-        if (this.imgEl?.complete && this.imgEl?.naturalWidth > 0) {
-          this._countFrame();
-        }
-      }, 80);
+      // <img> exposes no per-frame MJPEG callback. A timer would count its own
+      // ticks even when video freezes, so do not report a fabricated frame rate.
+      if (this.fpsEl) this.fpsEl.textContent = 'MJPEG';
     };
 
     this.imgEl.onerror = () => {
-      clearTimeout(timer);
+      clearTimeout(this._connectTimer);
       console.warn('[Camera] web_video_server 不可用，切换到原始图像模式');
       this._tryRaw();
     };
@@ -193,12 +191,16 @@ class CameraView {
 
   _stopSub() {
     clearInterval(this._fpsTimer);
+    clearTimeout(this._connectTimer);
     clearTimeout(this._watchdog);
     if (this._rosSub) {
       try { this._rosSub.unsubscribe(); } catch(e) {}
       this._rosSub = null;
     }
-    if (this.imgEl) { this.imgEl.onload = null; this.imgEl.onerror = null; }
+    if (this.imgEl) {
+      this.imgEl.onload = null; this.imgEl.onerror = null;
+      this.imgEl.src = '';
+    }
   }
 
   _showImg() {

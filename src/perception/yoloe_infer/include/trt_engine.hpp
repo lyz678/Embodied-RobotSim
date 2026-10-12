@@ -17,6 +17,8 @@ struct Detection {
     int class_id;
     std::string name;
     cv::Mat mask; // Optional mask
+    int track_id = -1;
+    std::vector<float> appearance;
     std::vector<float> mask_coeffs; // Added for mask generation
 };
 
@@ -36,12 +38,14 @@ public:
                              std::shared_ptr<SimpleTokenizer> tokenizer,
                              int num_classes = 10, 
                              float conf = 0.25, 
-                             float iou = 0.45);
+                             float iou = 0.45,
+                             bool suppress_cross_class_duplicates = false);
     ~MultiTextPromptTRTEngine();
 
     void set_prompts(const std::vector<std::string>& prompts);
     std::pair<std::vector<Detection>, Timings> predict(const cv::Mat& img);
     void warmup();
+    bool has_neck_features() const { return neck_idx_ >= 0; }
 
     const std::vector<std::string>& get_current_prompts() const { return current_prompts_; }
     int get_num_classes() const { return num_classes_; }
@@ -70,6 +74,7 @@ private:
     int num_classes_;
     float conf_;
     float iou_;
+    bool suppress_cross_class_duplicates_;
     std::vector<std::string> current_prompts_;
     std::vector<int64_t> text_tokens_; // flattened [max_classes, 77]
 
@@ -90,6 +95,7 @@ private:
     int img_input_idx_ = -1;
     int token_input_idx_ = -1;
 
+    int neck_idx_ = -1;
     int preds_idx_ = -1;
     int protos_idx_ = -1;
     int mask_coeffs_idx_ = -1;

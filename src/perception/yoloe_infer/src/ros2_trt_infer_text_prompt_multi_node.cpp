@@ -1,5 +1,7 @@
 #include "ros2_trt_infer_text_prompt_multi_node.hpp"
 #include "compact_cloud.hpp"
+#include "lidar_localization.hpp"
+#include <image_geometry/pinhole_camera_model.hpp>
 #include <filesystem>
 #include <chrono>
 #include <yaml-cpp/yaml.h>
@@ -54,7 +56,30 @@ YoloeMultiTextPromptNode::YoloeMultiTextPromptNode()
         engine_path = ament_index_cpp::get_package_share_directory(engine_path.substr(10, slash - 10)) + engine_path.substr(slash);
     }
 
-    float conf = config["conf_thres"].as<float>();
+    tracking_enabled_ = declare_parameter<bool>("tracking_enabled", config["tracking_enabled"].as<bool>(true));
+    TrackerConfig tc;
+    auto tracking = config["tracking"];
+    if (tracking) {
+        tc.low=tracking["low_threshold"].as<double>(tc.low);
+        tc.high=tracking["high_threshold"].as<double>(tc.high);
+        tc.birth=tracking["new_track_threshold"].as<double>(tc.birth);
+        tc.max_age=tracking["max_age_seconds"].as<double>(tc.max_age);
+        tc.match=tracking["match_threshold"].as<double>(tc.match);
+        tc.spatial_gate=tracking["spatial_gate_m"].as<double>(tc.spatial_gate);
+        tc.iou_weight=tracking["iou_weight"].as<double>(tc.iou_weight);
+        tc.appearance_weight=tracking["appearance_weight"].as<double>(tc.appearance_weight);
+        tc.spatial_weight=tracking["spatial_weight"].as<double>(tc.spatial_weight);
+        tc.measurement_variance=tracking["measurement_variance"].as<double>(tc.measurement_variance);
+        tc.acceleration_variance=tracking["acceleration_variance"].as<double>(tc.acceleration_variance);
+        tc.min_hits=tracking["min_hits"].as<int>(tc.min_hits);
+        tc.tolerate_class_jitter=tracking["tolerate_class_jitter"].as<bool>(tc.tolerate_class_jitter);
+        tc.class_switch_hits=tracking["class_switch_hits"].as<int>(tc.class_switch_hits);
+    }
+    tc.validate(); tracking_min_hits_=tc.min_hits;
+    tracker_=std::make_unique<BotSort3D>(tc);
+    detection_confidence_ = config["conf_thres"].as<float>();
+    float conf = detection_confidence_;
+    if (tracking_enabled_) conf = std::min(conf, float(tc.low));
     float iou = config["iou_thres"].as<float>();
     float mad_threshold = config["mad_threshold"].as<float>();
     bool use_mad_filter = config["use_mad_filter"].as<bool>(true);
@@ -81,7 +106,8 @@ YoloeMultiTextPromptNode::YoloeMultiTextPromptNode()
     tokenizer_ = std::make_shared<SimpleTokenizer>();
 
     // Load engine
-    engine_ = std::make_unique<MultiTextPromptTRTEngine>(engine_path, tokenizer_, num_classes, conf, iou);
+    engine_ = std::make_unique<MultiTextPromptTRTEngine>(engine_path, tokenizer_, num_classes, conf, iou,
+        config["suppress_cross_class_duplicates"].as<bool>(false));
 
     // Initialize PointCloudColorizer
     pointcloud_colorizer_ = std::make_unique<PointCloudColorizer>(color_map, default_color, use_mad_filter, mad_threshold, min_depth);
@@ -89,9 +115,11 @@ YoloeMultiTextPromptNode::YoloeMultiTextPromptNode()
     // Set prompts from config
     engine_->set_prompts(prompts);
     engine_->warmup();
+    if (tracking_enabled_ && !engine_->has_neck_features())
+        throw std::runtime_error("Tracking requires reid_p3 Neck output; run scripts/build_tracking_engine.py and configure engine_path");
 
     // Synchronized subscribers
-    rclcpp::QoS qos(10);
+    rclcpp::QoS qos(2);
     qos.reliability(rclcpp::ReliabilityPolicy::BestEffort);
 
     sub_image_sync_.subscribe(this, image_topic, qos.get_rmw_qos_profile());
@@ -124,14 +152,18 @@ YoloeMultiTextPromptNode::YoloeMultiTextPromptNode()
     } else if (semantic_cloud_source_ == "depth") {
         sub_depth_sync_.subscribe(this, depth_topic, qos.get_rmw_qos_profile());
         sync_ = std::make_shared<message_filters::Synchronizer<SyncPolicy>>(
-            SyncPolicy(10), sub_image_sync_, sub_depth_sync_, sub_info_sync_);
+            SyncPolicy(3), sub_image_sync_, sub_depth_sync_, sub_info_sync_);
+        // Bound approximate synchronization before associating geometry; an
+        // unbounded queue can pair old depth with a moving camera's new RGB.
+        if(tracking_enabled_) sync_->setMaxIntervalDuration(rclcpp::Duration::from_seconds(.05));
         sync_->registerCallback(std::bind(&YoloeMultiTextPromptNode::sync_callback,
             this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
     } else {
         throw std::runtime_error("semantic_cloud_source must be fastlio or depth");
     }
 
-    pub_image_ = this->create_publisher<sensor_msgs::msg::Image>(image_result_topic, 10);
+    pub_tracks_ = create_publisher<vision_msgs::msg::Detection3DArray>("~/tracks_3d", 10);
+    pub_image_ = this->create_publisher<sensor_msgs::msg::Image>(image_result_topic, rclcpp::QoS(1));
     // Preview must survive suspended inference and missing depth/CameraInfo
     // (for example, when grasping pauses the stereo depth node).
     sub_image_ = this->create_subscription<sensor_msgs::msg::Image>(
@@ -208,11 +240,6 @@ std::vector<Detection> YoloeMultiTextPromptNode::infer_image(
         fps_start_time_ = now;
     }
 
-    // Publish annotated image
-    cv::Mat annotated = draw_detections(cv_ptr->image, detections, timings);
-    auto img_msg_out = cv_bridge::CvImage(image_msg->header, "bgr8", annotated).toImageMsg();
-    pub_image_->publish(*img_msg_out);
-
     return detections;
 }
 
@@ -221,8 +248,8 @@ void YoloeMultiTextPromptNode::lidar_sync_callback(
     const sensor_msgs::msg::PointCloud2::ConstSharedPtr& cloud_msg,
     const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info_msg) {
     try {
-        if (!enable_pointcloud_) {
-            if (enable_inference_) infer_image(image_msg);
+        if (!enable_pointcloud_ && !tracking_enabled_) {
+            if (enable_inference_ && !tracking_enabled_) publish_annotated(image_msg, infer_image(image_msg));
             return;
         }
         if (image_msg->header.frame_id.empty() || cloud_msg->header.frame_id.empty() ||
@@ -255,9 +282,19 @@ void YoloeMultiTextPromptNode::lidar_sync_callback(
         pcl::transformPointCloud(original, camera_points, eigen_transform(camera_tf));
         pcl::transformPointCloud(original, lidar_points, eigen_transform(lidar_tf));
         auto detections = enable_inference_ ? infer_image(image_msg) : std::vector<Detection>{};
+        if (tracking_enabled_ && enable_inference_) {
+            auto world_tf = tf_buffer_->lookupTransform(projection_fixed_frame_, cloud_msg->header.frame_id,
+                cloud_time, rclcpp::Duration::from_seconds(0.5));
+            pcl::PointCloud<pcl::PointXYZ> world_points;
+            auto cloud_to_world = eigen_transform(world_tf);
+            pcl::transformPointCloud(original, world_points, cloud_to_world);
+            Eigen::Matrix4d world_to_camera = (eigen_transform(camera_tf).matrix() * cloud_to_world.inverse().matrix()).cast<double>();
+            track_lidar(detections, camera_points, world_points, image_msg, info_msg, world_to_camera);
+        }
+        if (enable_inference_) publish_annotated(image_msg, detections);
         std_msgs::msg::Header header = cloud_msg->header;
         header.frame_id = lidar_frame_;
-        pub_semantic_cloud_->publish(pointcloud_colorizer_->semantic_lidar_cloud(
+        if (enable_pointcloud_) pub_semantic_cloud_->publish(pointcloud_colorizer_->semantic_lidar_cloud(
             lidar_points, camera_points, info_msg, detections, header, occlusion_tolerance_));
     } catch (const std::exception& e) {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000,
@@ -293,6 +330,21 @@ void YoloeMultiTextPromptNode::sync_callback(
 
     const auto frame_begin = std::chrono::steady_clock::now();
     auto detections = infer_image(image_msg);
+    const auto detect_done = std::chrono::steady_clock::now();
+    if (tracking_enabled_ && !track_depth(detections, image_msg, depth_msg, info_msg)) {
+        // Missing aligned depth/TF falls back to image association.
+        std::vector<TrackObservation> observations;
+        for (const auto& det : detections) {
+            TrackObservation o;
+            o.box = det.bbox; o.class_id = det.class_id;
+            o.score = det.conf; o.appearance = det.appearance;
+            observations.push_back(o);
+        }
+        tracker_->update(observations, rclcpp::Time(image_msg->header.stamp).seconds());
+        apply_tracking(detections, observations);
+    }
+    const auto track_done = std::chrono::steady_clock::now();
+    publish_annotated(image_msg, detections);
     const auto infer_done = std::chrono::steady_clock::now();
 
     // PointCloud Colorization
@@ -315,7 +367,7 @@ void YoloeMultiTextPromptNode::sync_callback(
         depth_msg->header.stamp, *tf_buffer_, this->get_logger(), this->get_clock());
     
     // Publish 3D detections with class ID and position
-    if (!coords.empty()) {
+    {
         vision_msgs::msg::Detection3DArray detections_3d_msg;
         detections_3d_msg.header.stamp = depth_msg->header.stamp;
         detections_3d_msg.header.frame_id = "odom"; // This is hardcoded to odom in calculate_3d_coordinates logic effectively
@@ -357,7 +409,7 @@ void YoloeMultiTextPromptNode::sync_callback(
     try {
         // Lookup transform from camera to odom
         geometry_msgs::msg::TransformStamped cam_to_odom = tf_buffer_->lookupTransform(
-            "odom", depth_msg->header.frame_id, depth_msg->header.stamp, rclcpp::Duration::from_seconds(0.5));
+            "odom", depth_msg->header.frame_id, depth_msg->header.stamp);
         
         // Ground filtering needs only odom Z. Keep the original camera points
         // instead of allocating and transforming the entire cloud twice.
@@ -390,9 +442,112 @@ void YoloeMultiTextPromptNode::sync_callback(
     const auto finished = std::chrono::steady_clock::now();
     auto ms = [](auto a, auto b){return std::chrono::duration<double,std::milli>(b-a).count();};
     RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 5000,
-        "Frame ms: inference=%.1f semantic=%.1f coordinates=%.1f legacy=%.1f filter/publish=%.1f total=%.1f",
-        ms(frame_begin,infer_done),ms(infer_done,semantic_done),ms(semantic_done,coordinates_done),
+        "Frame ms: detect=%.1f track=%.1f preview=%.1f semantic=%.1f coordinates=%.1f legacy=%.1f filter/publish=%.1f total=%.1f",
+        ms(frame_begin,detect_done),ms(detect_done,track_done),ms(track_done,infer_done),
+        ms(infer_done,semantic_done),ms(semantic_done,coordinates_done),
         ms(coordinates_done,legacy_done),ms(legacy_done,finished),ms(frame_begin,finished));
+}
+
+void YoloeMultiTextPromptNode::publish_annotated(
+    const sensor_msgs::msg::Image::ConstSharedPtr& image,
+    const std::vector<Detection>& detections) {
+    auto cv = cv_bridge::toCvShare(image, sensor_msgs::image_encodings::BGR8);
+    auto annotated = draw_detections(cv->image, detections, Timings{});
+    pub_image_->publish(*cv_bridge::CvImage(image->header, "bgr8", annotated).toImageMsg());
+}
+
+bool YoloeMultiTextPromptNode::track_depth(std::vector<Detection>& detections,
+    const sensor_msgs::msg::Image::ConstSharedPtr& image,
+    const sensor_msgs::msg::Image::ConstSharedPtr& depth,
+    const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info) {
+    try {
+        if(image->header.frame_id!=depth->header.frame_id || image->header.frame_id!=info->header.frame_id ||
+           image->width!=depth->width || image->height!=depth->height ||
+           image->width!=info->width || image->height!=info->height ||
+           std::abs((rclcpp::Time(image->header.stamp)-rclcpp::Time(depth->header.stamp)).seconds())>.05)
+            throw std::runtime_error("Tracking depth must be aligned to RGB with <=50 ms skew");
+        image_geometry::PinholeCameraModel model;model.fromCameraInfo(info);
+        if(!(model.fx()>0 && model.fy()>0)) throw std::runtime_error("Invalid depth intrinsics");
+        auto world_pose=[](const geometry_msgs::msg::TransformStamped& tf) {
+            Eigen::Quaternionf q(tf.transform.rotation.w,tf.transform.rotation.x,
+                tf.transform.rotation.y,tf.transform.rotation.z);
+            Eigen::Affine3f pose=Eigen::Affine3f::Identity();
+            pose.linear()=q.normalized().toRotationMatrix();
+            pose.translation()<<tf.transform.translation.x,tf.transform.translation.y,tf.transform.translation.z;
+            return pose;
+        };
+        const auto depth_to_world=world_pose(tf_buffer_->lookupTransform(projection_fixed_frame_,
+            depth->header.frame_id,depth->header.stamp));
+        const auto world_to_camera=world_pose(tf_buffer_->lookupTransform(image->header.frame_id,
+            projection_fixed_frame_,image->header.stamp));
+        auto depth_image=cv_bridge::toCvShare(depth,sensor_msgs::image_encodings::TYPE_32FC1);
+        pcl::PointCloud<pcl::PointXYZ> measured,world,camera;
+        measured.reserve((depth->width/4+1)*(depth->height/4+1));
+        for(int v=0;v<depth_image->image.rows;v+=4) for(int u=0;u<depth_image->image.cols;u+=4) {
+            float z=depth_image->image.at<float>(v,u);
+            if(!std::isfinite(z)||z<=.2f) continue;
+            measured.emplace_back((u-model.cx())*z/model.fx(),(v-model.cy())*z/model.fy(),z);
+        }
+        pcl::transformPointCloud(measured,world,depth_to_world);
+        pcl::transformPointCloud(world,camera,world_to_camera);
+        track_lidar(detections,camera,world,image,info,world_to_camera.matrix().cast<double>());
+        return true;
+    } catch(const std::exception& e) {
+        RCLCPP_WARN_THROTTLE(get_logger(),*get_clock(),5000,"Depth tracking uses 2D fallback: %s",e.what());
+        return false;
+    }
+}
+
+void YoloeMultiTextPromptNode::apply_tracking(std::vector<Detection>& detections,
+    const std::vector<TrackObservation>& observations) {
+    for(size_t i=0;i<detections.size();++i) {
+        auto& d=detections[i]; const auto& o=observations[i];
+        d.track_id=o.track_id;
+    }
+    // Low-score observations recover identities internally, but are not
+    // evidence for semantic classification or downstream grasp selection.
+    detections.erase(std::remove_if(detections.begin(),detections.end(),[&](const Detection& d) {
+        return d.conf<detection_confidence_;
+    }),detections.end());
+}
+
+void YoloeMultiTextPromptNode::track_lidar(std::vector<Detection>& detections,
+    const pcl::PointCloud<pcl::PointXYZ>& camera, const pcl::PointCloud<pcl::PointXYZ>& world,
+    const sensor_msgs::msg::Image::ConstSharedPtr& image,
+    const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info, const Eigen::Matrix4d& world_to_camera) {
+    image_geometry::PinholeCameraModel model; model.fromCameraInfo(info);
+    if (!(model.fx()>0 && model.fy()>0)) throw std::runtime_error("Invalid tracking camera intrinsics");
+    std::vector<ProjectedLidarPoint> points;
+    for (size_t i=0; i<camera.size(); ++i) {
+        const auto& c=camera[i]; const auto& w=world[i];
+        if (!std::isfinite(c.x)||!std::isfinite(c.y)||!std::isfinite(c.z)||c.z<=.1) continue;
+        auto uv=model.project3dToPixel(cv::Point3d(c.x,c.y,c.z));
+        if (!std::isfinite(uv.x)||!std::isfinite(uv.y)||uv.x<0||uv.y<0||uv.x>=image->width||uv.y>=image->height) continue;
+        points.push_back({int(uv.x),int(uv.y),c.z,{w.x,w.y,w.z}});
+    }
+    std::vector<TrackObservation> obs;
+    for (const auto& d:detections) {
+        TrackObservation o; o.box=d.bbox; o.class_id=d.class_id; o.score=d.conf; o.appearance=d.appearance;
+        o.has_position=lidar_position(d.bbox,d.mask,points,image->width,image->height,o.position);
+        obs.push_back(o);
+    }
+    Eigen::Matrix3d k; k<<model.fx(),0,model.cx(),0,model.fy(),model.cy(),0,0,1;
+    tracker_->update(obs,rclcpp::Time(image->header.stamp).seconds(),&world_to_camera,&k);
+    apply_tracking(detections, obs);
+    vision_msgs::msg::Detection3DArray message; message.header=image->header;
+    message.header.frame_id=projection_fixed_frame_;
+    for (const auto& t:tracker_->tracks()) {
+        if (!t.updated || !t.has_position || t.hits<tracking_min_hits_) continue;
+        vision_msgs::msg::Detection3D d; d.header=message.header; d.id=std::to_string(t.id);
+        d.bbox.center.position.x=t.x[4]; d.bbox.center.position.y=t.x[5]; d.bbox.center.position.z=t.x[6];
+        d.bbox.center.orientation.w=1;
+        vision_msgs::msg::ObjectHypothesisWithPose h;
+        h.hypothesis.class_id=std::to_string(t.class_id); h.hypothesis.score=t.score;
+        h.pose.pose=d.bbox.center;
+        for (int r=0;r<3;++r) for(int c=0;c<3;++c) h.pose.covariance[r*6+c]=t.covariance(4+r,4+c);
+        d.results.push_back(h); message.detections.push_back(d);
+    }
+    pub_tracks_->publish(message); // Empty arrays explicitly clear downstream consumers.
 }
 
 cv::Mat YoloeMultiTextPromptNode::draw_detections(
@@ -439,10 +594,19 @@ cv::Mat YoloeMultiTextPromptNode::draw_detections(
         // Draw rectangle
         cv::rectangle(result, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(color[0], color[1], color[2]), 2);
 
-        // Draw label
-        std::string label = det.name + " " + std::to_string(det.conf).substr(0, 4);
-        cv::putText(result, label, cv::Point(x1, y1 - 5), cv::FONT_HERSHEY_SIMPLEX,
-                    0.6, cv::Scalar(color[0], color[1], color[2]), 2);
+        // Keep the ID first and inside the image, including boxes at the top edge.
+        std::string label = det.track_id >= 0 ? "ID: " + std::to_string(det.track_id) + "  " : "";
+        label += det.name + " " + std::to_string(det.conf).substr(0, 4);
+        int baseline = 0;
+        const auto text = cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, 0.6, 2, &baseline);
+        const int left = std::clamp(x1, 0, std::max(0, result.cols - text.width - 8));
+        const int top = std::clamp(y1 - text.height - baseline - 8, 0,
+                                  std::max(0, result.rows - text.height - baseline - 8));
+        cv::rectangle(result, cv::Rect(left, top, std::min(text.width + 8, result.cols - left),
+                      std::min(text.height + baseline + 8, result.rows - top)),
+                      cv::Scalar(20, 20, 20), cv::FILLED);
+        cv::putText(result, label, cv::Point(left + 4, top + text.height + 4),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(255, 255, 255), 2, cv::LINE_AA);
     }
 
     // Draw info overlay
@@ -481,6 +645,7 @@ void YoloeMultiTextPromptNode::enable_inference_callback(
     std::shared_ptr<std_srvs::srv::SetBool::Response> response) {
     
     enable_inference_ = request->data;
+    if (tracker_) tracker_->clear();
     response->success = true;
     response->message = enable_inference_ ? "Inference enabled" : "Inference disabled; live image preview and geometry active";
     

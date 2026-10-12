@@ -374,27 +374,16 @@ std::vector<Object3DCoordinate> PointCloudColorizer::calculate_3d_coordinates(
 
     // Use source_frame directly as it now follows optical definition
 
-    // Check if transform is available with timeout
-    std::string err_str;
-    bool use_latest = false;
-    
-    // Try to find the transform at the exact timestamp with a small timeout
-    // This helps when camera data is slightly ahead of TF data
-    bool has_transform = tf_buffer.canTransform(
-        "odom", source_frame, stamp, 
-        rclcpp::Duration::from_seconds(0.5), &err_str);
-
-    if (!has_transform) {
-        // Fallback: Try with latest available transform
-        if (tf_buffer.canTransform("odom", source_frame, tf2::TimePointZero, &err_str)) {
-             use_latest = true;
-             RCLCPP_WARN_THROTTLE(logger, *clock, 5000, 
-                "Transform to odom failed at specific timestamp (lag?), falling back to latest.");
-        } else {
-             RCLCPP_WARN_THROTTLE(logger, *clock, 5000, 
-                "Cannot transform from %s to odom: %s", source_frame.c_str(), err_str.c_str());
-             return coordinates;
-        }
+    // Never hold the camera callback waiting for a disconnected TF tree, or
+    // apply today's camera pose to an older image during robot motion.
+    geometry_msgs::msg::TransformStamped camera_to_odom;
+    try {
+        camera_to_odom = tf_buffer.lookupTransform("odom", source_frame, stamp);
+    } catch (const tf2::TransformException& ex) {
+        RCLCPP_WARN_THROTTLE(logger, *clock, 5000,
+            "Skipping 3D detections: no odom transform at image stamp for %s: %s",
+            source_frame.c_str(), ex.what());
+        return coordinates;
     }
 
     // Process each detection
@@ -425,16 +414,14 @@ std::vector<Object3DCoordinate> PointCloudColorizer::calculate_3d_coordinates(
         // Transform point to odom
         geometry_msgs::msg::PointStamped point_camera;
         point_camera.header.frame_id = source_frame;
-        point_camera.header.frame_id = source_frame;
-        // Use TimePointZero if we are falling back to latest, otherwise use exact stamp
-        point_camera.header.stamp = use_latest ? rclcpp::Time(0) : stamp;
+        point_camera.header.stamp = stamp;
         point_camera.point.x = x_cam;
         point_camera.point.y = y_cam;
         point_camera.point.z = z_cam;
 
         geometry_msgs::msg::PointStamped point_base;
         try {
-             point_base = tf_buffer.transform(point_camera, "odom");
+             tf2::doTransform(point_camera, point_base, camera_to_odom);
         } catch (const tf2::TransformException& ex) {
             RCLCPP_WARN(logger, "Transform failed for detection %zu: %s", det_idx, ex.what());
             continue;

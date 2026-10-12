@@ -21,7 +21,7 @@ const App = {
     rosbridgeUrl:    'ws://localhost:9090',
     videoServerUrl:  'http://localhost:8080',
     baseFrame:       'base_footprint',
-    octomapTopic:    '/octomap_point_cloud_centers'
+    octomapTopic:    '/occupied_cells_vis_array'
   },
 
   /** 显示短暂通知 */
@@ -184,6 +184,9 @@ function loadConfig() {
     const saved = localStorage.getItem('robotsim-config');
     if (saved) Object.assign(App.config, JSON.parse(saved));
   } catch(e) {}
+  if (App.config.octomapTopic === '/octomap_point_cloud_centers') {
+    App.config.octomapTopic = '/occupied_cells_vis_array';
+  }
 
   const $v = (id, val) => {
     const el = document.getElementById(id);
@@ -390,7 +393,7 @@ document.addEventListener('DOMContentLoaded', () => {
   console.log('[App] 🤖 RobotSim Dashboard 启动');
 
   // 初始化可调整布局
-  window.App = window.App || {};
+  window.App = App;
   window.App.resizable = new ResizableLayout();
 
   // 加载配置

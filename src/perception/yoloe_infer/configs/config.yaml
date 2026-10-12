@@ -38,7 +38,7 @@ classes:
 # 默认颜色 - 用于未定义类别的对象
 default_color: [255, 255, 255]  # 白色 - White
 
-engine_path: "package://yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.engine"
+engine_path: "package://yoloe_infer/models/yoloe-tracking.engine"
 num_classes: 10
 conf_thres: 0.25
 iou_thres: 0.45
@@ -66,3 +66,19 @@ semantic_lidar_frame: mid360_link # 输出局部雷达坐标，raycast 从此原
 projection_fixed_frame: odom
 projection_sync_slop: 0.15 # 图像与扫描的最大时间差，仿真秒
 projection_occlusion_tolerance: 0.15 # 同一图像像素最前点之后允许的深度差，米
+
+# Tracking is enabled by default; fastlio uses 3D fusion, depth uses 2D/appearance.
+tracking_enabled: true
+tracking:
+  low_threshold: 0.10
+  high_threshold: 0.50
+  new_track_threshold: 0.60
+  min_hits: 2
+  max_age_seconds: 2.0
+  match_threshold: 0.70
+  spatial_gate_m: 2.0
+  iou_weight: 0.30
+  appearance_weight: 0.30
+  spatial_weight: 0.40
+  measurement_variance: 0.04 # m^2, includes projection/FAST-LIO uncertainty
+  acceleration_variance: 1.0

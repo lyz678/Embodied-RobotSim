@@ -8,6 +8,7 @@
 <depend>nav2_bringup</depend>
 <depend>nav2_common</depend>
 <depend>nav2_graceful_controller</depend>
+<depend>nav2_regulated_pure_pursuit_controller</depend>
 <depend>nav2_mppi_controller</depend>
 <depend>nav2_smoother</depend>
 <depend>rviz2</depend>

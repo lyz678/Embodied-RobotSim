@@ -18,8 +18,8 @@ class OctoMapViewer {
     this.heightColor  = false;  // 默认原始颜色
     this.voxelMode    = true;   // 默认稀疏体素
     this._sub         = null;
-    this._topicName   = '/octomap_point_cloud_centers';
-    this._msgType     = 'sensor_msgs/PointCloud2';
+    this._topicName   = '/occupied_cells_vis_array';
+    this._msgType     = 'visualization_msgs/MarkerArray';
     this._pointCloud  = null;   // THREE.Points（点云模式）
     this._voxelMesh   = null;   // THREE.InstancedMesh（体素模式）
     this._meshes      = [];     // MarkerArray 模式
@@ -82,14 +82,15 @@ class OctoMapViewer {
     if (!this.ros) { console.warn('[OctoMap] ros 未设置'); return; }
     if (this._sub) { try { this._sub.unsubscribe(); } catch(e) {} }
 
-    if (topicName && topicName.includes('point_cloud')) {
+    topicName = topicName || '/occupied_cells_vis_array';
+    if (topicName.includes('point_cloud')) {
       this._topicName = topicName;
       this._msgType   = 'sensor_msgs/PointCloud2';
     } else if (topicName && topicName.includes('vis_array')) {
       this._topicName = topicName;
       this._msgType   = 'visualization_msgs/MarkerArray';
     } else {
-      this._topicName = topicName || '/octomap_point_cloud_centers';
+      this._topicName = topicName || '/occupied_cells_vis_array';
       this._msgType   = 'sensor_msgs/PointCloud2';
     }
 

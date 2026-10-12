@@ -12,6 +12,7 @@
 #include <sstream>
 
 #include "trt_engine.hpp"
+#include "bot_sort.hpp"
 #include "simple_tokenizer.hpp"
 #include "pointcloud_colorizer.hpp"
 
@@ -46,6 +47,22 @@ private:
         const sensor_msgs::msg::PointCloud2::ConstSharedPtr& cloud_msg,
         const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info_msg);
     std::vector<Detection> infer_image(const sensor_msgs::msg::Image::ConstSharedPtr& image_msg);
+
+    void publish_annotated(const sensor_msgs::msg::Image::ConstSharedPtr& image,
+        const std::vector<Detection>& detections);
+    bool track_depth(std::vector<Detection>& detections,
+        const sensor_msgs::msg::Image::ConstSharedPtr& image,
+        const sensor_msgs::msg::Image::ConstSharedPtr& depth,
+        const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info);
+    void track_lidar(std::vector<Detection>& detections, const pcl::PointCloud<pcl::PointXYZ>& camera,
+        const pcl::PointCloud<pcl::PointXYZ>& world, const sensor_msgs::msg::Image::ConstSharedPtr& image,
+        const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info, const Eigen::Matrix4d& world_to_camera);
+    bool tracking_enabled_ = true;
+    int tracking_min_hits_ = 2;
+    float detection_confidence_ = .25f;
+    void apply_tracking(std::vector<Detection>& detections, const std::vector<TrackObservation>& observations);
+    std::unique_ptr<BotSort3D> tracker_;
+    rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr pub_tracks_;
 
     cv::Mat draw_detections(const cv::Mat& image,
                            const std::vector<Detection>& detections,

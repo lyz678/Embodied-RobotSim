@@ -64,10 +64,12 @@ default_color:
 - 255
 - 255
 - 255
-engine_path: package://yoloe_infer/models/yoloe-v8l-text-prompt-multi_nc10_fp16.engine
+engine_path: package://yoloe_infer/models/yoloe-tracking.engine
 num_classes: 10
 conf_thres: 0.25
 iou_thres: 0.45
+# Remove near-identical bottle/coke boxes; keep ordinary overlapping objects.
+suppress_cross_class_duplicates: true
 use_mad_filter: true
 mad_threshold: 2.0
 image_topic: /x_bot/camera_left/image_raw
@@ -86,3 +88,16 @@ semantic_lidar_frame: mid360_link
 projection_fixed_frame: odom
 projection_sync_slop: 0.15
 projection_occlusion_tolerance: 0.15
+
+# Aligned depth supplies world positions and camera motion compensation.
+# Missing depth/TF falls back to 2D/appearance association.
+tracking_enabled: true
+tracking:
+  low_threshold: 0.10
+  high_threshold: 0.20
+  new_track_threshold: 0.25
+  min_hits: 3
+  max_age_seconds: 2.0
+  # Cup/coke confusion must not associate objects across semantic classes.
+  tolerate_class_jitter: false
+  class_switch_hits: 3

@@ -3,4 +3,8 @@ move_group:
     # One canonical map: semantic_voxel_mapping publishes planning scene diffs.
     octomap_frame: base_footprint
     octomap_resolution: 0.02
-    # No sensors/updater entries: the occupancy monitor uses its empty default.
+    # Jazzy skips updater names prefixed by ~. Geometry comes from /planning_scene,
+    # not a second point-cloud integrator; an absent/empty sensors list logs ERROR.
+    sensors: [external_scene]
+    external_scene:
+      sensor_plugin: "~external_planning_scene"

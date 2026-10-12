@@ -194,15 +194,18 @@ class NavMap {
       }
     }
 
-    createImageBitmap(imgData).then(bmp => {
-      this.mapBitmap = bmp;
-      if (!this.hasInitialView) {
-        this._fitToView();
-        this.hasInitialView = true;
-      }
-      const overlay = document.getElementById('map-overlay');
-      if (overlay) overlay.classList.add('hidden');
-    });
+    // A canvas works on HTTP and avoids asynchronous bitmap/resize races.
+    const bitmap = document.createElement('canvas');
+    bitmap.width = W;
+    bitmap.height = H;
+    bitmap.getContext('2d').putImageData(imgData, 0, 0);
+    this.mapBitmap = bitmap;
+    if (!this.hasInitialView) {
+      this._fitToView();
+      this.hasInitialView = true;
+    }
+    const overlay = document.getElementById('map-overlay');
+    if (overlay) overlay.classList.add('hidden');
   }
 
   _updateScan(msg) {
@@ -365,8 +368,12 @@ class NavMap {
     if (!container) return;
     const r = container.getBoundingClientRect();
     if (r.width > 0 && r.height > 0) {
-      this.canvas.width  = r.width;
-      this.canvas.height = r.height;
+      const width = Math.round(r.width), height = Math.round(r.height);
+      if (this.canvas.width !== width || this.canvas.height !== height) {
+        this.canvas.width = width;
+        this.canvas.height = height;
+        if (this.mapInfo && this.hasInitialView) this._fitToView();
+      }
     }
   }
 

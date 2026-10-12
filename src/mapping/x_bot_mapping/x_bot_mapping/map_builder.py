@@ -34,6 +34,7 @@ class MapBuilder(Node):
         self.tf = StaticTransformBroadcaster(self)
         self.tf.sendTransform(tf_message(self.origin, self.get_clock().now().to_msg(), 'map', 'odom'))
         self.pub = self.create_publisher(OccupancyGrid, '/map', QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+        self.display_pub = self.create_publisher(PointCloud2, '/localization/cloud_map', 10)
         self.ready = self.create_publisher(Bool, '/localization/valid', 10)
         self.status = self.create_publisher(String, '/localization/status', 10)
         self.cloud = Subscriber(self, PointCloud2, '/fastlio/cloud_odom')
@@ -62,6 +63,7 @@ class MapBuilder(Node):
             key = tuple(np.floor(p/.05).astype(int))
             self.voxels[key] = tuple(float(v) for v in p)
         self.last_stamp = stamp
+        self.display_pub.publish(point_cloud2.create_cloud_xyz32(Header(frame_id='map', stamp=stamp), points.tolist()))
         self.dirty = True
         self.ready.publish(Bool(data=len(self.voxels) >= 100 and bool(self.grid.cells)))
         self.status.publish(String(data=f'mapping points={len(self.voxels)} cells={len(self.grid.cells)}'))

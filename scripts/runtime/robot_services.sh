@@ -29,6 +29,7 @@ INITIAL_X=0.0
 INITIAL_Y=0.0
 INITIAL_YAW=""
 YOLOE_CONFIG="$ROOT_DIR/src/perception/yoloe_infer/configs/config.yaml"
+[[ "$MODE" == explore ]] && YOLOE_CONFIG="$ROOT_DIR/src/perception/yoloe_infer/configs/tracking.yaml"
 [[ "$MODE" == pick ]] && YOLOE_CONFIG="$ROOT_DIR/src/perception/yoloe_infer/configs/manipulation.yaml"
 DEPTH_SOURCE=sim
 [[ "$MODE" == explore ]] && DEPTH_SOURCE=lsm
@@ -39,12 +40,18 @@ OCTOMAP_CLOUD_TOPIC=""
 OCTOMAP_BACKEND=semantic_cuda
 OCTOMAP_RESOLUTION=0.10
 [[ "$MODE" != explore ]] && OCTOMAP_RESOLUTION=0.02
+[[ "$MODE" != llm ]] || OCTOMAP_RESOLUTION=0.05
 SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/mapping/semantic_voxel_mapping/config/map.yaml"
 [[ "$MODE" != explore ]] && SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/mapping/semantic_voxel_mapping/config/manipulation.yaml"
+[[ "$MODE" != llm ]] || SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/mapping/semantic_voxel_mapping/config/embodied.yaml"
 SEMANTIC_CLOUD_SOURCE=depth
 [[ "$MODE" == explore ]] && SEMANTIC_CLOUD_SOURCE=fastlio
+# GraspNet consumes depth-based colored clouds and Detection3DArray. The
+# FAST-LIO semantic branch currently publishes map geometry only.
+[[ "$MODE" != llm ]] || SEMANTIC_CLOUD_SOURCE=depth
 while (($#)); do
     case "$1" in
+        --llm) shift; export LLM_BACKEND="${1:?缺少 local/cloud}" ;;
         --sim) shift; SIM_BACKEND="${1:?缺少 isaac/gazebo}" ;;
         --odometry) shift; ODOMETRY_SOURCE="${1:?缺少 lio/vio}" ;;
         --headless) HEADLESS=true ;;
@@ -80,6 +87,13 @@ case "$ODOMETRY_SOURCE" in
     lio|vio) ;;
     *) echo "里程计必须为 lio 或 vio" >&2; exit 2 ;;
 esac
+if [[ "$SEMANTIC_CLOUD_SOURCE" == auto ]]; then
+    if [[ "$ODOMETRY_SOURCE" == lio ]]; then
+        SEMANTIC_CLOUD_SOURCE=fastlio
+    else
+        SEMANTIC_CLOUD_SOURCE=depth
+    fi
+fi
 if [[ "$ODOMETRY_SOURCE" == vio && "$SEMANTIC_CLOUD_SOURCE" == fastlio ]]; then
     SEMANTIC_CLOUD_SOURCE=depth
     echo "VIO 模式：语义建图使用 depth 点云"
@@ -107,6 +121,10 @@ case "$SEMANTIC_CLOUD_SOURCE" in
     fastlio|depth) ;;
     *) echo "语义点云来源必须为 fastlio 或 depth" >&2; exit 2 ;;
 esac
+if [[ "$MODE" == llm && "$SEMANTIC_CLOUD_SOURCE" != depth ]]; then
+    echo "具身抓取需要 --semantic-cloud-source depth；FAST-LIO 语义分支不发布 GraspNet 的三维检测和彩色点云。" >&2
+    exit 2
+fi
 USE_LSM=false
 [[ "$DEPTH_SOURCE" == lsm && "$SEMANTIC_CLOUD_SOURCE" == depth ]] && USE_LSM=true
 
@@ -150,6 +168,37 @@ has_runtime_package() (
 if [[ "$ODOMETRY_SOURCE" == vio ]] && ! has_runtime_package isaac_ros_visual_slam; then
     echo "错误：VIO 需要 Isaac ROS 4.x 的 isaac_ros_visual_slam。安装说明：$ROOT_DIR/src/localization/README.md；尚未停止当前仿真。" >&2
     exit 1
+fi
+case "${LLM_BACKEND:-cloud}" in
+    local|cloud) ;;
+    *) echo "LLM 后端必须为 local 或 cloud" >&2; exit 2 ;;
+esac
+if [[ "$MODE" == llm && "${LLM_BACKEND:-cloud}" == local ]]; then
+    bash "$ROOT_DIR/src/embodied/llm_agent/start_local_model.sh" --check
+fi
+# Check optional Web dependencies before stopping an existing simulation.
+if [[ "$MODE" == llm ]]; then
+    (
+        [[ ! -f "$ROOT_DIR/.cache/embodied_sysroot/env.bash" ]] || source "$ROOT_DIR/.cache/embodied_sysroot/env.bash"
+        for package in rosbridge_server web_video_server; do
+            ros2 pkg prefix "$package" >/dev/null 2>&1 || {
+                echo "错误：缺少 $package；请执行 bash scripts/setup/setup_embodied_dependencies.sh --local；尚未停止当前仿真。" >&2
+                exit 1
+            }
+        done
+        agent_python="${AGENT_PYTHON:-python3}"
+        [[ ! -x "$ROOT_DIR/.venv/agent/bin/python" || "$agent_python" != python3 ]] || agent_python="$ROOT_DIR/.venv/agent/bin/python"
+        "$agent_python" -c 'import openai, fastapi, uvicorn, websockets' || {
+            echo "错误：缺少 Agent Python 依赖；请执行 bash scripts/setup/setup_embodied_dependencies.sh --local；尚未停止当前仿真。" >&2
+            exit 1
+        }
+    ) || exit 1
+fi
+if [[ "$SIM_BACKEND" == gazebo && "$BUILD" != true ]]; then
+    if ! bash "$ROOT_DIR/scripts/runtime/check_gazebo_plugins.sh"; then
+        echo "Gazebo 启动检查失败；尚未停止当前仿真。" >&2
+        exit 1
+    fi
 fi
 echo "🛑 正在清理残留进程..."
 bash "$ROOT_DIR/stop_robot_sim.sh"
@@ -206,8 +255,7 @@ if [[ "$MODE" == llm ]]; then
     }
 fi
 if [[ "$SIM_BACKEND" == gazebo ]]; then
-    GAZEBO_PLUGIN="$(ros2 pkg prefix x_bot_gazebo)/lib/libembodied_gazebo_backend.so"
-    [[ -f "$GAZEBO_PLUGIN" && -f "$(ros2 pkg prefix x_bot_gazebo)/lib/libgazebo_drives.so" ]] || { echo "Gazebo 插件未构建，请安装 libembree-dev 和 Gazebo Harmonic 后重建 x_bot_gazebo。" >&2; exit 1; }
+    bash "$ROOT_DIR/scripts/runtime/check_gazebo_plugins.sh"
 fi
 if [[ "$USE_LSM" == true ]]; then
     ros2 pkg prefix stereo_matching >/dev/null 2>&1 || { echo "错误：缺少 stereo_matching，请先构建 LSM_depth_infer 或使用 --build。" >&2; exit 1; }
@@ -302,6 +350,11 @@ SIM_RUNTIME=isaac_runtime.sh
 SIM_TITLE="Isaac Sim"
 if [[ "$SIM_BACKEND" == gazebo ]]; then SIM_RUNTIME=gazebo_runtime.sh; SIM_TITLE="Gazebo"; fi
 echo "启动 $SIM_BACKEND：mode=$MODE world=$WORLD localization=$LOCALIZATION_MODE odometry=$ODOMETRY_SOURCE map=$BUNDLE"
+if [[ "$SEMANTIC_CLOUD_SOURCE" == fastlio ]]; then
+    echo "OctoMap 几何：FAST-LIO 激光点云 /fastlio/cloud_odom；相机仅提供语义标签。"
+else
+    echo "OctoMap 几何：相机深度点云（depth_source=$DEPTH_SOURCE）。"
+fi
 launch_window "$SIM_TITLE" "cd '$ROOT_DIR' && ISAAC_SIM_CLEANUP_DONE=1 bash '$ROOT_DIR/scripts/runtime/$SIM_RUNTIME' $SIM_ARGS"
 sleep 8
 [[ "$SIM_BACKEND" != isaac ]] || launch_window "Isaac Controllers" "$ROS_ENV && ros2 launch x_bot_isaac controllers.launch.py"
@@ -309,7 +362,9 @@ launch_window "$ODOMETRY_SOURCE Localization" "$ROS_ENV && ros2 launch x_bot_bri
 [[ "$HEADLESS" == true ]] || launch_window "RViz" "$ROS_ENV && rviz2 -d '$(ros2 pkg prefix --share x_bot_navigation)/rviz/octomap.rviz' --ros-args -r __node:=rviz2_unified -p use_sim_time:=true"
 READY="ros2 run x_bot_control wait_ready"
 launch_navigation() {
-    launch_window "Nav2 $ODOMETRY_SOURCE" "$ROS_ENV && $READY && ros2 launch x_bot_navigation navigation.launch.py odometry_source:=$ODOMETRY_SOURCE"
+    local precise_parking=false
+    [[ "$MODE" != llm ]] || precise_parking=true
+    launch_window "Nav2 $ODOMETRY_SOURCE" "$ROS_ENV && $READY && ros2 launch x_bot_navigation navigation.launch.py odometry_source:=$ODOMETRY_SOURCE precise_parking:=$precise_parking"
 }
 
 launch_yoloe() {
@@ -364,11 +419,19 @@ case "$MODE" in
         launch_window "Navigation Pick Demo" "$ROS_ENV && $READY --nav2 && ros2 run x_bot_manipulation navigation_and_pick_demo.py --ros-args -p use_sim_time:=true"
         ;;
     llm)
+        MODEL_WAIT=""
+        if [[ "${LLM_BACKEND:-cloud}" == local ]]; then
+            launch_window "Local Qwen Model" "bash '$ROOT_DIR/src/embodied/llm_agent/start_local_model.sh'"
+            MODEL_WAIT="python3 '$ROOT_DIR/src/embodied/llm_agent/wait_local_model.py' && "
+        fi
         launch_navigation
         sleep 5
         launch_manipulation_stack
         sleep 3
-        launch_window "Qwen3 LLM Agent" "$ROS_ENV && $READY --nav2 && unset ALL_PROXY all_proxy HTTP_PROXY HTTPS_PROXY http_proxy https_proxy && '$AGENT_PYTHON' '$ROOT_DIR/src/embodied/llm_agent/agent_server.py'"
+        # Keep chat/status available while localization or Nav2 is starting.
+        # Robot actions check readiness inside the Agent; the base safety gate
+        # continues to enforce localization health on every velocity command.
+        launch_window "Qwen3 LLM Agent" "$ROS_ENV && unset ALL_PROXY all_proxy HTTP_PROXY HTTPS_PROXY http_proxy https_proxy && $MODEL_WAIT'$AGENT_PYTHON' '$ROOT_DIR/src/embodied/llm_agent/agent_server.py' --ros-args -p use_sim_time:=true"
         launch_window "Web UI" "cd '$ROOT_DIR' && $ROS_ENV && bash '$ROOT_DIR/scripts/runtime/web_ui.sh'"
         if [[ "$HEADLESS" != true ]] && command -v xdg-open >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then
             sleep 3

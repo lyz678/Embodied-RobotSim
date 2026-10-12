@@ -21,6 +21,7 @@ source "$INSTALL_DIR/setup.bash"
 set -u
 PLUGIN_DIR="$(ros2 pkg prefix x_bot_gazebo)/lib"
 [[ -f "$PLUGIN_DIR/libembodied_gazebo_backend.so" ]] || { echo 'Gazebo backend not built; install libembree-dev and rebuild x_bot_gazebo.' >&2; exit 1; }
+bash "$ROOT_DIR/scripts/runtime/check_gazebo_plugins.sh"
 ros2 pkg prefix gz_ros2_control >/dev/null
 WORLD_FILE="$(python3 "$ROOT_DIR/scripts/assets/prepare_gazebo_scene.py" --world "$WORLD")"
 SCENE_MODELS="$(dirname "$(dirname "$WORLD_FILE")")/source/models"

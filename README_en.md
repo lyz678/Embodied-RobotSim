@@ -20,6 +20,9 @@ Mobile manipulation simulation with **ROS 2 Jazzy + Isaac Sim 6.1 / Gazebo Harmo
 
 ## Launch
 
+The embodied launcher defaults to local Qwen3.5-4B Q4_K_M. See the
+[Agent guide](src/embodied/llm_agent/README.md) for CUDA setup; use `--llm cloud` for DashScope.
+
 Odometry defaults to FAST-LIO (`lio`). All three root launchers accept `--odometry lio|vio`.
 For experimental NVIDIA Isaac ROS stereo-inertial odometry:
 
@@ -41,7 +44,7 @@ Run from the repository root. **Isaac Sim is the default**; append `--sim gazebo
 | `./start_mapping_and_explore.sh --mode navigation` | ICP localization and Nav2; set Nav2 Goal in RViz | `simple_room` | Complete map bundle for this world |
 | `./start_pick_and_place.sh` | Scan and pick/place book, cup, coke, bottle and shoe | `manipulation_test` | No existing map needed |
 | `./start_pick_and_place.sh --mode navigation` | Navigate and execute manipulation tasks | `simple_room` | Map bundle and task coordinates matching the map |
-| `./start_embodied.sh` | Localization, navigation, perception, manipulation, Agent and Web UI | `simple_room` | Map bundle, Agent dependencies and API key |
+| `./start_embodied.sh` | Localization, navigation, perception, manipulation, Agent and Web UI | `simple_room` | Map bundle, Agent dependencies and a local model or cloud API key |
 | `./stop_robot_sim.sh` | Stop project services on both backends, close service windows and clear logs | — | — |
 
 ```bash
@@ -49,7 +52,7 @@ Run from the repository root. **Isaac Sim is the default**; append `--sim gazebo
 ./start_mapping_and_explore.sh --sim gazebo --mode navigation --bundle maps/gazebo/simple_room
 ./start_pick_and_place.sh
 export DASHSCOPE_API_KEY='your-api-key'
-./start_embodied.sh --bundle maps/gazebo_simple_room
+./start_embodied.sh --llm cloud --bundle maps/gazebo_simple_room
 ```
 
 Startup stops previous project sessions. One RViz displays clouds, trajectories, semantic voxels, maps and paths. Mapping/picking launchers build by default; the embodied launcher uses an existing build unless `--build` is supplied.
@@ -95,7 +98,7 @@ For a TensorRT tar installation, also add its `bin` and `lib` directories. In a 
 
 ```bash
 sudo apt install ros-jazzy-ros-gz ros-jazzy-gz-ros2-control \
-  ros-jazzy-gz-sim-vendor ros-jazzy-gz-common-vendor ros-jazzy-gz-plugin-vendor libembree-dev
+  ros-jazzy-gz-sim-vendor ros-jazzy-gz-common-vendor ros-jazzy-gz-plugin-vendor libembree4-4 libembree-dev
 ```
 
 Both backends support `simple_room` and `manipulation_test` and share the localization, navigation, perception, mapping and manipulation pipeline. Office and other USD-only scenes require Isaac.
@@ -139,7 +142,7 @@ Only `start_embodied.sh` needs the additional Agent and Web services:
 ```bash
 bash scripts/setup/setup_embodied_dependencies.sh --local
 export DASHSCOPE_API_KEY='your-api-key'
-./start_embodied.sh --bundle maps/gazebo_simple_room
+./start_embodied.sh --llm cloud --bundle maps/gazebo_simple_room
 ```
 
 `--local` installs Web ROS dependencies into `.cache/` and Python dependencies into `.venv/agent/`, without sudo. The launcher loads them automatically. Open **http://localhost:8888**. Without an API key, status is available but natural-language execution is disabled.

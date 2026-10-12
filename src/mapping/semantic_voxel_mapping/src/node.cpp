@@ -170,10 +170,16 @@ private:
   if(!dirty_)return;
   auto export_start=std::chrono::steady_clock::now();
   try{
-   auto stamp=now();Cloud cloud;cloud.header.frame_id=frame_;cloud.header.stamp=stamp;cloud.height=1;cloud.is_dense=true;
+   // A fused snapshot contains evidence only up to the last accepted cloud.
+   // Stamping it with now() can put it ahead of asynchronous localization TF.
+   auto stamp=rclcpp::Time(std::max<int64_t>(0,last_stamp_),get_clock()->get_clock_type());
+   Cloud cloud;cloud.header.frame_id=frame_;cloud.header.stamp=stamp;cloud.height=1;cloud.is_dense=true;
    sensor_msgs::PointCloud2Modifier modifier(cloud);modifier.setPointCloud2Fields(6,"x",1,7,"y",1,7,"z",1,7,"rgb",1,6,"semantic_confidence",1,7,"occupancy",1,7);
    size_t occupied=exports_->occupied().size();modifier.resize(occupied);
    visualization_msgs::msg::Marker marker;marker.header=cloud.header;marker.ns="semantic_voxels";marker.id=0;marker.type=visualization_msgs::msg::Marker::CUBE_LIST;marker.action=visualization_msgs::msg::Marker::ADD;marker.pose.orientation.w=1;marker.scale.x=marker.scale.y=marker.scale.z=map_.config.resolution;
+   // The accumulated map is fixed in odom. Render it with the latest map->odom
+   // correction and update that transform each frame, without extrapolating TF.
+   marker.frame_locked=true;marker.header.stamp=builtin_interfaces::msg::Time();
    sensor_msgs::PointCloud2Iterator<float> px(cloud,"x"),py(cloud,"y"),pz(cloud,"z"),prob(cloud,"occupancy"),conf(cloud,"semantic_confidence");sensor_msgs::PointCloud2Iterator<uint32_t> rgb(cloud,"rgb");
    // Octree is a compatibility export only, never the canonical fusion state.
    auto& tree=exports_->tree();

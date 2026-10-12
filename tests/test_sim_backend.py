@@ -52,6 +52,15 @@ class BackendTests(unittest.TestCase):
                 ).splitlines()
                 self.assertEqual(baseline[1:3], ["--sim", "isaac"])
                 self.assertEqual(override[-2:], ["--sim", "gazebo"])
+                if name == 'start_embodied.sh':
+                    self.assertEqual(baseline[baseline.index('--semantic-cloud-source')+1], 'depth')
+                    self.assertEqual(baseline[baseline.index('--depth-source')+1], 'sim')
+
+    def test_embodied_rejects_missing_grasp_inputs_before_cleanup(self):
+        result = subprocess.run(['bash', str(ROOT/'scripts/runtime/robot_services.sh'),
+            'llm', '--semantic-cloud-source', 'fastlio'], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('GraspNet', result.stderr)
 
     def test_task_modes_dispatch_and_reject_invalid_modes(self):
         for name, expected in (("start_mapping_and_explore.sh", "navigation"), ("start_pick_and_place.sh", "navigation_pick")):

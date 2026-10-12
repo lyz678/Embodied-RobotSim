@@ -5,7 +5,8 @@ LLM Robot Agent Server
 端口: 8889   前端: http://localhost:8889
 """
 
-import asyncio, threading, time, math, base64, io, json, os, traceback, logging
+import asyncio, threading, time, math, base64, io, json, os, traceback, logging, copy, sys
+from pathlib import Path
 from typing import Optional, List, Dict, Any, Set
 from concurrent.futures import ThreadPoolExecutor
 
@@ -15,15 +16,16 @@ from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
 from geometry_msgs.msg import PoseStamped, Quaternion, Twist
 from nav2_msgs.action import NavigateToPose
-from std_msgs.msg import String, Int32
+from std_msgs.msg import String, Int32, Bool
 from vision_msgs.msg import Detection3DArray
 from control_msgs.action import GripperCommand, FollowJointTrajectory
 from std_srvs.srv import Trigger, SetBool
 from moveit_msgs.msg import CollisionObject
 from tf2_ros import Buffer, TransformListener
+import tf2_geometry_msgs  # Register PoseStamped transforms for Buffer.transform.
 from trajectory_msgs.msg import JointTrajectoryPoint
 from builtin_interfaces.msg import Duration
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, JointState
 from nav_msgs.msg import Odometry
 
 import numpy as np
@@ -32,14 +34,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 import uvicorn
 from openai import OpenAI
+from model_config import ModelConfig, create_client
+from fetch_policy import explicit_fetch, stable_grasp, approach_axis
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'manipulation/x_bot_manipulation/scripts'))
+from gripper_action import control_gripper
 
 # ─────────────────────────── 配置 ──────────────────────────────────────────
 
 AGENT_PORT  = 8889
-AGENT_MODEL = os.getenv("AGENT_MODEL", "qwen3.6-flash")
-VL_MODEL    = os.getenv("VL_MODEL",    "qwen3.6-flash")
-API_KEY     = os.getenv("DASHSCOPE_API_KEY", "")
-API_BASE    = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+MODEL_CONFIG = ModelConfig.from_env()
+AGENT_MODEL = MODEL_CONFIG.agent_model
+VL_MODEL = MODEL_CONFIG.vision_model
+API_KEY = MODEL_CONFIG.api_key
+API_BASE = MODEL_CONFIG.base_url
 
 LOCATIONS: Dict[str, Dict] = {
     "厨房": {"x": 3.76,  "y": 2.22,  "yaw_deg": 6.0},
@@ -189,6 +196,7 @@ class LLMAgentNode(Node):
 
         # 机械臂
         self.pub_arm = self.create_publisher(PoseStamped, "/arm_command/pose", 10)
+        self.pub_cartesian = self.create_publisher(PoseStamped, "/arm_command/cartesian_pose", 10)
         self.gripper_client   = ActionClient(self, GripperCommand,        "/fr3_gripper_controller/gripper_cmd")
         self.arm_joint_client = ActionClient(self, FollowJointTrajectory, "/fr3_arm_controller/follow_joint_trajectory")
 
@@ -205,30 +213,66 @@ class LLMAgentNode(Node):
         # 状态
         self._arm_status: Optional[str] = None
         self._latest_detections         = []
+        self._detections_received = -float('inf')
+        self._detection_generation = 0
+        self._detection_lock = threading.Lock()
+        self._finger_position = None
+        self._joints_received = -float('inf')
+        self._base_speed = (float('inf'),float('inf'))
+        self._base_pose = None
+        self._odom_received = -float('inf')
+        self._nav_handle = None
+        self._nav_future = None
+        self._nav_cancel_requested = False
         self._camera_image: Optional[Image] = None
         self.robot_pose = {"x": 0.0, "y": 0.0, "yaw": 0.0}
         self.current_scene = "未知"
+        self._localization_ready = False
+        self._localization_received = -float('inf')
 
+        self.create_subscription(Bool, "/localization/ready", self._cb_localization, 10)
         self.create_subscription(String,          "/arm_command/status",       self._cb_arm_status,   10)
         self.create_subscription(Detection3DArray, "/graspnet/detections_3d",  self._cb_detections,   10)
         self.create_subscription(Image,            "/x_bot/camera_left/image_raw", self._cb_camera,   1)
         self.create_subscription(Odometry,         "/odom",                    self._cb_odom,         10)
+        self.create_subscription(JointState, '/joint_states', self._cb_joints, 10)
 
         self.get_logger().info("LLM Agent Node ready")
 
     # ── 回调 ──────────────────────────────────────────────────────────────
 
     def _cb_arm_status(self, msg):  self._arm_status = msg.data
-    def _cb_detections(self, msg):  self._latest_detections = msg.detections
+    def _cb_detections(self, msg):
+        with self._detection_lock:
+            self._latest_detections = copy.deepcopy(msg.detections)
+            for det in self._latest_detections:
+                if not det.header.frame_id:det.header=copy.deepcopy(msg.header)
+            self._detections_received=time.monotonic()
+            self._detection_generation+=1
+
+    def _cb_joints(self,msg):
+        if 'fr3_finger_joint1' in msg.name:
+            self._finger_position=float(msg.position[msg.name.index('fr3_finger_joint1')])
+            self._joints_received=time.monotonic()
+
+    def _cb_localization(self, msg):
+        self._localization_ready = msg.data
+        self._localization_received = time.monotonic()
+
+    def localization_ready(self):
+        return self._localization_ready and time.monotonic() - self._localization_received < .5
 
     def _cb_camera(self, msg):
         self._camera_image = msg
 
     def _cb_odom(self, msg):
+        self._odom_received=time.monotonic()
+        self._base_speed=(math.hypot(msg.twist.twist.linear.x,msg.twist.twist.linear.y),abs(msg.twist.twist.angular.z))
         p = msg.pose.pose.position
         q = msg.pose.pose.orientation
         siny = 2 * (q.w * q.z + q.x * q.y)
         cosy = 1 - 2 * (q.y * q.y + q.z * q.z)
+        self._base_pose = (p.x, p.y, math.atan2(siny, cosy))
         self.robot_pose = {"x": round(p.x, 2), "y": round(p.y, 2),
                            "yaw": round(math.degrees(math.atan2(siny, cosy)), 1)}
 
@@ -250,6 +294,7 @@ class LLMAgentNode(Node):
             else:
                 return None
             pil = PILImage.fromarray(arr)
+            pil.thumbnail((640, 640))
             buf = io.BytesIO()
             pil.save(buf, format="JPEG", quality=75)
             return base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -261,8 +306,14 @@ class LLMAgentNode(Node):
 
     def send_nav_goal(self, x: float, y: float, yaw_deg: float,
                       future: asyncio.Future, loop: asyncio.AbstractEventLoop):
+        self._nav_future=future
+        self._nav_cancel_requested=False
+        def resolve(value):
+            def apply():
+                if not future.done():future.set_result(value)
+            loop.call_soon_threadsafe(apply)
         if not self.nav_client.wait_for_server(timeout_sec=5.0):
-            loop.call_soon_threadsafe(future.set_result, (False, "Nav2 服务不可用"))
+            resolve((False, "Nav2 服务不可用"))
             return
         goal = NavigateToPose.Goal()
         goal.pose.header.frame_id = "map"
@@ -273,17 +324,28 @@ class LLMAgentNode(Node):
 
         def on_goal(f):
             handle = f.result()
+            if future.cancelled() or (self._nav_future is future and self._nav_cancel_requested):
+                if handle.accepted:handle.cancel_goal_async()
+                resolve((False,'导航已取消'))
+                return
+            self._nav_handle=handle
             if not handle.accepted:
-                loop.call_soon_threadsafe(future.set_result, (False, "目标被拒绝"))
+                resolve((False, "目标被拒绝"))
                 return
             handle.get_result_async().add_done_callback(on_result)
 
         def on_result(rf):
             ok  = rf.result().status == 4
             msg = "导航成功" if ok else f"导航失败(status={rf.result().status})"
-            loop.call_soon_threadsafe(future.set_result, (ok, msg))
+            if self._nav_future is future:self._nav_handle=None
+            resolve((ok, msg))
 
         self.nav_client.send_goal_async(goal).add_done_callback(on_goal)
+
+    def cancel_navigation(self):
+        self._nav_cancel_requested=True
+        if self._nav_handle and self._nav_handle.accepted:self._nav_handle.cancel_goal_async()
+        self.pub_vel.publish(Twist())
 
     # ── 服务调用（同步，在线程池中使用）────────────────────────────────────
 
@@ -307,29 +369,12 @@ class LLMAgentNode(Node):
 
     # ── 夹爪（同步）─────────────────────────────────────────────────────────
 
-    def gripper_sync(self, pos: float, timeout=12.0) -> bool:
-        if not self.gripper_client.wait_for_server(timeout_sec=2.0):
-            return False
-        goal = GripperCommand.Goal()
-        goal.command.position   = float(pos)
-        goal.command.max_effort = 10.0
-        f  = self.gripper_client.send_goal_async(goal)
-        dl = time.time() + timeout
-        while not f.done() and time.time() < dl:
-            time.sleep(0.1)
-        if not f.done(): return False
-        gh = f.result()
-        if not gh.accepted: return False
-        rf = gh.get_result_async()
-        dl = time.time() + timeout
-        while not rf.done() and time.time() < dl:
-            time.sleep(0.1)
-        time.sleep(0.3)
-        return True
+    def gripper_sync(self, pos: float, timeout=20.0) -> bool:
+        return control_gripper(self,self.gripper_client,pos,timeout)
 
     # ── 机械臂姿态（同步）──────────────────────────────────────────────────
 
-    def arm_pose_sync(self, x, y, z, orientation: Quaternion, timeout=35.0) -> bool:
+    def arm_pose_sync(self, x, y, z, orientation: Quaternion, timeout=35.0, cartesian=False) -> bool:
         pose = PoseStamped()
         pose.header.frame_id  = "odom"
         pose.header.stamp     = self.get_clock().now().to_msg()
@@ -338,98 +383,140 @@ class LLMAgentNode(Node):
         pose.pose.position.z  = float(z)
         pose.pose.orientation = orientation
         self._arm_status = None
-        self.pub_arm.publish(pose)
+        (self.pub_cartesian if cartesian else self.pub_arm).publish(pose)
         dl = time.time() + timeout
         while time.time() < dl:
             if self._arm_status:
-                return "SUCCESS" in self._arm_status
+                return self._arm_status == "SUCCESS"
             time.sleep(0.1)
         return False
 
     # ── 检测聚类 ────────────────────────────────────────────────────────────
 
-    def get_best_detection(self, class_id: int, collect_sec=3.0):
-        seen, best = [], None
-        start = time.time()
-        while time.time() - start < collect_sec:
-            for det in self._latest_detections:
-                if not det.results: continue
-                did  = int(det.results[0].hypothesis.class_id)
-                conf = det.results[0].hypothesis.score
-                if did == class_id and conf >= 0.25:
-                    seen.append(det)
-            time.sleep(0.1)
-        if seen:
-            best = seen[-1]
+    def get_best_detection(self, class_id: int, collect_sec=4.0):
+        candidates=[];seen=set();generation=-1;start=time.monotonic()
+        while time.monotonic()-start<collect_sec:
+            with self._detection_lock:
+                fresh=self._detections_received>=start and time.monotonic()-self._detections_received<.75
+                rows=copy.deepcopy(self._latest_detections) if fresh and generation!=self._detection_generation else []
+                generation=self._detection_generation
+            for det in rows:
+                if not det.results or not det.header.frame_id:continue
+                result=det.results[0]
+                try:matched=int(result.hypothesis.class_id)==class_id
+                except (ValueError,TypeError):continue
+                stamp=(det.header.stamp.sec,det.header.stamp.nanosec)
+                if matched and result.hypothesis.score>=.25 and stamp not in seen:
+                    age=(self.get_clock().now().nanoseconds-(stamp[0]*10**9+stamp[1]))/1e9
+                    if not -.1<=age<=1.:continue
+                    seen.add(stamp)
+                    pose=PoseStamped();pose.header=det.header;pose.pose=result.pose.pose
+                    try:
+                        if pose.header.frame_id!='odom':pose=self.tf_buffer.transform(pose,'odom')
+                    except Exception:continue
+                    det.header=pose.header;det.results[0].pose.pose=pose.pose;candidates.append(det)
+            time.sleep(.05)
+        best=stable_grasp(candidates)
+        self.get_logger().info(f'Grasp candidates: class={class_id}, unique_fresh={len(candidates)}, stable={best is not None}')
         return best
 
-    # ── 完整夹取流程（同步，在线程中运行）─────────────────────────────────
+    def base_stopped(self, timeout=5.):
+        # LIO's differentiated linear velocity is noisy even while stationary.
+        # Require a fresh, stable pose window as well as a low speed bound.
+        end=time.monotonic()+timeout;window=[]
+        while time.monotonic()<end:
+            now=time.monotonic();pose=self._base_pose
+            if now-self._odom_received>=.5 or pose is None or max(self._base_speed)>=.06:
+                window=[]
+            else:
+                window.append((now,pose))
+                window=[row for row in window if now-row[0]<=1.2]
+                first=window[0][1]
+                stable=all(math.hypot(p[0]-first[0],p[1]-first[1])<.01 and
+                    abs(math.atan2(math.sin(p[2]-first[2]),math.cos(p[2]-first[2])))<.015 for _,p in window)
+                if not stable:window=[(now,pose)]
+                elif now-window[0][0]>=1.:return True
+            time.sleep(.05)
+        self.get_logger().warn(f'Base settling timed out: speed={self._base_speed}')
+        return False
+
+    def grasp_contact(self):
+        return time.monotonic()-self._joints_received<.75 and self._finger_position is not None and .008<self._finger_position<.055
+
+    def verify_arrival(self, location):
+        self.pub_vel.publish(Twist())
+        if not self.base_stopped():
+            return False, '到达后底座未停稳，取消抓取'
+        try:
+            tf = self.tf_buffer.lookup_transform('map', 'base_footprint', rclpy.time.Time())
+            stamp = tf.header.stamp.sec + tf.header.stamp.nanosec * 1e-9
+            age = self.get_clock().now().nanoseconds * 1e-9 - stamp
+            q = tf.transform.rotation
+            yaw = math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z))
+            error = math.hypot(tf.transform.translation.x-location['x'], tf.transform.translation.y-location['y'])
+            angle = abs(math.atan2(math.sin(yaw-math.radians(location['yaw_deg'])), math.cos(yaw-math.radians(location['yaw_deg']))))
+            detail = f'停车误差 {error:.3f} m / {math.degrees(angle):.1f}°'
+            self.get_logger().info(detail)
+            if not -.1 <= age <= .5:
+                return False, '到达位置变换过期，取消抓取'
+            return (True, detail) if error <= .12 and angle <= .15 else (False, detail+'，取消抓取')
+        except Exception as exc:
+            return False, f'无法核验到达位置：{exc}'
 
     def pick_sequence(self, class_id: int, progress_cb=None) -> tuple:
+        stage='stop_base'
         def prog(msg):
-            if progress_cb: progress_cb(msg)
-            else: self.get_logger().info(msg)
-
-        self.set_inference(True); time.sleep(1.0)
-        prog("机械臂归位...")
-        self.call_trigger(self.go_home_client); time.sleep(1.5)
-        prog("尝试直接检测目标物体...")
-        det = self.get_best_detection(class_id, collect_sec=3.0)
-        
-        if det is None:
-            prog("未发现目标，开始扫描场景...")
-            if not self.call_trigger(self.scan_client, timeout=30.0):
-                self.set_inference(False)
-                return False, "扫描失败"
-            time.sleep(1.0)
-            prog("重新检测目标物体...")
-            det = self.get_best_detection(class_id, collect_sec=3.0)
-
-        if det is None:
-            self.set_inference(False)
-            return False, "未检测到目标物体"
-
-        grasp = det.results[0].pose.pose
-        self.set_inference(False)
-        self.pub_cloud_filter.publish(Int32(data=class_id)); time.sleep(1.0)
-        self.gripper_sync(0.06)
-
-        prog(f"机械臂移至抓取位 ({grasp.position.x:.2f},{grasp.position.y:.2f},{grasp.position.z:.2f})...")
-        if not self.arm_pose_sync(grasp.position.x, grasp.position.y, grasp.position.z, grasp.orientation):
-            self.pub_cloud_filter.publish(Int32(data=-1))
-            return False, "机械臂移动失败（规划错误）"
-
-        prog("闭合夹爪...")
-        if not self.gripper_sync(0.005):
-            self.pub_cloud_filter.publish(Int32(data=-1))
-            return False, "夹爪闭合失败"
-        time.sleep(0.5)
-
-        # 移除碰撞体
-        obj = CollisionObject()
-        obj.header.frame_id = "odom"
-        obj.header.stamp    = self.get_clock().now().to_msg()
-        obj.id              = f"target_object_{class_id}"
-        obj.operation       = CollisionObject.REMOVE
-        self.pub_collision_obj.publish(obj)
-
-        # 抬起
-        prog("抬起物体...")
+            self.get_logger().info(f'PICK class={class_id} stage={stage}: {msg}')
+            if progress_cb:progress_cb(msg)
+        def fail(message):
+            return False,f'夹取失败[{stage}]：{message}'
         try:
-            tf = self.tf_buffer.lookup_transform("odom", "base_footprint", rclpy.time.Time())
-            dx = tf.transform.translation.x - grasp.position.x
-            dy = tf.transform.translation.y - grasp.position.y
-            cx = grasp.position.x + dx * 0.8
-            cy = grasp.position.y + dy * 0.8
-        except:
-            cx, cy = grasp.position.x, grasp.position.y
-        self.arm_pose_sync(cx, cy, 1.0, grasp.orientation)
-
-        prog("机械臂归位（保持夹爪）...")
-        self.call_trigger(self.go_home_client)
-        self.gripper_sync(0.005)  # 重新夹紧
-        self.pub_cloud_filter.publish(Int32(data=-1))
-        return True, "夹取成功！"
+            self.pub_vel.publish(Twist())
+            if not self.base_stopped():return fail('底座尚未停稳或里程计过期')
+            stage='home';prog('机械臂归位...')
+            if not self.call_trigger(self.go_home_client,timeout=45.):return fail('归位失败')
+            stage='open'
+            if not self.gripper_sync(.06):return fail('夹爪未能打开')
+            self.set_inference(True)
+            stage='detect';prog('收集新鲜、稳定的指定类别抓取位姿...')
+            det=self.get_best_detection(class_id)
+            if det is None:
+                stage='scan';prog('未获得稳定目标，扫描场景...')
+                if not self.call_trigger(self.scan_client,timeout=45.):return fail('扫描失败')
+                stage='detect';det=self.get_best_detection(class_id)
+            if det is None:return fail('没有连续稳定的新鲜目标位姿')
+            grasp=det.results[0].pose.pose
+            axis=approach_axis(grasp.orientation)
+            self.set_inference(False)
+            self.pub_cloud_filter.publish(Int32(data=class_id))
+            obj=CollisionObject();obj.header.frame_id='odom';obj.id=f'target_object_{class_id}';obj.operation=CollisionObject.REMOVE
+            self.pub_collision_obj.publish(obj);time.sleep(2.)
+            stage='pregrasp';prog('移至抓取位前8cm...')
+            xyz=np.array([grasp.position.x,grasp.position.y,grasp.position.z]);pre=xyz-.08*axis
+            if not self.arm_pose_sync(*pre,grasp.orientation):return fail('预抓取规划或执行失败')
+            stage='approach';prog('沿抓取轴直线接近...')
+            if not self.arm_pose_sync(*xyz,grasp.orientation,cartesian=True):return fail('直线接近失败')
+            stage='close';prog('闭合夹爪...')
+            if not self.gripper_sync(.005):return fail('夹爪闭合失败')
+            time.sleep(.4)
+            if not self.grasp_contact():return fail('夹爪已空闭合或关节观测过期')
+            stage='lift';prog('先竖直抬高12cm...')
+            if not self.arm_pose_sync(xyz[0],xyz[1],xyz[2]+.12,grasp.orientation,cartesian=True):return fail('抬起失败')
+            if not self.grasp_contact():return fail('抬起后夹爪空闭合，可能脱落')
+            stage='return_home';prog('夹持返回Home...')
+            if not self.call_trigger(self.go_home_client,timeout=45.):return fail('持物返回失败')
+            stage='hold';prog('保持夹持并检查2秒...')
+            end=time.monotonic()+2.
+            while time.monotonic()<end:
+                if not self.grasp_contact():return fail('返回后失去夹持或关节数据过期')
+                time.sleep(.05)
+            return True,'机械臂已完成抓取动作、抬起和回Home，夹爪保持夹持'
+        except Exception as exc:
+            self.get_logger().error(f'PICK exception stage={stage}: {exc}')
+            return fail(str(exc))
+        finally:
+            self.pub_cloud_filter.publish(Int32(data=-1))
+            self.set_inference(True)
 
     # ── cmd_vel 直接移动 ────────────────────────────────────────────────────
 
@@ -457,6 +544,10 @@ class RobotController:
         self._pick_lock = asyncio.Lock()
 
     async def navigate(self, location: str) -> tuple:
+        async with self._pick_lock:
+            return await self._navigate(location)
+
+    async def _navigate(self, location: str) -> tuple:
         if location not in LOCATIONS:
             return False, f"未知地点: {location}"
         loc = LOCATIONS[location]
@@ -467,8 +558,13 @@ class RobotController:
             lambda: self._node.send_nav_goal(loc["x"], loc["y"], loc["yaw_deg"], future, self._loop)
         )
         try:
-            return await asyncio.wait_for(asyncio.shield(future), timeout=100.0)
+            result = await asyncio.wait_for(asyncio.shield(future), timeout=100.0)
+            if not result[0]:
+                return result
+            return await self._loop.run_in_executor(self._exec, lambda: self._node.verify_arrival(loc))
         except asyncio.TimeoutError:
+            future.cancel()
+            self._node.cancel_navigation()
             return False, "导航超时"
 
     async def pick(self, object_name: str, progress_cb=None) -> tuple:
@@ -482,19 +578,17 @@ class RobotController:
             )
 
     async def move(self, direction: str, speed: float = 0.2, duration: float = 1.0):
-        await self._loop.run_in_executor(
-            self._exec,
-            lambda: self._node.move_direct(direction, speed, duration)
-        )
+        if direction=='stop':
+            self._node.cancel_navigation();return
+        async with self._pick_lock:
+            await self._loop.run_in_executor(self._exec,lambda:self._node.move_direct(direction,speed,duration))
 
     async def arm_go_home(self) -> bool:
-        return await self._loop.run_in_executor(
-            self._exec,
-            lambda: self._node.call_trigger(self._node.go_home_client)
-        )
+        async with self._pick_lock:
+            return await self._loop.run_in_executor(self._exec,lambda:self._node.call_trigger(self._node.go_home_client))
 
     async def stop(self):
-        self._node.pub_vel.publish(Twist())
+        self._node.cancel_navigation()
 
     async def recognize_scene(self, vl_client: OpenAI) -> str:
         b64 = await self._loop.run_in_executor(self._exec, self._node.get_camera_base64)
@@ -505,6 +599,7 @@ class RobotController:
                 self._exec,
                 lambda: vl_client.chat.completions.create(
                     model=VL_MODEL,
+                    **MODEL_CONFIG.completion_options(),
                     messages=[{
                         "role": "user",
                         "content": [
@@ -535,13 +630,25 @@ class RobotController:
 class Qwen3Agent:
     def __init__(self, robot: RobotController):
         self._robot   = robot
-        self._client  = OpenAI(api_key=API_KEY, base_url=API_BASE) if API_KEY else None
-        self._vl_client = OpenAI(api_key=API_KEY, base_url=API_BASE) if API_KEY else None
+        self._client  = create_client(MODEL_CONFIG) if API_KEY else None
+        self._vl_client = create_client(MODEL_CONFIG) if API_KEY else None
 
     async def chat(self, user_msg: str, history: List[Dict], send: callable):
         """
         运行一轮对话，通过 send(event_dict) 向前端推送事件。
         """
+        intent=explicit_fetch(user_msg,LOCATIONS,OBJECTS)
+        if intent:
+            location,object_name=intent
+            for index,(name,args) in enumerate((('navigate_to_location',dict(location=location)),('pick_object',dict(object_name=object_name)))):
+                identifier=f'fetch-{index}'
+                await send(dict(type='tool_call',id=identifier,name=name,args=args,status='running'))
+                ok,message=await self._execute_tool(name,args,send)
+                await send(dict(type='tool_result',id=identifier,name=name,result=message,success=ok))
+                log.info('FETCH stage=%s success=%s result=%s',name,ok,message)
+                if not ok:
+                    await send(dict(type='assistant',content=f'任务停止：{message}'));return
+            await send(dict(type='assistant',content=f'已到{location}，{message}。'));return
         if self._client is None:
             await send({"type": "error", "content": "请设置 DASHSCOPE_API_KEY 并重启具身入口后发送指令。"})
             return
@@ -553,7 +660,7 @@ class Qwen3Agent:
             user_msg = f"当前场景是: {scene_desc}。\n用户指令: {user_msg}"
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        messages.extend(history)
+        messages.extend(MODEL_CONFIG.history(history))
         messages.append({"role": "user", "content": user_msg})
 
         loop = asyncio.get_event_loop()
@@ -569,6 +676,7 @@ class Qwen3Agent:
                         messages=messages,
                         tools=TOOLS,
                         tool_choice="auto",
+                        **MODEL_CONFIG.completion_options(),
                     )
                 )
             except Exception as e:
@@ -594,7 +702,14 @@ class Qwen3Agent:
             # 执行工具调用
             for tc in msg.tool_calls:
                 fn   = tc.function.name
-                args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+                try:
+                    args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+                    if not isinstance(args, dict):
+                        raise ValueError("Tool arguments must be a JSON object")
+                except (ValueError, TypeError) as exc:
+                    messages.append({"role": "tool", "tool_call_id": tc.id,
+                                     "content": f"工具参数无效，请修正 JSON 参数: {exc}"})
+                    continue
                 await send({"type": "tool_call", "id": tc.id, "name": fn, "args": args, "status": "running"})
 
                 ok, result_text = await self._execute_tool(fn, args, send)
@@ -614,14 +729,21 @@ class Qwen3Agent:
     async def _execute_tool(self, name: str, args: dict, send: callable) -> tuple:
         r = self._robot
         try:
+            needs_localization = name in {"navigate_to_location", "pick_object", "arm_go_home"}
+            needs_localization |= name == "move_robot" and args.get("direction") != "stop"
+            if needs_localization and not r._node.localization_ready():
+                return False, "定位未就绪或状态已过期，暂不能执行机器人动作；请检查激光、IMU、里程计和 /localization/ready"
             if name == "navigate_to_location":
                 loc = args["location"]
                 await send({"type": "status", "task": f"导航→{loc}"})
                 ok, msg = await r.navigate(loc)
+                self._navigation_failed=not ok
                 if ok: self._robot._node.current_scene = loc
                 return ok, msg
 
             elif name == "pick_object":
+                if getattr(self,'_navigation_failed',False):
+                    return False,'上次导航未成功，先完成导航再抓取'
                 obj = args["object_name"]
                 await send({"type": "status", "task": f"夹取{obj}"})
 
@@ -692,6 +814,9 @@ async def status():
         return {"error": "ROS2 not ready"}
     return {
         "llm_configured": bool(API_KEY),
+        "llm_backend": MODEL_CONFIG.backend,
+        "llm_model": AGENT_MODEL,
+        "localization_ready": _node.localization_ready(),
         "pose":  _node.robot_pose,
         "scene": _node.current_scene,
         "locations": {k: {"x": v["x"], "y": v["y"]} for k, v in LOCATIONS.items()},

@@ -7,6 +7,9 @@ set +u
 source "/opt/ros/${ROS_DISTRO:-jazzy}/setup.bash"
 source "$INSTALL_DIR/setup.bash"
 set -u
+if [[ -f "$ROOT_DIR/.cache/embodied_sysroot/env.bash" ]]; then
+    source "$ROOT_DIR/.cache/embodied_sysroot/env.bash"
+fi
 for package in rosbridge_server web_video_server; do
     ros2 pkg prefix "$package" >/dev/null 2>&1 || {
         echo "缺少 $package，请执行 scripts/setup/setup_embodied_dependencies.sh。" >&2

@@ -113,7 +113,12 @@ public:
     
     if (planning_scene_monitor_) {
       planning_scene_monitor_->startSceneMonitor("/monitored_planning_scene");
-      planning_scene_monitor_->startWorldGeometryMonitor();
+      // The canonical OctoMap arrives through /monitored_planning_scene.
+      // Keep collision-object subscriptions without creating another sensor map.
+      planning_scene_monitor_->startWorldGeometryMonitor(
+        planning_scene_monitor::PlanningSceneMonitor::DEFAULT_COLLISION_OBJECT_TOPIC,
+        planning_scene_monitor::PlanningSceneMonitor::DEFAULT_PLANNING_SCENE_WORLD_TOPIC,
+        false);
       planning_scene_monitor_->startStateMonitor();
       
       // The semantic planning export excludes only the selected target.

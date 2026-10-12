@@ -18,6 +18,23 @@ def setup(context):
     if source not in ('lio', 'vio'):
         raise ValueError('odometry_source must be lio or vio')
     config = yaml.safe_load((here/'config/nav2.yaml').read_text())
+    if LaunchConfiguration('precise_parking').perform(context).lower() == 'true':
+        # Manipulation needs a repeatable base pose inside the arm workspace.
+        config['controller_server']['ros__parameters']['general_goal_checker'].update({
+            'xy_goal_tolerance': .10, 'yaw_goal_tolerance': .10, 'stateful': True})
+        config['controller_server']['ros__parameters']['FollowPath'].update({
+            'primary_controller': 'nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController',
+            'tracking_goal_tolerance_margin': 0.,
+            'desired_linear_vel': .35, 'lookahead_dist': .4,
+            'min_lookahead_dist': .2, 'max_lookahead_dist': .6, 'lookahead_time': 1.,
+            'use_velocity_scaled_lookahead_dist': True,
+            'min_approach_linear_velocity': .025, 'approach_velocity_scaling_dist': .6,
+            'use_rotate_to_heading': True, 'rotate_to_heading_angular_vel': .35,
+            # RPP ramps from scan-rate measured speed. A tiny increment stalls
+            # skid steering; downstream base conditioning still limits accel.
+            'rotate_to_heading_min_angle': .5, 'max_angular_accel': 8.,
+            'stateful': True, 'allow_reversing': False,
+            'use_collision_detection': True, 'transform_tolerance': .5})
     if source == 'vio':
         # The hand-mounted stereo rig needs gentler motion than the roof lidar.
         config['controller_server']['ros__parameters']['FollowPath'].update({
@@ -52,5 +69,6 @@ def setup(context):
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('odometry_source', default_value='lio'),
+        DeclareLaunchArgument('precise_parking', default_value='false'),
         OpaqueFunction(function=setup),
     ])

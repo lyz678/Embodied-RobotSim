@@ -1,4 +1,5 @@
 #include "trt_engine.hpp"
+#include "neck_reid.hpp"
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -47,8 +48,8 @@ MultiTextPromptTRTEngine::MultiTextPromptTRTEngine(const std::string& engine_pat
                                                    std::shared_ptr<SimpleTokenizer> tokenizer,
                                                    int num_classes,
                                                    float conf,
-                                                   float iou)
-    : tokenizer_(tokenizer), num_classes_(num_classes), conf_(conf), iou_(iou) {
+                                                   float iou, bool suppress_cross_class_duplicates)
+    : tokenizer_(tokenizer), num_classes_(num_classes), conf_(conf), iou_(iou), suppress_cross_class_duplicates_(suppress_cross_class_duplicates) {
 
     // Loading engine
     // std::cout << "Loading engine: " << engine_path << std::endl;
@@ -116,6 +117,8 @@ void MultiTextPromptTRTEngine::setup_bindings() {
         const char* name = engine_->getIOTensorName(i);
         nvinfer1::DataType dtype = engine_->getTensorDataType(name);
         nvinfer1::Dims dims = engine_->getTensorShape(name);
+        for (int d=0; d<dims.nbDims; ++d) if (dims.d[d]<=0)
+            throw std::runtime_error("Only static TensorRT shapes are supported");
         size_t size = std::accumulate(dims.d, dims.d + dims.nbDims, 1, std::multiplies<size_t>());
         size_t nbytes = size * (dtype == nvinfer1::DataType::kFLOAT ? 4 :
                                dtype == nvinfer1::DataType::kHALF ? 2 :
@@ -148,12 +151,17 @@ void MultiTextPromptTRTEngine::setup_bindings() {
                 }
             }
         } else {
+            if (dtype != nvinfer1::DataType::kFLOAT && dtype != nvinfer1::DataType::kHALF)
+                throw std::runtime_error("Unsupported TensorRT output type");
             binding.device_ptr = cuda_malloc(nbytes);
             binding.host_ptr = new float[size];
             outputs_.push_back(binding);
 
             int out_idx = outputs_.size() - 1;
-            if (dims.nbDims == 4) {
+            if (binding.name == "reid_p3") {
+                if (dims.nbDims != 4 || dims.d[0] != 1) throw std::runtime_error("reid_p3 must be NCHW batch one");
+                neck_idx_ = out_idx;
+            } else if (dims.nbDims == 4 && dims.d[1] == 32) {
                 protos_idx_ = out_idx;
             } else if (dims.nbDims == 3) {
                 if (dims.d[1] == 32) {
@@ -272,9 +280,15 @@ void MultiTextPromptTRTEngine::infer() {
         throw std::runtime_error("Failed to execute inference");
     }
 
+    if (cudaStreamSynchronize(stream_) != cudaSuccess) throw std::runtime_error("TensorRT stream failed");
     // Copy output data back
     for (auto& output : outputs_) {
-        cuda_memcpy_dtoh(output.host_ptr, output.device_ptr, output.nbytes);
+        if (output.dtype == nvinfer1::DataType::kHALF) {
+            std::vector<unsigned short> raw(output.size);
+            cuda_memcpy_dtoh(raw.data(), output.device_ptr, output.nbytes);
+            auto* dst = static_cast<float*>(output.host_ptr);
+            for (size_t i=0; i<raw.size(); ++i) dst[i] = float(cv::float16_t::fromBits(raw[i]));
+        } else cuda_memcpy_dtoh(output.host_ptr, output.device_ptr, output.nbytes);
     }
 
     cudaStreamSynchronize(stream_);
@@ -321,7 +335,7 @@ std::vector<Detection> MultiTextPromptTRTEngine::postprocess() {
     const float* mask_coeffs = mask_coeffs_2d ? mask_coeffs_2d :
                               (protos ? preds + (4 + num_classes) * num_anchors : nullptr);
 
-    int num_active = current_prompts_.size();
+    int num_active = std::min(int(current_prompts_.size()), num_classes);
     if (num_active == 0) {
         return {};
     }
@@ -403,7 +417,8 @@ std::vector<Detection> MultiTextPromptTRTEngine::postprocess() {
                 float union_area = detections[i].bbox.area() + detections[j].bbox.area() - inter_area;
                 float iou = inter_area / (union_area + 1e-6f);
 
-                if (iou > iou_) {
+                if ((detections[i].class_id == detections[j].class_id && iou > iou_) ||
+                    (suppress_cross_class_duplicates_ && iou > std::max(iou_, 0.85f))) {
                     keep[j] = false;
                 }
             }
@@ -414,8 +429,8 @@ std::vector<Detection> MultiTextPromptTRTEngine::postprocess() {
             if (keep[i]) {
                 // Generate mask for surviving detection
                 if (!detections[i].mask_coeffs.empty() && protos) {
-                    int mh = 160;
-                    int mw = 160;
+                    int mh = outputs_[protos_idx_].dims.d[2];
+                    int mw = outputs_[protos_idx_].dims.d[3];
                     cv::Mat mask_mat = cv::Mat::zeros(mh, mw, CV_32F);
                     
                     for (int k = 0; k < 32; ++k) {
@@ -470,6 +485,12 @@ std::vector<Detection> MultiTextPromptTRTEngine::postprocess() {
                          
                          detections[i].mask = cropped_mask;
                     }
+                }
+                if (neck_idx_ >= 0) {
+                    const auto& neck = outputs_[neck_idx_];
+                    detections[i].appearance = pool_neck(static_cast<const float*>(neck.host_ptr),
+                        neck.dims.d[1], neck.dims.d[2], neck.dims.d[3], detections[i].bbox,
+                        scale_, pad_.first, pad_.second, img_shape_.width, img_shape_.height);
                 }
                 filtered.push_back(detections[i]);
             }

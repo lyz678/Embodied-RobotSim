@@ -3,6 +3,7 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <chrono>
 
 using namespace yoloe_infer;
 static void require(bool value, const char* message) {
@@ -13,7 +14,8 @@ template<class T> static T field(const sensor_msgs::msg::PointCloud2& cloud, int
     std::memcpy(&value, cloud.data.data()+i*cloud.point_step+offset, sizeof(T));
     return value;
 }
-int main() {
+int main(int argc, char** argv) {
+    rclcpp::init(argc, argv);
     try {
         PointCloudColorizer colorizer({{1,{0,255,0}}, {2,{255,0,0}}}, {255,255,255});
         auto info = std::make_shared<sensor_msgs::msg::CameraInfo>();
@@ -70,7 +72,26 @@ int main() {
             "Compact legacy cloud must retain exact full-density XYZ, RGB/alpha and header");
         bool rejected=false;try{colorizer.semantic_cloud(depth,info,{},header,0);}catch(const std::invalid_argument&){rejected=true;}
         require(rejected,"Invalid stride must fail");
+        auto clock=std::make_shared<rclcpp::Clock>(RCL_SYSTEM_TIME);
+        tf2_ros::Buffer buffer(clock);
+        auto logger=rclcpp::get_logger("test_semantic_projection");
+        const auto stamp=rclcpp::Time(42,0,RCL_ROS_TIME);
+        auto begin=std::chrono::steady_clock::now();
+        auto coords=colorizer.calculate_3d_coordinates({sofa},depth,info,"camera",stamp,buffer,logger,clock);
+        require(coords.empty(),"Disconnected TF cannot produce grasp coordinates");
+        require(std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count()<.2,
+                "Missing TF must not stall image processing for half a second");
+        geometry_msgs::msg::TransformStamped tf;
+        tf.header.frame_id="odom";tf.child_frame_id="camera";tf.header.stamp=stamp;
+        tf.transform.rotation.w=1.;tf.transform.translation.x=1.;
+        buffer.setTransform(tf,"test",false);
+        coords=colorizer.calculate_3d_coordinates({sofa},depth,info,"camera",stamp,buffer,logger,clock);
+        require(coords.size()==1&&std::abs(coords[0].x-1.)<1e-6&&std::abs(coords[0].z-2.)<1e-6,
+                "Exact-stamp TF restores measured coordinates after disconnect");
+        coords=colorizer.calculate_3d_coordinates({sofa},depth,info,"camera",rclcpp::Time(41,0,RCL_ROS_TIME),buffer,logger,clock);
+        require(coords.empty(),"Old image must not use a newer camera pose as fallback");
         std::cout << "PASS: lidar FOV/mask projection, occlusion, geometry, headers, and depth compatibility\n";
+        rclcpp::shutdown();
         return 0;
-    } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
+    } catch (const std::exception& e) { std::cerr << e.what() << '\n'; rclcpp::shutdown(); return 1; }
 }

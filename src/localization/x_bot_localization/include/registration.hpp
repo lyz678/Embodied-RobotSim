@@ -16,6 +16,18 @@ struct Result {
   double rmse = std::numeric_limits<double>::infinity();
   double overlap = 0.;
 };
+// Filter only the slowly changing global correction, not local odometry.
+inline Eigen::Matrix4f smooth_correction(const Eigen::Matrix4f &previous,
+                                        const Eigen::Matrix4f &measurement,
+                                        double dt, double time_constant) {
+  if (time_constant <= 0) return measurement;
+  const float alpha = float(-std::expm1(-std::max(0., dt) / time_constant));
+  Eigen::Matrix4f out = Eigen::Matrix4f::Identity();
+  out.block<3,1>(0,3) = (1-alpha)*previous.block<3,1>(0,3) + alpha*measurement.block<3,1>(0,3);
+  Eigen::Quaternionf before(previous.block<3,3>(0,0)), after(measurement.block<3,3>(0,0));
+  out.block<3,3>(0,0) = before.normalized().slerp(alpha, after.normalized()).normalized().toRotationMatrix();
+  return out;
+}
 inline Cloud::Ptr voxel(const Cloud::ConstPtr &cloud, float size) {
   Cloud::Ptr out(new Cloud);
   pcl::VoxelGrid<Point> filter;

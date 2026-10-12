@@ -109,3 +109,39 @@ MoveIt 的 OcTree 类型及 OctomapWithPose 接入依据：[Jazzy PlanningScene 
 抓取时暂停 YOLOE 分类和 GraspNet，但继续发布无语义的测量点云（白色、confidence=0），LSM 深度流也保持启用，因此 CUDA raycast 的 hit/miss 更新不会随识别暂停。未知点不增加语义投票。`miss=0.4`、`clamp_max=0.97` 时，饱和体素约需 9 帧有效空闲射线才能低于 0.5；重复像素在一帧内只计一次 miss。移走后的原位置必须重新被有效背景射线穿过才能清空，被遮挡或不在视野内的体素不会直接删除。
 
 抓取模式融合上限为 5 Hz、发布为 2 Hz（墙钟频率）。占用、颜色和投影的派生缓存只更新实际改变的体素；持续观测已达到 clamp_min 的空闲体素不再重复分配，保存的概率/历史仍以 canonical Map 为准。诊断增加 `export_ms`、`input_points`、`rays`、`occupied_voxels`，用于区分 CUDA、CPU 融合和地图导出的耗时。
+
+
+### 具身模式的显示与范围
+
+具身入口使用 `config/embodied.yaml`：5 cm 体素、8 m 最大量程，自体过滤和 MoveIt
+场景导出开启。原地抓取继续使用 `manipulation.yaml` 的 2 cm / 2 m 配置。
+量程外的深度只贡献自由空间，不产生占据端点；在家具距离大于 2 m 的房间中，
+抓取配置可能让语义投影和三维体素看起来没有障碍。
+
+导航二维地图为 `/map`；实时语义二维投影为 `/projected_map`，三维体素为
+`/occupied_cells_vis_array`（MarkerArray）或 `/semantic_map/voxels`（PointCloud2）。
+Web 默认使用 MarkerArray，旧 `/octomap_point_cloud_centers` 设置会自动迁移。
+修改前端后使用 Ctrl+F5；RViz 导航 Map 使用 `/map`，Fixed Frame 为 `map`。
+
+2026-10-09 本机原位复测：切换房间范围配置后，语义投影收到 1895 个障碍栅格，
+三维输出约 1.5 万占据体素，语义地图诊断错误数为 0。导航 `/map` 同时有 3778 个障碍格。
+WebSocket 确认能收到地图和三维数据；当前环境没有可用的浏览器/原生 UI 控制，
+未做屏幕显示验证。报告位于 `.cache/qwen/map_display_validation.json`。
+二维解码、Y 翻转和画布尺寸适配可用 `node tests/test_web_map.js` 检查。
+
+
+### RViz 提示 TF extrapolation into the future
+
+定位的 `map → odom` 按处理完成的点云时间发布，可能落后于仿真时钟。
+累计地图不能用发布瞬间的 `now()` 冒充有效采集时间：几何导出保留最后成功融合的
+输入时间；累计体素 Marker 设置 `frame_locked=true`、零时间戳，按 RViz 的最新 TF
+语义持续跟随 `map → odom` 校正。此设置仅用于累计地图显示，不修改传感器时间、
+定位 TF 或安全门健康检查。地图依然需要存在有效的 `map → odom` 变换。
+
+若地图整体晃动，应检查全局配准校正而非修改体素坐标。定位节点默认用
+0.5 秒时间常数平滑已通过质量检查的 `map → odom` 校正，累计地图与机器人的
+全局显示共用这一变换；不把历史体素逐帧重新融合到新的 `map` 坐标。
+
+本机隔离 ROS domain 的 CUDA 节点回归已复现旧时间戳的 future extrapolation，
+并确认修复后的非空 Marker 能解析到最新的 `map → odom`；报告为
+`.cache/qwen/semantic_tf_regression.json`。此项验证不等同于 RViz 屏幕验收。

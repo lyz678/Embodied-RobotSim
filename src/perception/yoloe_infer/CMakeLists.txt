@@ -22,8 +22,19 @@ find_package(image_geometry REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(ament_index_cpp REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(OpenCV REQUIRED)
 find_package(PCL REQUIRED COMPONENTS common filters)
 
+
+if(BUILD_TESTING)
+  enable_testing()
+  add_executable(test_bot_sort test/bot_sort_test.cpp)
+  target_compile_features(test_bot_sort PRIVATE cxx_std_17)
+  target_include_directories(test_bot_sort PRIVATE include ${OpenCV_INCLUDE_DIRS})
+  target_link_libraries(test_bot_sort Eigen3::Eigen ${OpenCV_LIBRARIES})
+  add_test(NAME bot_sort_3d COMMAND test_bot_sort)
+endif()
 
 # CUDA and TensorRT
 find_package(CUDAToolkit REQUIRED)
@@ -101,6 +112,7 @@ if(BUILD_TRT_NODE)
   )
   target_link_libraries(trt_engine_lib
     simple_tokenizer_lib
+    Eigen3::Eigen
     ${TENSORRT_LIBRARY_INFER}
     CUDA::cudart
     ${OpenCV_LIBRARIES}
@@ -147,6 +159,7 @@ if(BUILD_TRT_NODE)
   target_link_libraries(ros2_trt_infer_text_prompt_multi_node
     trt_engine_lib
     simple_tokenizer_lib
+    Eigen3::Eigen
     ${TENSORRT_LIBRARY_INFER}
     CUDA::cudart
     ${OpenCV_LIBRARIES}
@@ -164,6 +177,9 @@ if(BUILD_TRT_NODE)
     ament_index_cpp
     pcl_conversions
     pcl_msgs
+    image_geometry
+    tf2_ros
+    message_filters
   )
 
   if(BUILD_TESTING)
@@ -193,6 +209,10 @@ install(TARGETS
 install(DIRECTORY models
   DESTINATION share/${PROJECT_NAME}
 )
+
+install(FILES README.md DESTINATION share/${PROJECT_NAME})
+
+install(PROGRAMS scripts/build_tracking_engine.py DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY configs
   DESTINATION share/${PROJECT_NAME}

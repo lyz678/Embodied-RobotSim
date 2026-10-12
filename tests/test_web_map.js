@@ -1,0 +1,12 @@
+const vm=require('vm'),fs=require('fs'),assert=require('assert');
+let pixels;
+const document={createElement:()=>({getContext:()=>({putImageData:d=>pixels=d})}),getElementById:()=>null};
+const context={document,ImageData:class {constructor(w,h){this.data=new Uint8ClampedArray(w*h*4)}},Int8Array,atob:s=>Buffer.from(s,'base64').toString('binary')};
+vm.createContext(context);vm.runInContext(fs.readFileSync('src/embodied/web_ui/js/nav_map.js','utf8')+';globalThis.NavMap=NavMap',context);
+const map=Object.create(context.NavMap.prototype);
+map.canvas={width:300,height:150,parentElement:{getBoundingClientRect:()=>({width:900,height:600})}};
+map.hasInitialView=false;
+map._updateMap({info:{width:2,height:2},data:[0,100,-1,0]});
+assert(map.mapBitmap);assert.equal(pixels.data[0],128);assert.equal(pixels.data[4],220);assert.equal(pixels.data[8],220);assert.equal(pixels.data[12],0);
+map._resizeCanvas();assert.equal(map.canvas.width,900);assert.equal(map.viewScale,270);assert(map.panX>=0&&map.panY>=0);
+console.log('Grid decoding, Y flip, canvas bitmap and resize fit PASS');

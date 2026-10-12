@@ -37,6 +37,9 @@ public:
     radius_ = declare_parameter<double>("crop_radius", 45.);
     max_rmse_ = declare_parameter<double>("max_rmse", .15);
     min_overlap_ = declare_parameter<double>("min_overlap", .65);
+    correction_time_constant_ = declare_parameter<double>("correction_time_constant", .5);
+    if (!std::isfinite(correction_time_constant_) || correction_time_constant_ < 0 || correction_time_constant_ > 5)
+      throw std::runtime_error("correction_time_constant must be in [0,5] seconds");
     const auto initial = declare_parameter<std::vector<double>>("initial_pose", {0.,0.,0.});
     if (initial.size() != 3) throw std::runtime_error("initial_pose must be [x,y,yaw]");
     seed_.block<3,3>(0,0) = Eigen::AngleAxisf(initial[2], Eigen::Vector3f::UnitZ()).toRotationMatrix();
@@ -45,6 +48,7 @@ public:
     tf_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
     valid_pub_ = create_publisher<std_msgs::msg::Bool>("/localization/valid", 10);
     status_pub_ = create_publisher<std_msgs::msg::String>("/localization/status", 10);
+    display_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/localization/cloud_map", 10);
     odom_sub_ = create_subscription<nav_msgs::msg::Odometry>("/odom", 30,
       [this](nav_msgs::msg::Odometry::ConstSharedPtr msg) {
         const auto ns = rclcpp::Time(msg->header.stamp).nanoseconds();
@@ -70,6 +74,7 @@ public:
         if (latest_ns_) { correction_=seed_*latest_odom_.inverse(); seeded_=true; }
         else pending_seed_=true;
         successes_=0; failures_=0;
+        last_correction_ns_=0;
         report(false,"initializing");
       });
     cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>("/fastlio/cloud_odom", 10,
@@ -117,29 +122,48 @@ private:
     failures_=0;
     correction_=result.pose;
     if (++successes_<3) { report(false,"confirming_"+detail.str()); return; }
+    const auto stamp_ns = rclcpp::Time(msg->header.stamp).nanoseconds();
+    if (!last_correction_ns_ || stamp_ns-last_correction_ns_ > 2000000000LL)
+      published_correction_ = correction_;
+    else
+      published_correction_ = xbot::smooth_correction(published_correction_, correction_,
+          (stamp_ns-last_correction_ns_)*1e-9, correction_time_constant_);
+    last_correction_ns_ = stamp_ns;
     geometry_msgs::msg::TransformStamped tf;
     tf.header=msg->header; tf.header.frame_id="map"; tf.child_frame_id="odom";
-    tf.transform.translation.x=correction_(0,3);
-    tf.transform.translation.y=correction_(1,3);
-    tf.transform.translation.z=correction_(2,3);
-    Eigen::Quaternionf q(correction_.block<3,3>(0,0)); q.normalize();
+    tf.transform.translation.x=published_correction_(0,3);
+    tf.transform.translation.y=published_correction_(1,3);
+    tf.transform.translation.z=published_correction_(2,3);
+    Eigen::Quaternionf q(published_correction_.block<3,3>(0,0)); q.normalize();
     tf.transform.rotation.x=q.x(); tf.transform.rotation.y=q.y();
     tf.transform.rotation.z=q.z(); tf.transform.rotation.w=q.w();
     tf_->sendTransform(tf);
+    // RViz Jazzy's PointCloud2 display does not queue clouds awaiting TF.
+    // Publish a separate display cloud only after registration, already in map.
+    xbot::Cloud registered;
+    pcl::transformPointCloud(*scan, registered, published_correction_);
+    sensor_msgs::msg::PointCloud2 display;
+    pcl::toROSMsg(registered, display);
+    display.header=msg->header; display.header.frame_id="map";
+    display_pub_->publish(display);
     report(true,detail.str());
   }
   xbot::Cloud::Ptr map_;
   Matrix correction_=Matrix::Identity(), seed_=Matrix::Identity(), latest_odom_=Matrix::Identity();
+  Matrix published_correction_=Matrix::Identity();
   std::map<int64_t,Matrix> poses_;
   std::map<int64_t,sensor_msgs::msg::PointCloud2::ConstSharedPtr> pending_clouds_;
   int64_t latest_ns_=0;
+  int64_t last_correction_ns_=0;
   bool pending_seed_=false, seeded_=false, fault_=false;
   int successes_=0,failures_=0;
   double radius_,max_rmse_,min_overlap_;
+  double correction_time_constant_;
   std::chrono::steady_clock::time_point last_scan_=std::chrono::steady_clock::now();
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr valid_pub_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr display_pub_;
   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr init_sub_;
