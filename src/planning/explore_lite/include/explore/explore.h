@@ -53,6 +53,7 @@
 #include <mutex>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <std_msgs/msg/color_rgba.hpp>
 #include <string>
 #include <vector>
@@ -87,6 +88,8 @@ public:
   void start();
   void stop(bool finished_exploring = false);
   void resume();
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr status_pub_;
+  void status(const std::string& value);
 
   using NavigationGoalHandle =
       rclcpp_action::ClientGoalHandle<nav2_msgs::action::NavigateToPose>;

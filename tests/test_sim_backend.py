@@ -3,6 +3,7 @@
 import source_packages
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -44,17 +45,43 @@ class BackendTests(unittest.TestCase):
                 entry = root / name
                 entry.write_text((ROOT / name).read_text())
                 (root / "scripts/runtime/robot_services.sh").write_text('printf "%s\\n" "$@"\n')
+                if name == 'start_embodied.sh':
+                    config=root/'src/embodied/act_policy/config.json'
+                    config.parent.mkdir(parents=True)
+                    config.write_text(json.dumps(dict(ros_python=sys.executable,checkpoint=str(entry))))
                 baseline = subprocess.check_output(
                     ["bash", str(entry)], text=True
                 ).splitlines()
                 override = subprocess.check_output(
                     ["bash", str(entry), "--sim", "gazebo"], text=True
                 ).splitlines()
-                self.assertEqual(baseline[1:3], ["--sim", "isaac"])
+                self.assertEqual(baseline[1:3], ["--sim", "gazebo" if name == "start_embodied.sh" else "isaac"])
                 self.assertEqual(override[-2:], ["--sim", "gazebo"])
                 if name == 'start_embodied.sh':
                     self.assertEqual(baseline[baseline.index('--semantic-cloud-source')+1], 'depth')
                     self.assertEqual(baseline[baseline.index('--depth-source')+1], 'sim')
+
+    def test_embodied_pipeline_and_model_are_forwarded_and_invalid_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            entry = root / 'start_embodied.sh'
+            entry.write_text((ROOT / entry.name).read_text())
+            runtime = root / 'scripts/runtime/robot_services.sh'
+            runtime.parent.mkdir(parents=True)
+            runtime.write_text('printf "%s %s\\n" "$EMBODIED_PICK_BACKEND" "$EMBODIED_ACT_MODEL"')
+            config = root / 'src/embodied/act_policy/config.json'
+            config.parent.mkdir(parents=True)
+            config.write_text(json.dumps(dict(ros_python=sys.executable, checkpoints={m:str(entry) for m in ('rgb','rgbd','rgbxyz')})))
+            for model in ('rgb','rgbd','rgbxyz'):
+                result = subprocess.run(['bash',str(entry),'--pipeline','act','--act-model',model],capture_output=True,text=True)
+                self.assertEqual(result.returncode,0,result.stderr)
+                self.assertEqual(result.stdout.strip(),'act '+model)
+            result = subprocess.run(['bash',str(entry),'--pipeline','traditional'],capture_output=True,text=True)
+            self.assertEqual(result.stdout.strip(),'graspnet rgb')
+            for args in (['--pipeline','invalid'],['--act-model','invalid']):
+                result = subprocess.run(['bash',str(entry),*args],capture_output=True,text=True)
+                self.assertEqual(result.returncode,2)
+                self.assertEqual(result.stdout,'')
 
     def test_embodied_rejects_missing_grasp_inputs_before_cleanup(self):
         result = subprocess.run(['bash', str(ROOT/'scripts/runtime/robot_services.sh'),

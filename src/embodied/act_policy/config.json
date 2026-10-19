@@ -1,0 +1,15 @@
+{
+  "act_root": "/home/lyz/ACT",
+  "ros_python": "/home/lyz/ACT/.venv-ros/bin/python",
+  "max_seconds": 60,
+  "wall_timeout": 420,
+  "temporal_decay": 0.01,
+  "gripper_mode": "latched_close",
+  "detector_confidence": 0.25,
+  "detector_max_age": 0.75,
+  "checkpoints": {
+    "rgb": "/home/lyz/ACT/checkpoints/rgb_multiclass_expanded/policy_best.pt",
+    "rgbd": "/home/lyz/ACT/checkpoints/rgb_multiclass_expanded_rgbd/policy_best.pt",
+    "rgbxyz": "/home/lyz/ACT/checkpoints/rgb_multiclass_expanded_rgbxyz/policy_best.pt"
+  }
+}

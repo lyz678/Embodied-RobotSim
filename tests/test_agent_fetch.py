@@ -33,7 +33,7 @@ class FetchPolicyTests(unittest.IsolatedAsyncioTestCase):
             tf=NS(header=NS(stamp=NS(sec=stamp,nanosec=0)),transform=NS(rotation=q,translation=NS(x=x,y=2.22)))
             node=NS(pub_vel=NS(publish=Mock()),base_stopped=lambda:stopped,tf_buffer=NS(lookup_transform=lambda *a:tf),
                 get_clock=lambda:NS(now=lambda:NS(nanoseconds=100*10**9)),get_logger=lambda:NS(info=Mock()))
-            return LLMAgentNode.verify_arrival(node,LOCATIONS['厨房'])[0]
+            return LLMAgentNode.verify_arrival(node,dict(x=3.76,y=2.22,yaw_deg=6.))[0]
         self.assertTrue(check())
         self.assertFalse(check(x=3.55))
         self.assertFalse(check(stamp=99))
@@ -41,6 +41,8 @@ class FetchPolicyTests(unittest.IsolatedAsyncioTestCase):
 
     def test_explicit_intent_and_negation(self):
         self.assertEqual(explicit_fetch('到厨房拿可乐',LOCATIONS,OBJECTS),('厨房','可乐'))
+        self.assertEqual(explicit_fetch('帮我去厨房拿瓶可乐',LOCATIONS,OBJECTS),('厨房','可乐'))
+        self.assertEqual(explicit_fetch('🥤 厨房拿可乐',LOCATIONS,OBJECTS),('厨房','可乐'))
         self.assertEqual(explicit_fetch('请帮我去厨房拿一罐可乐！',LOCATIONS,OBJECTS),('厨房','可乐'))
         for text in ('不要到厨房拿可乐','到厨房拿可乐再去客厅','到厨房拿可乐吗？','如果到厨房拿可乐会怎样'):
             self.assertIsNone(explicit_fetch(text,LOCATIONS,OBJECTS))
@@ -77,7 +79,7 @@ class FetchPolicyTests(unittest.IsolatedAsyncioTestCase):
 
     def run_pick(self,home=True,motions=None,contact=True):
         pose=detection().results[0].pose.pose
-        node=NS(pub_vel=NS(publish=Mock()),pub_cloud_filter=NS(publish=Mock()),pub_collision_obj=NS(publish=Mock()),
+        node=NS(collection_event=Mock(),pub_vel=NS(publish=Mock()),pub_cloud_filter=NS(publish=Mock()),pub_collision_obj=NS(publish=Mock()),
                 get_logger=lambda:NS(info=Mock(),error=Mock()),base_stopped=lambda:True,
                 go_home_client=object(),call_trigger=Mock(return_value=home),gripper_sync=Mock(return_value=True),
                 set_inference=Mock(),get_best_detection=lambda *a:NS(results=[NS(pose=NS(pose=pose))]),

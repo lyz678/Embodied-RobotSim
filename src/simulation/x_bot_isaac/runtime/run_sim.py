@@ -28,7 +28,11 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--render-hz", type=float, default=30.0)
     parser.add_argument("--lidar-backend", choices=("native", "python"), default="native")
     parser.add_argument("--profile-seconds", type=float, default=float(os.environ.get("ISAAC_PROFILE_SECONDS", "0")))
+    parser.add_argument("--handeye-config", type=Path)
+    parser.add_argument("--handeye-assets", type=Path)
     args, _ = parser.parse_known_args()
+    if args.handeye_config and not args.handeye_assets:
+        parser.error("--handeye-config requires --handeye-assets")
     if not 1 <= args.render_hz <= 200:
         parser.error("--render-hz must be between 1 and 200")
     return args
@@ -70,6 +74,7 @@ def main() -> int:
     temp_dir = None
     lidar_sensor = None
     manipulation_telemetry = None
+    handeye_experiment = None
     return_code = 0
     try:
         for extension in (
@@ -115,14 +120,29 @@ def main() -> int:
         articulation_path = str(articulation.GetPath())
         configure_joint_drives(stage)
         create_control_graph(stage, articulation_path, args.controller_config.resolve(), urdf_path)
-        create_camera_graphs(stage)
+        if args.handeye_config:
+            from ros_bridge import _create_camera
+            _create_camera(stage, "camera_left_frame", (180.0, 0.0, 0.0))
+        else:
+            create_camera_graphs(stage)
+        if args.handeye_config:
+            app_utils.enable_extension("isaacsim.sensors.experimental.rtx")
         SimulationManager.setup_simulation(dt=1.0 / 200.0, device="cpu")
-        from mid360 import Mid360
-        lidar_sensor = Mid360(stage, backend=args.lidar_backend)
+        if args.handeye_config:
+            from handeye_experiment import HandeyeRosRuntime
+            lidar_sensor = HandeyeRosRuntime()
+        else:
+            from mid360 import Mid360
+            lidar_sensor = Mid360(stage, backend=args.lidar_backend)
+        if args.handeye_config:
+            from handeye_experiment import HandeyeExperiment
+            handeye_experiment = HandeyeExperiment(stage, lidar_sensor.node, args.handeye_config, args.handeye_assets)
         # Initialize tensor views without advancing the timeline, so the arm
         # and base start at rest before the first published physics sample.
         SimulationManager.initialize_physics()
         set_initial_joint_state(articulation_path)
+        if handeye_experiment:
+            handeye_experiment.initialize()
         if args.world == 'manipulation_test':
             from manipulation_telemetry import ManipulationTelemetry
             manipulation_telemetry = ManipulationTelemetry(stage, lidar_sensor.node)
@@ -143,9 +163,11 @@ def main() -> int:
             profiler.enable()
             profile_end = time.monotonic() + args.profile_seconds
         while simulation_app.is_running():
-            if not app_utils.is_playing():
+            if args.handeye_config or not app_utils.is_playing():
                 lidar_sensor.update()
             simulation_app.update()
+            if handeye_experiment:
+                handeye_experiment.update()
             if lidar_sensor.error:
                 raise lidar_sensor.error
             if profiler is not None and time.monotonic() >= profile_end:
@@ -162,6 +184,8 @@ def main() -> int:
     else:
         return_code = 0
     finally:
+        if handeye_experiment is not None:
+            handeye_experiment.close()
         if manipulation_telemetry is not None:
             manipulation_telemetry.close()
         if lidar_sensor is not None:

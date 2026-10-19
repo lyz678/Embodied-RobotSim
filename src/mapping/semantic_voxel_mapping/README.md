@@ -145,3 +145,25 @@ WebSocket 确认能收到地图和三维数据；当前环境没有可用的浏�
 本机隔离 ROS domain 的 CUDA 节点回归已复现旧时间戳的 future extrapolation，
 并确认修复后的非空 Marker 能解析到最新的 `map → odom`；报告为
 `.cache/qwen/semantic_tf_regression.json`。此项验证不等同于 RViz 屏幕验收。
+
+## 默认局部／全局地图分离
+
+`start_embodied.sh` 和抓取入口默认同时启动两套独立实例：
+
+| 用途 | 几何输入 | OctoMap | RViz MarkerArray |
+|---|---|---|---|
+| 抓取局部图 | YOLOE 仿真深度语义点云 `/yoloe_multi_text_prompt/pointcloud_semantic` | `/local_map/octomap_full` | `/local_map/occupied_cells_vis_array` |
+| 全局图 | FAST-LIO 单帧去畸变点云 `/fastlio/cloud_odom` | `/global_map/octomap_full` | `/global_map/occupied_cells_vis_array` |
+
+`/occupied_cells_vis_array` 是全局图的兼容显示话题。局部图默认2m观测范围、2cm体素，保留类别过滤、自体过滤及MoveIt `/planning_scene` 更新；全局图默认10m观测范围、10cm体素，只更新全局几何，不向MoveIt写入碰撞场景。局部图为近距观测融合，当前不实现随底座移动裁剪历史体素的滚动窗口。
+
+全局输入已经位于odom，`global_fastlio.yaml` 显式指定 `sensor_frame: mid360_link`，射线清除和量程裁剪均相对于采样时刻雷达原点计算。FAST-LIO图不依赖YOLOE是否暂停。两套实例的voxels、projected_map、diagnostics及clear/save/load服务均按local_map/global_map隔离；保存文件为local_octomap.svm和global_octomap.svm。二维导航 `/map` 保持现有定位链路。
+
+单独启动（完整入口会自动启动，无需重复执行）：
+
+```bash
+ros2 launch x_bot_mapping octomap_server.launch.py map_scope:=local semantic_config:=/home/lyz/Embodied-RobotSim/src/mapping/semantic_voxel_mapping/config/manipulation.yaml use_rviz:=false
+ros2 launch x_bot_mapping octomap_server.launch.py map_scope:=global semantic_config:=/home/lyz/Embodied-RobotSim/src/mapping/semantic_voxel_mapping/config/global_fastlio.yaml use_rviz:=false
+```
+
+VIO模式不提供FAST-LIO点云，因此不会启动全局FAST-LIO图。探索模式保留原YOLOE语义融合图至local_map输出，同时独立发布FAST-LIO全局OctoMap。`map_scope:=legacy`保留旧单实例话题接口。

@@ -59,6 +59,7 @@ def generate_launch_description():
             config,  # 探索算法参数配置文件
             {
                 "use_sim_time": use_sim_time,
+                "return_to_init": ParameterValue(LaunchConfiguration("return_to_init"),value_type=bool),
                 "map_save_service": ParameterValue(
                     LaunchConfiguration("map_save_service"), value_type=str
                 ),
@@ -80,6 +81,7 @@ def generate_launch_description():
         )
     )
     ld.add_action(DeclareLaunchArgument("map_save_service", default_value=""))
+    ld.add_action(DeclareLaunchArgument("return_to_init", default_value="true"))
     ld.add_action(node)  # 添加探索节点
 
     return ld

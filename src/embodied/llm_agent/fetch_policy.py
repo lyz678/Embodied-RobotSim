@@ -6,7 +6,7 @@ import numpy as np
 
 def explicit_fetch(text, locations, objects):
     rooms='|'.join(map(re.escape,locations));items='|'.join(map(re.escape,sorted(objects,key=len,reverse=True)))
-    match=re.fullmatch(rf'\s*(?:请|帮我|请帮我)?\s*(?:去|到|前往)\s*({rooms})\s*(?:拿|取|抓取|拿取)\s*(?:一[瓶罐个本])?\s*({items})\s*[。！!，,]?\s*',text)
+    match=re.fullmatch(rf'\s*(?:🥤\s*)?(?:请|帮我|请帮我)?\s*(?:去|到|前往)?\s*({rooms})\s*(?:拿|取|抓取|拿取)\s*(?:一?[瓶罐个本])?\s*({items})\s*[。！!，,]?\s*',text)
     return match.groups() if match else None
 
 

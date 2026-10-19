@@ -39,7 +39,9 @@ class SemanticMapNode:public rclcpp::Node {
  std::unique_ptr<tf2_ros::Buffer> tf_;std::unique_ptr<tf2_ros::TransformListener> listener_;
  rclcpp::Subscription<Cloud>::SharedPtr input_;
  std::string planning_frame_;
- bool self_filter_enabled_=false,publish_moveit_=false;double self_padding_=0;
+ bool self_filter_enabled_=false,publish_moveit_=false,geometry_only_=false;double self_padding_=0;
+ std::string sensor_frame_;
+ rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr legacy_markers_;
  RobotSelfFilter self_filter_;
  std::unordered_map<int,svm::Color> class_colors_;int excluded_class_=-1;
  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr description_;
@@ -67,6 +69,7 @@ public:
   if(window<1||minimum<1||maximum<1)throw std::runtime_error("Invalid integer map limits");
   c.window=window;c.min_observations=minimum;c.majority=option("majority_threshold",.6);c.max_voxels=maximum;c.validate();
   map_=svm::Map(c);exports_=std::make_unique<MapExportCache>(c.resolution);frame_=option("map_frame",std::string("odom"));file_=option("map_file",std::string("maps/semantic_map.svm"));
+  geometry_only_=option("geometry_only",false);sensor_frame_=option("sensor_frame",std::string(""));
   min_range_=option("min_range",.2);max_range_=option("max_range",8.);zmin_=option("min_z",.1);zmax_=option("max_z",2.5);
   confidence_=option("confidence_threshold",.5);integration_rate_=option("integration_rate",5.);publish_rate_=option("publish_rate",1.);
   int memory=option("gpu_scratch_mib",512);device_=option("cuda_device",0);
@@ -112,6 +115,7 @@ public:
   }
   voxels_=create_publisher<Cloud>("/semantic_map/voxels",qos);
   markers_=create_publisher<visualization_msgs::msg::MarkerArray>("/occupied_cells_vis_array",qos);
+  if(option("legacy_visualization",false))legacy_markers_=create_publisher<visualization_msgs::msg::MarkerArray>("/legacy_occupied_cells_vis_array",qos);
   octomap_=create_publisher<octomap_msgs::msg::Octomap>("/octomap_full",qos);
   grid_=create_publisher<nav_msgs::msg::OccupancyGrid>("/projected_map",qos);
   diagnostics_=create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/semantic_map/diagnostics",10);
@@ -135,14 +139,15 @@ private:
   if(clock_fault_||stamp==last_stamp_){++dropped_;return;}
   if(last_wall_.time_since_epoch().count()&&std::chrono::duration<double>(start-last_wall_).count()<1/integration_rate_){++dropped_;return;}
   try{
-   if(msg.header.frame_id.empty()||msg.point_step<20||uint64_t(msg.row_step)<uint64_t(msg.width)*msg.point_step||msg.data.size()!=uint64_t(msg.row_step)*msg.height)throw std::runtime_error("Malformed semantic cloud layout");
+   if(msg.header.frame_id.empty()||msg.point_step<(geometry_only_?12u:20u)||uint64_t(msg.row_step)<uint64_t(msg.width)*msg.point_step||msg.data.size()!=uint64_t(msg.row_step)*msg.height)throw std::runtime_error("Malformed semantic cloud layout");
    int offsets[5]={-1,-1,-1,-1,-1};const char* names[]={"x","y","z","rgb","confidence"};
    for(auto& f:msg.fields)for(int i=0;i<5;++i)if(f.name==names[i]){
     if(f.count!=1||uint64_t(f.offset)+4>msg.point_step||(i==3?(f.datatype!=6&&f.datatype!=7):f.datatype!=7))throw std::runtime_error("Invalid semantic cloud field");offsets[i]=f.offset;
    }
-   for(int o:offsets)if(o<0)throw std::runtime_error("Semantic cloud requires x/y/z/rgb/confidence");
+   for(int i=0;i<(geometry_only_?3:5);++i)if(offsets[i]<0)throw std::runtime_error("Missing required point cloud field");
    auto transform=tf_->lookupTransform(frame_,msg.header.frame_id,rclcpp::Time(msg.header.stamp),rclcpp::Duration::from_seconds(.5));
-   tf2::Transform pose;tf2::fromMsg(transform.transform,pose);auto translation=pose.getOrigin();svm::Vec origin{translation.x(),translation.y(),translation.z()};
+   tf2::Transform pose;tf2::fromMsg(transform.transform,pose);auto origin_tf=sensor_frame_.empty()?transform:tf_->lookupTransform(frame_,sensor_frame_,rclcpp::Time(msg.header.stamp),rclcpp::Duration::from_seconds(.5));
+   auto translation=origin_tf.transform.translation;svm::Vec origin{translation.x,translation.y,translation.z};
    auto check_key=[this](svm::Vec v){for(auto a:{v.x,v.y,v.z})if(!std::isfinite(a)||a/map_.config.resolution<=-svm::BIAS||a/map_.config.resolution>=svm::BIAS)throw std::runtime_error("Point outside voxel key range");};check_key(origin);
    uint16_t endian=1;bool swap=msg.is_bigendian!=(*reinterpret_cast<uint8_t*>(&endian)==0);
    std::vector<int> robot_mask;if(self_filter_enabled_)robot_mask=self_filter_.mask(msg,*tf_);
@@ -152,13 +157,13 @@ private:
     auto p=msg.data.data()+size_t(row)*msg.row_step+size_t(col)*msg.point_step;
     double x=number(read32(p+offsets[0],swap)),y=number(read32(p+offsets[1],swap)),z=number(read32(p+offsets[2],swap));
     if(!std::isfinite(x)||!std::isfinite(y)||!std::isfinite(z))continue;
-    double distance=std::sqrt(x*x+y*y+z*z);if(distance<min_range_||distance==0)continue;
     auto point=pose*tf2::Vector3(x,y,z);svm::Vec end{point.x(),point.y(),point.z()};
+    double distance=std::sqrt(std::pow(end.x-origin.x,2)+std::pow(end.y-origin.y,2)+std::pow(end.z-origin.z,2));if(distance<min_range_||distance==0)continue;
     bool hit=distance<=max_range_&&end.z>=zmin_&&end.z<=zmax_;
     if(distance>max_range_){double ratio=max_range_/distance;end={origin.x+(end.x-origin.x)*ratio,origin.y+(end.y-origin.y)*ratio,origin.z+(end.z-origin.z)*ratio};}
     check_key(end);rays.push_back({origin,end,hit});
-    if(hit){auto k=svm::key(end,map_.config.resolution);evidence.hits.insert(k);auto rgb=read32(p+offsets[3],swap)&0xffffff;float score=number(read32(p+offsets[4],swap));
-     if(std::isfinite(score)&&score>=confidence_&&score<=1&&palette_.count(rgb))++evidence.votes[k][rgb];}
+    if(hit){auto k=svm::key(end,map_.config.resolution);evidence.hits.insert(k);if(!geometry_only_){auto rgb=read32(p+offsets[3],swap)&0xffffff;float score=number(read32(p+offsets[4],swap));
+     if(std::isfinite(score)&&score>=confidence_&&score<=1&&palette_.count(rgb))++evidence.votes[k][rgb];}}
    }
    auto result=svm::raycast_cuda(rays,map_.config.resolution,zmin_,zmax_,budget_);evidence.free.insert(result.free.begin(),result.free.end());
    auto changed=map_.commit(evidence);for(auto key:changed)exports_->update(map_,key);input_points_=size_t(msg.width)*msg.height;ray_count_=rays.size();gpu_ms_=result.milliseconds;scratch_=result.peak_scratch_bytes;
@@ -245,7 +250,7 @@ private:
     map.octomap.header=cloud.header;octomap_msgs::fullMapToMsg(collision_tree,map.octomap);
     scene_->publish(scene);
    }
-   voxels_->publish(cloud);visualization_msgs::msg::MarkerArray array;array.markers.push_back(marker);markers_->publish(array);octomap_->publish(octree);grid_->publish(grid);dirty_=false;export_ms_=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-export_start).count();
+   voxels_->publish(cloud);visualization_msgs::msg::MarkerArray array;array.markers.push_back(marker);markers_->publish(array);if(legacy_markers_)legacy_markers_->publish(array);octomap_->publish(octree);grid_->publish(grid);dirty_=false;export_ms_=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-export_start).count();
   }catch(const std::exception& e){++errors_;RCLCPP_ERROR_THROTTLE(get_logger(),*get_clock(),5000,"Map export failed: %s",e.what());}
  }
  void diagnose(){

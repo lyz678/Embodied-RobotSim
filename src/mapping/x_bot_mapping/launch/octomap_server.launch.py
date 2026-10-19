@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Unified CUDA semantic mapping, with optional per-demo parameter overrides."""
 from pathlib import Path
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
@@ -14,6 +15,8 @@ def semantic_node(context):
     config = LaunchConfiguration('semantic_config').perform(context)
     if not config:
         config = str(Path(get_package_share_directory('semantic_voxel_mapping')) / 'config/map.yaml')
+    scope=LaunchConfiguration('map_scope').perform(context)
+    with open(config) as f:settings=yaml.safe_load(f)['semantic_voxel_map']['ros__parameters']
     overrides = {'use_sim_time': ParameterValue(LaunchConfiguration('use_sim_time'), value_type=bool)}
     resolution = LaunchConfiguration('resolution').perform(context)
     topic = LaunchConfiguration('cloud_topic').perform(context)
@@ -27,12 +30,22 @@ def semantic_node(context):
         overrides['resolution'] = float(resolution)
     if topic:
         overrides['cloud_topic'] = topic
+    remaps=[]
+    if scope!='legacy':
+        for source,suffix in (('/semantic_map/voxels','voxels'),('/semantic_map/diagnostics','diagnostics'),('/occupied_cells_vis_array','occupied_cells_vis_array'),('/octomap_full','octomap_full'),('/projected_map','projected_map')):
+            remaps.append((source,f'/{scope}_map/{suffix}'))
+    if scope=='global':
+        overrides['legacy_visualization']=True
+        overrides['publish_moveit_scene']=False
+        remaps.append(('/legacy_occupied_cells_vis_array','/occupied_cells_vis_array'))
     return [Node(package='semantic_voxel_mapping', executable='semantic_voxel_node',
-                 output='screen', parameters=[config, overrides])]
+                 name='semantic_voxel_map',namespace='' if scope=='legacy' else f'{scope}_map',
+                 output='screen', parameters=[settings, overrides],remappings=remaps)]
 
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument('map_scope', default_value='legacy',choices=['legacy','local','global']),
         DeclareLaunchArgument('backend', default_value='semantic_cuda', choices=['semantic_cuda']),
         DeclareLaunchArgument('semantic_config', default_value=''),
         DeclareLaunchArgument('palette_file', default_value=''),

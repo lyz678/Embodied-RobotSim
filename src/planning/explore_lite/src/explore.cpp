@@ -142,6 +142,7 @@ Explore::Explore()
         observation_map_ = map;
       });
 
+  status("running");
   // Subscription to resume or stop exploration
   resume_subscription_ = this->create_subscription<std_msgs::msg::Bool>(
       "explore/resume", 10,
@@ -589,17 +590,20 @@ void Explore::saveMap()
   if (!service.empty()) {
     auto client = this->create_client<std_srvs::srv::Trigger>(service);
     if (!client->wait_for_service(std::chrono::seconds(3))) {
+      status("save_failed");
       RCLCPP_ERROR(logger_, "Map save service unavailable: %s", service.c_str());
       return;
     }
     // Save the complete paired PCD/2D bundle through its owning node.
     // Keep the client alive until its response without blocking navigation.
     client->async_send_request(std::make_shared<std_srvs::srv::Trigger::Request>(),
-        [client, logger = logger_](rclcpp::Client<std_srvs::srv::Trigger>::SharedFuture future) {
+        [this, client, logger = logger_](rclcpp::Client<std_srvs::srv::Trigger>::SharedFuture future) {
           const auto result = future.get();
           if (result->success) {
+            status("complete");
             RCLCPP_INFO(logger, "Complete map bundle saved: %s", result->message.c_str());
           } else {
+            status("save_failed");
             RCLCPP_ERROR(logger, "Map save failed: %s", result->message.c_str());
           }
         });
@@ -683,14 +687,22 @@ void Explore::reachedGoal(const NavigationGoalHandle::WrappedResult& result,
   makePlan();
 }
 
+void Explore::status(const std::string& value)
+{
+  if(!status_pub_)status_pub_=create_publisher<std_msgs::msg::String>("/explore/status",rclcpp::QoS(1).transient_local().reliable());
+  std_msgs::msg::String msg;msg.data=value;status_pub_->publish(msg);
+}
+
 void Explore::start()
 {
+  status("running");
   // 🚀 启动探索 - 记录状态
   RCLCPP_INFO(logger_, "Exploration started.");
 }
 
 void Explore::stop(bool finished_exploring)
 {
+  status(finished_exploring?"saving":"paused");
   ++goal_generation_;  // Ignore late results from the previous session/goal.
   active_frontier_points_.clear();
   navigating_ = false;
@@ -724,6 +736,7 @@ void Explore::stop(bool finished_exploring)
 
 void Explore::resume()
 {
+  status("running");
   has_prev_robot_position_ = false;
   progress_watchdog_.reset();
   // ▶️ 恢复探索

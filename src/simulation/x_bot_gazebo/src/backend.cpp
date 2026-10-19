@@ -365,6 +365,12 @@ class GazeboBackend : public sim::System,
     ecm.Each<sim::components::Model, sim::components::Name>(
         [&](auto e, auto *, auto *n) {
           std::string name = n->Data();
+          // Kitchen uses nested asset instance names; observe the inner dynamic
+          // model, whose world pose follows the physical body (not its wrapper).
+          if (name == "Coke") name = "coke_can";
+          else if (name == "ACE_Coffee_Mug_Kristen_16_oz_cup") name = "coffee_mug";
+          else if (name == "Eat_to_Live_The_Amazing_NutrientRich_Program_for_Fast_and_Sustained_Weight_Loss_Revised_Edition_Book") name = "book";
+          else if (name == "aws_robomaker_residential_KitchenTable_01") name = "kitchen_table";
           if (name == "book" || name == "coffee_mug" || name == "coke_can" ||
               name == "water_bottle" || name == "shoe" ||
               name == "kitchen_table" || name == "trash_bin")

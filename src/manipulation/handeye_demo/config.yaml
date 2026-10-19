@@ -1,0 +1,50 @@
+# Fixed experiment settings; noise values are Isaac defaults, not a fitted D435 model.
+frames: {base: base_footprint, hand: fr3_hand, camera: camera_left_frame, tcp: fingers_center}
+sensor:
+  width: 640
+  height: 640
+  baseline_mm: 50.0
+  maximum_disparity: 110.0
+  disparity_confidence: 0.7
+  noise_mean: 0.25
+  noise_sigma: 0.25
+  disparity_noise_downscale: 1.0
+  outlier_removal: true
+  minimum_distance_m: 0.10 # override generic 0.5 m default for near-field manipulation
+  maximum_distance_m: 3.0
+scene:
+  board_center: [0.65, 0.0, 0.781]
+  table_top: 0.78
+  cube_size: 0.04
+sampling:
+  observation: [0.48, 0.0, 1.05]
+  train: 30
+  test: 10
+  settle_seconds: 1.0
+  candidates: 200
+  max_reprojection_px: 2.0
+  motion_timeout: 60.0
+  data_timeout: 240.0
+  sync_tolerance_seconds: 0.04
+grasp:
+  attempts: 3
+  tcp_center_backoff_m: 0.055 # collision fingertip extends 64 mm beyond fingers_center
+  pregrasp_distance_m: 0.05
+  square_grasp_symmetry: true
+  observation: [0.40, 0.0, 1.00]
+  lift_m: 0.10
+  minimum_object_lift_m: 0.08
+  hold_seconds: 2.0
+  max_plane_residual_m: 0.004
+  min_depth_points: 20
+  trials:
+    - [0.40, -0.06, 0.0]
+    - [0.43, -0.06, 0.3]
+    - [0.46, -0.06, -0.3]
+    - [0.40, 0.0, 0.5]
+    - [0.43, 0.0, 0.0]
+    - [0.46, 0.0, -0.5]
+    - [0.40, 0.06, -0.3]
+    - [0.43, 0.06, 0.3]
+    - [0.46, 0.06, 0.0]
+    - [0.42, 0.03, 0.7]

@@ -403,8 +403,11 @@
       <div class="config-row">
         <label>OctoMap 话题</label>
         <select id="cfg-octomap-topic" class="config-input" style="padding:8px 12px;font-family:monospace">
-        <option value="/semantic_map/voxels">/semantic_map/voxels (语义占据点云)</option>
-        <option value="/occupied_cells_vis_array">/occupied_cells_vis_array (稀疏体素)</option>
+        <option value="/global_map/occupied_cells_vis_array">/global_map/occupied_cells_vis_array (FAST-LIO 全局体素)</option>
+        <option value="/local_map/occupied_cells_vis_array">/local_map/occupied_cells_vis_array (深度局部体素)</option>
+        <option value="/global_map/voxels">/global_map/voxels (全局占据点云)</option>
+        <option value="/local_map/voxels">/local_map/voxels (局部语义占据点云)</option>
+        <option value="/occupied_cells_vis_array">/occupied_cells_vis_array (兼容全局体素)</option>
       </select>
       </div>
     </div>

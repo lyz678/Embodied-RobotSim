@@ -25,6 +25,8 @@ htmlcov/
 env/
 venv/
 .venv/
+.venv-*/
+.venv_*/
 .env
 .env.*
 !.env.example
@@ -47,6 +49,10 @@ venv/
 *.onnx
 *.pt
 *.pth
+*.ckpt
+*.safetensors
+*.gguf
+*.ggml
 *.weights
 *.tflite
 *.pb
@@ -62,6 +68,11 @@ venv/
 # Runtime maps, recordings, logs and temporary files
 /maps/
 /docs/
+/recordings/
+/rosbags/
+/results/
+/outputs/
+/checkpoints/
 *.svm
 *.svm.tmp
 *.bt
@@ -69,9 +80,16 @@ venv/
 *.bag
 *.mcap
 *.db3
+*.db3-shm
+*.db3-wal
 *.log
 *.tmp
+*.pid
+*.part
+*.partial
 *.mp4
+*.avi
+*.webm
 *.zip
 *.gv
 /assets/OctoMap.gif

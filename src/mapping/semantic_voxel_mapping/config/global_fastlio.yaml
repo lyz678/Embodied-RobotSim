@@ -1,0 +1,21 @@
+# Geometry-only global OctoMap, independent of YOLOE/depth inference.
+semantic_voxel_map:
+  ros__parameters:
+    use_sim_time: true
+    cloud_topic: /fastlio/cloud_odom
+    map_frame: odom
+    sensor_frame: mid360_link
+    geometry_only: true
+    map_file: maps/global_fastlio_map.svm
+    resolution: 0.10
+    min_range: 0.2
+    max_range: 10.0
+    min_z: 0.1
+    max_z: 2.5
+    self_filter: true
+    self_filter_padding: 0.02
+    publish_moveit_scene: false
+    gpu_scratch_mib: 256
+    max_voxels: 2000000
+    integration_rate: 5.0
+    publish_rate: 1.0

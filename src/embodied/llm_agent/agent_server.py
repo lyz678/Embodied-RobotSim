@@ -38,6 +38,11 @@ from model_config import ModelConfig, create_client
 from fetch_policy import explicit_fetch, stable_grasp, approach_axis
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'manipulation/x_bot_manipulation/scripts'))
 from gripper_action import control_gripper
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'act_policy'))
+from bridge import run_act_pick, stop_act_pick
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'semantic_navigation'))
+from navigator import install as install_semantic_navigation, SemanticNavigator
+from semantic_world import classify as classify_room
 
 # ─────────────────────────── 配置 ──────────────────────────────────────────
 
@@ -48,16 +53,11 @@ VL_MODEL = MODEL_CONFIG.vision_model
 API_KEY = MODEL_CONFIG.api_key
 API_BASE = MODEL_CONFIG.base_url
 
-LOCATIONS: Dict[str, Dict] = {
-    "厨房": {"x": 3.76,  "y": 2.22,  "yaw_deg": 6.0},
-    "客厅": {"x": 1.44,  "y": 3.32,  "yaw_deg": 66.9},
-    "起点": {"x": 0.0,   "y": 0.0,   "yaw_deg": 0.0},
-    "书房": {"x": -1.5,  "y": 2.0,   "yaw_deg": 90.0},
-    "卧室": {"x": -2.5,  "y": -1.5,  "yaw_deg": 180.0},
-}
+# Room names only; all ranges and navigation poses come from semantic mapping.
+LOCATIONS = {name:{} for name in ('厨房','客厅','书房','卧室','走廊','卫生间')}
 
 OBJECTS: Dict[str, int] = {
-    "可乐": 9, "杯子": 2, "书": 3, "瓶子": 4,
+    "可乐": 9, "杯子": 2, "书": 3,
 }
 
 TOOLS = [
@@ -65,7 +65,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "navigate_to_location",
-            "description": "导航机器人到指定的预设地点（厨房、客厅、书房、卧室、起点）",
+            "description": "从结构化语义地图查询房间范围并导航，随后用VLM核验到达；不使用预设坐标",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -146,16 +146,13 @@ TOOLS = [
 SYSTEM_PROMPT = f"""你是一个智能家庭服务机器人的AI助手，可以用自然语言控制机器人完成各种任务。
 
 机器人能力：
-- 导航到指定房间（厨房、客厅、书房、卧室、起点）
-- 识别并抓取物体（可乐、杯子、书、瓶子等）
+- 导航到指定房间（厨房、客厅、书房、卧室、走廊、卫生间）
+- 识别并抓取物体（可乐、杯子、书）
 - 直接底盘移动控制（前进/后退/左转/右转）
 - 识别当前所在场景/房间
 - 机械臂归位
 
-预设导航点：
-- 厨房：X=3.76m, Y=2.22m（可获取饮料等物品）
-- 客厅：X=1.44m, Y=3.32m
-- 起点：X=0.0, Y=0.0
+导航位置由全局结构化语义地图查询，不能编造或使用预设坐标。到达房间必须经VLM确认，目标接近必须有新鲜YOLOE跟踪；GraspNet／MoveIt核验最终抓取可达性。
 
 任务执行规则：
 1. 理解用户意图，将复杂任务分解为步骤
@@ -212,6 +209,8 @@ class LLMAgentNode(Node):
 
         # 状态
         self._arm_status: Optional[str] = None
+        self.pick_backend = os.environ.get('EMBODIED_PICK_BACKEND', 'graspnet')
+        self._act_process = None
         self._latest_detections         = []
         self._detections_received = -float('inf')
         self._detection_generation = 0
@@ -237,6 +236,7 @@ class LLMAgentNode(Node):
         self.create_subscription(Odometry,         "/odom",                    self._cb_odom,         10)
         self.create_subscription(JointState, '/joint_states', self._cb_joints, 10)
 
+        install_semantic_navigation(self)
         self.get_logger().info("LLM Agent Node ready")
 
     # ── 回调 ──────────────────────────────────────────────────────────────
@@ -280,7 +280,7 @@ class LLMAgentNode(Node):
 
     def get_camera_base64(self) -> Optional[str]:
         img = self._camera_image
-        if img is None:
+        if img is None or not 0 <= self.get_clock().now().nanoseconds/1e9-(img.header.stamp.sec+img.header.stamp.nanosec/1e9) <= .5:
             return None
         try:
             from PIL import Image as PILImage
@@ -344,6 +344,8 @@ class LLMAgentNode(Node):
 
     def cancel_navigation(self):
         self._nav_cancel_requested=True
+        if getattr(self,'semantic_world',{}).get('exploration_status') in ('running','saving') and hasattr(self,'pub_explore_control'):
+            self.pub_explore_control.publish(Bool(data=False))
         if self._nav_handle and self._nav_handle.accepted:self._nav_handle.cancel_goal_async()
         self.pub_vel.publish(Twist())
 
@@ -393,7 +395,7 @@ class LLMAgentNode(Node):
 
     # ── 检测聚类 ────────────────────────────────────────────────────────────
 
-    def get_best_detection(self, class_id: int, collect_sec=4.0):
+    def get_best_detection(self, class_id: int, collect_sec=8.0):
         candidates=[];seen=set();generation=-1;start=time.monotonic()
         while time.monotonic()-start<collect_sec:
             with self._detection_lock:
@@ -542,15 +544,16 @@ class RobotController:
         self._loop   = loop
         self._exec   = ThreadPoolExecutor(max_workers=4)
         self._pick_lock = asyncio.Lock()
+        self.semantic=SemanticNavigator(self)
 
     async def navigate(self, location: str) -> tuple:
         async with self._pick_lock:
             return await self._navigate(location)
 
     async def _navigate(self, location: str) -> tuple:
-        if location not in LOCATIONS:
-            return False, f"未知地点: {location}"
-        loc = LOCATIONS[location]
+        return await self.semantic.navigate(location)
+
+    async def _go_pose(self,loc):
         future: asyncio.Future = self._loop.create_future()
         # 在 ROS2 线程中发起导航
         self._loop.run_in_executor(
@@ -572,14 +575,17 @@ class RobotController:
             return False, f"未知物体: {object_name}"
         class_id = OBJECTS[object_name]
         async with self._pick_lock:
+            ok,msg=await self.semantic.approach(class_id,progress_cb)
+            if not ok:return False,msg
             return await self._loop.run_in_executor(
                 self._exec,
-                lambda: self._node.pick_sequence(class_id, progress_cb)
+                lambda: run_act_pick(self._node, class_id, progress_cb) if self._node.pick_backend=='act'
+                        else self._node.pick_sequence(class_id, progress_cb)
             )
 
     async def move(self, direction: str, speed: float = 0.2, duration: float = 1.0):
         if direction=='stop':
-            self._node.cancel_navigation();return
+            self._node.cancel_navigation();stop_act_pick(self._node);return
         async with self._pick_lock:
             await self._loop.run_in_executor(self._exec,lambda:self._node.move_direct(direction,speed,duration))
 
@@ -589,38 +595,16 @@ class RobotController:
 
     async def stop(self):
         self._node.cancel_navigation()
+        stop_act_pick(self._node)
 
     async def recognize_scene(self, vl_client: OpenAI) -> str:
         b64 = await self._loop.run_in_executor(self._exec, self._node.get_camera_base64)
         if b64 is None:
             return "无法获取相机图像"
         try:
-            resp = await self._loop.run_in_executor(
-                self._exec,
-                lambda: vl_client.chat.completions.create(
-                    model=VL_MODEL,
-                    **MODEL_CONFIG.completion_options(),
-                    messages=[{
-                        "role": "user",
-                        "content": [
-                            {"type": "image_url",
-                             "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-                            {"type": "text",
-                             "text": "请识别图像中的室内场景，判断这是哪个房间（厨房/客厅/书房/卧室/走廊/其他），"
-                                     "并用一句话描述你看到的主要物品。格式：[房间名] 描述"},
-                        ],
-                    }],
-                )
-            )
-            result = resp.choices[0].message.content.strip()
-            # 提取房间名写入节点状态
-            for room in ["厨房", "客厅", "书房", "卧室", "走廊"]:
-                if room in result:
-                    self._node.current_scene = room
-                    break
-            else:
-                self._node.current_scene = "未知"
-            return result
+            result=await self._loop.run_in_executor(self._exec,lambda:classify_room(vl_client,MODEL_CONFIG,b64))
+            self._node.current_scene=result['room'] if result['confidence']>=.65 else '未知'
+            return json.dumps(result,ensure_ascii=False)
         except Exception as e:
             return f"场景识别失败: {e}"
 
@@ -632,6 +616,7 @@ class Qwen3Agent:
         self._robot   = robot
         self._client  = create_client(MODEL_CONFIG) if API_KEY else None
         self._vl_client = create_client(MODEL_CONFIG) if API_KEY else None
+        self._robot.vision_client=self._vl_client
 
     async def chat(self, user_msg: str, history: List[Dict], send: callable):
         """
@@ -640,6 +625,7 @@ class Qwen3Agent:
         intent=explicit_fetch(user_msg,LOCATIONS,OBJECTS)
         if intent:
             location,object_name=intent
+            self._robot.target_class=OBJECTS[object_name]
             for index,(name,args) in enumerate((('navigate_to_location',dict(location=location)),('pick_object',dict(object_name=object_name)))):
                 identifier=f'fetch-{index}'
                 await send(dict(type='tool_call',id=identifier,name=name,args=args,status='running'))
@@ -738,7 +724,7 @@ class Qwen3Agent:
                 await send({"type": "status", "task": f"导航→{loc}"})
                 ok, msg = await r.navigate(loc)
                 self._navigation_failed=not ok
-                if ok: self._robot._node.current_scene = loc
+                # current_scene is set only after visual confirmation.
                 return ok, msg
 
             elif name == "pick_object":
@@ -819,7 +805,11 @@ async def status():
         "localization_ready": _node.localization_ready(),
         "pose":  _node.robot_pose,
         "scene": _node.current_scene,
-        "locations": {k: {"x": v["x"], "y": v["y"]} for k, v in LOCATIONS.items()},
+        "pick_backend": _node.pick_backend,
+        "act_model": os.environ.get("EMBODIED_ACT_MODEL", "rgb"),
+        "locations": {v["name"]: {"x":v["center"][0],"y":v["center"][1],"bounds_xy":v["bounds_xy"]} for v in _node.semantic_world.get("rooms",[]) if v["name"]!="未知"},
+        "semantic_world": _node.semantic_world,
+        "semantic_phase": getattr(_node,"semantic_phase",None),
     }
 
 

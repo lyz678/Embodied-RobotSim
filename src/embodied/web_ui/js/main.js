@@ -195,6 +195,7 @@ function loadConfig() {
   $v('cfg-rosbridge',     App.config.rosbridgeUrl);
   $v('cfg-video-server',  App.config.videoServerUrl);
   $v('cfg-base-frame',    App.config.baseFrame);
+  if (App.config.octomapTopic === '/semantic_map/voxels') App.config.octomapTopic = '/global_map/voxels';
   $v('cfg-octomap-topic', App.config.octomapTopic);
 }
 

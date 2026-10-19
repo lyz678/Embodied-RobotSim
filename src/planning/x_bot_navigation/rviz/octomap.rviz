@@ -237,7 +237,7 @@ Visualization Manager:
       Value: false
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
-      Name: Octomap
+      Name: Global OctoMap (FAST-LIO)
       Namespaces:
         {}
       Topic:
@@ -245,7 +245,19 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /occupied_cells_vis_array
+        Value: /global_map/occupied_cells_vis_array
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: Local OctoMap (Depth)
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /local_map/occupied_cells_vis_array
       Value: true
     - Alpha: 0.699999988079071
       Binary representation: false

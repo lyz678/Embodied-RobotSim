@@ -40,10 +40,10 @@ OCTOMAP_CLOUD_TOPIC=""
 OCTOMAP_BACKEND=semantic_cuda
 OCTOMAP_RESOLUTION=0.10
 [[ "$MODE" != explore ]] && OCTOMAP_RESOLUTION=0.02
-[[ "$MODE" != llm ]] || OCTOMAP_RESOLUTION=0.05
+[[ "$MODE" != llm ]] || OCTOMAP_RESOLUTION=0.02
 SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/mapping/semantic_voxel_mapping/config/map.yaml"
 [[ "$MODE" != explore ]] && SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/mapping/semantic_voxel_mapping/config/manipulation.yaml"
-[[ "$MODE" != llm ]] || SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/mapping/semantic_voxel_mapping/config/embodied.yaml"
+[[ "$MODE" != llm ]] || SEMANTIC_MAP_CONFIG="$ROOT_DIR/src/mapping/semantic_voxel_mapping/config/manipulation.yaml"
 SEMANTIC_CLOUD_SOURCE=depth
 [[ "$MODE" == explore ]] && SEMANTIC_CLOUD_SOURCE=fastlio
 # GraspNet consumes depth-based colored clouds and Detection3DArray. The
@@ -239,6 +239,7 @@ else
     REQUIRED_PACKAGES+=(isaac_ros_visual_slam rclcpp_components cv_bridge)
 fi
 [[ "$SIM_BACKEND" != isaac ]] || REQUIRED_PACKAGES+=(x_bot_isaac)
+[[ "$MODE" != llm ]] || REQUIRED_PACKAGES+=(explore_lite)
 case "$MODE" in pick|navigation_pick|llm) REQUIRED_PACKAGES+=(x_bot_manipulation x_bot_moveit_config graspnet_ros yoloe_infer) ;; explore) REQUIRED_PACKAGES+=(yoloe_infer) ;; esac
 [[ "$MODE" != llm ]] || REQUIRED_PACKAGES+=(rosbridge_server web_video_server)
 [[ "$SIM_BACKEND" != gazebo ]] || REQUIRED_PACKAGES+=(x_bot_gazebo ros_gz_sim ros_gz_bridge gz_ros2_control)
@@ -270,12 +271,33 @@ if [[ "$MODE" == explore && "$AUTO_EXPLORE" == true ]]; then
 fi
 # 与 main 的启动流程一致：探索/抓取建图，导航类要求已有地图。
 LOCALIZATION_MODE=mapping
-if [[ "$MODE" == navigation || "$MODE" == navigation_pick || "$MODE" == llm ]]; then
+AUTO_SEMANTIC_EXPLORE=false
+if [[ "$MODE" == llm ]]; then
+    [[ "$BUNDLE" != "$ROOT_DIR/maps/semantic_simple_room" ]] || BUNDLE="$ROOT_DIR/maps/$SIM_BACKEND/semantic_$WORLD"
+    export EMBODIED_SEMANTIC_WORLD="$BUNDLE.semantic.json"
+    AUTO_SEMANTIC_EXPLORE=true
+    if [[ -f "$EMBODIED_SEMANTIC_WORLD" ]]; then
+        if python3 - "$EMBODIED_SEMANTIC_WORLD" <<'PYCODE'
+import json,sys
+try:
+    data=json.load(open(sys.argv[1]));valid=data.get('exploration_status')=='complete'
+except (ValueError,OSError):valid=False
+sys.exit(not valid)
+PYCODE
+        then AUTO_SEMANTIC_EXPLORE=false; fi
+    fi
+    export EMBODIED_GEOMETRY_READY=0
+    if [[ -f "$BUNDLE/bundle.json" && -f "$BUNDLE/map.pcd" && -f "$BUNDLE/map.yaml" && -f "$BUNDLE/map.pgm" ]]; then
+        AUTO_SEMANTIC_EXPLORE=false
+        export EMBODIED_GEOMETRY_READY=1
+    fi
+fi
+if [[ "$MODE" == navigation || "$MODE" == navigation_pick || ( "$MODE" == llm && "$AUTO_SEMANTIC_EXPLORE" == false ) ]]; then
     if [[ -f "$BUNDLE/bundle.json" && -f "$BUNDLE/map.pcd" && -f "$BUNDLE/map.yaml" && -f "$BUNDLE/map.pgm" ]]; then
         LOCALIZATION_MODE=localization
-        echo "使用默认地图定位：$BUNDLE"
+        echo "使用已探索地图定位：$BUNDLE"
     else
-        echo "错误：缺少完整地图：$BUNDLE（需要 bundle.json、map.pcd、map.yaml、map.pgm）。请先在同一场景建图并保存地图。" >&2
+        echo "缺少完整几何地图包，请先自动探索建图：$BUNDLE" >&2
         exit 1
     fi
 fi
@@ -377,16 +399,29 @@ if [[ "$USE_LSM" == true ]]; then
 fi
 
 
+launch_global_octomap() {
+    if [[ "$ODOMETRY_SOURCE" != lio ]]; then
+        echo "VIO 模式没有 FAST-LIO 点云，全局 FAST-LIO OctoMap 不启动。"
+        return
+    fi
+    echo "全局 OctoMap：/fastlio/cloud_odom -> /global_map/octomap_full；可视化 /global_map/occupied_cells_vis_array（兼容 /occupied_cells_vis_array）"
+    launch_window "Global OctoMap" "$ROS_ENV && ros2 launch x_bot_mapping octomap_server.launch.py map_scope:=global semantic_config:='$ROOT_DIR/src/mapping/semantic_voxel_mapping/config/global_fastlio.yaml' map_file:='$BUNDLE/global_octomap.svm' use_sim_time:=true use_rviz:=false"
+}
+
 SEMANTIC_SAVE_ARGS=""
-[[ "$SIM_BACKEND" != gazebo ]] || SEMANTIC_SAVE_ARGS="map_file:='$BUNDLE/semantic_map.svm'"
+[[ "$SIM_BACKEND" != gazebo ]] || SEMANTIC_SAVE_ARGS="map_file:='$BUNDLE/local_octomap.svm'"
 
 launch_manipulation_stack() {
     launch_window "MoveIt" "$ROS_ENV && ros2 launch x_bot_moveit_config move_group.launch.py sim_backend:=$SIM_BACKEND use_sim_time:=true"
     launch_yoloe
     sleep 2
-    launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot_mapping octomap_server.launch.py backend:='$OCTOMAP_BACKEND' $SEMANTIC_SAVE_ARGS semantic_config:='$SEMANTIC_MAP_CONFIG' palette_file:='$YOLOE_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC' resolution:='$OCTOMAP_RESOLUTION' use_sim_time:=true use_rviz:=false"
+    launch_window "Local OctoMap" "$ROS_ENV && ros2 launch x_bot_mapping octomap_server.launch.py map_scope:=local backend:='$OCTOMAP_BACKEND' $SEMANTIC_SAVE_ARGS semantic_config:='$SEMANTIC_MAP_CONFIG' palette_file:='$YOLOE_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC' resolution:='$OCTOMAP_RESOLUTION' use_sim_time:=true use_rviz:=false"
+    launch_global_octomap
+    echo "局部 OctoMap：深度点云 $OCTOMAP_CLOUD_TOPIC -> /local_map/octomap_full；可视化 /local_map/occupied_cells_vis_array"
     sleep 2
-    launch_window "GraspNet" "$ROS_ENV && ros2 run graspnet_ros graspnet_node --ros-args -p use_sim_time:=true --params-file '$(ros2 pkg prefix --share graspnet_ros)/config/config.yaml' -p graspnet_node:engine_path:='$(ros2 pkg prefix --share graspnet_ros)/models/graspnet.trt' -p graspnet_node:plugin_path:='$INSTALL_DIR/fps_plugin/lib/libfps_plugin.so' -p graspnet_node:yoloe_config_path:='$YOLOE_CONFIG' -p target_frame:=base_footprint"
+    if [[ "$MODE" != llm || "${EMBODIED_PICK_BACKEND:-graspnet}" != act ]]; then
+        launch_window "GraspNet" "$ROS_ENV && ros2 run graspnet_ros graspnet_node --ros-args -p use_sim_time:=true --params-file '$(ros2 pkg prefix --share graspnet_ros)/config/config.yaml' -p graspnet_node:engine_path:='$(ros2 pkg prefix --share graspnet_ros)/models/graspnet.trt' -p graspnet_node:plugin_path:='$INSTALL_DIR/fps_plugin/lib/libfps_plugin.so' -p graspnet_node:yoloe_config_path:='$YOLOE_CONFIG' -p target_frame:=base_footprint"
+    fi
     launch_window "Arm Ctrl" "$ROS_ENV && ros2 run x_bot_manipulation robot_actions --ros-args -p use_sim_time:=true"
 }
 
@@ -401,10 +436,12 @@ case "$MODE" in
         else
             echo "手动建图导航模式：在 RViz 中设置 Nav2 Goal。"
         fi
-        launch_window "OctoMap" "$ROS_ENV && ros2 launch x_bot_mapping octomap_server.launch.py backend:='$OCTOMAP_BACKEND' $SEMANTIC_SAVE_ARGS semantic_config:='$SEMANTIC_MAP_CONFIG' palette_file:='$YOLOE_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC' use_rviz:=false"
+        launch_window "Semantic Map" "$ROS_ENV && ros2 launch x_bot_mapping octomap_server.launch.py map_scope:=local backend:='$OCTOMAP_BACKEND' $SEMANTIC_SAVE_ARGS semantic_config:='$SEMANTIC_MAP_CONFIG' palette_file:='$YOLOE_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC' use_rviz:=false"
+        launch_global_octomap
         ;;
     navigation)
         launch_navigation
+        launch_global_octomap
         ;;
     pick)
         launch_manipulation_stack
@@ -431,6 +468,11 @@ case "$MODE" in
         # Keep chat/status available while localization or Nav2 is starting.
         # Robot actions check readiness inside the Agent; the base safety gate
         # continues to enforce localization health on every velocity command.
+        launch_window "Semantic World" "$ROS_ENV && $MODEL_WAIT'$AGENT_PYTHON' '$ROOT_DIR/src/embodied/semantic_navigation/semantic_world.py'"
+        if [[ "$AUTO_SEMANTIC_EXPLORE" == true ]]; then
+            echo "无已完成语义地图：先自动探索、VLM区域命名及目标建图，完成后执行取物。"
+            launch_window "Auto Explore" "$ROS_ENV && $READY --nav2 && ros2 launch explore_lite explore.launch.py map_save_service:=/localization/save_map return_to_init:=false"
+        fi
         launch_window "Qwen3 LLM Agent" "$ROS_ENV && unset ALL_PROXY all_proxy HTTP_PROXY HTTPS_PROXY http_proxy https_proxy && $MODEL_WAIT'$AGENT_PYTHON' '$ROOT_DIR/src/embodied/llm_agent/agent_server.py' --ros-args -p use_sim_time:=true"
         launch_window "Web UI" "cd '$ROOT_DIR' && $ROS_ENV && bash '$ROOT_DIR/scripts/runtime/web_ui.sh'"
         if [[ "$HEADLESS" != true ]] && command -v xdg-open >/dev/null 2>&1 && [[ -n "${DISPLAY:-}" ]]; then

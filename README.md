@@ -206,3 +206,13 @@ Isaac 默认保存到 `maps/gazebo_simple_room`（沿用历史名称），Gazebo
 建图入口默认使用 FAST-LIO 点云。具身入口 `start_embodied.sh` 的 OctoMap 几何默认随里程计选择：LIO 使用 `/fastlio/cloud_odom` 激光点云，相机提供语义标签；VIO 使用深度点云。可用 `--semantic-cloud-source depth` 显式改为相机深度。独立抓取入口默认使用所选仿真器的深度，栅格分辨率为 2 cm。切换推理深度使用 `--semantic-cloud-source depth --depth-source lsm`，需自行提供并构建本地可选模块 `src/perception/LSM_depth_infer`。抓取期间 YOLOE 图像持续输出。
 
 源码按 `robot`、`localization`、`perception`、`planning`、`control`、`mapping`、`manipulation`、`simulation`、`embodied` 分组；运行工具在 `scripts/runtime/`，安装和资产工具在 `scripts/setup/`、`scripts/assets/`。算法和许可证见各模块。
+
+### 手眼标定与传感器深度抓取实验
+
+使用 AprilGrid + OpenCV Daniilidis 手眼标定；抓取使用 Isaac 内置深度传感器模型，按物理抬升与保持夹持评分。
+
+```bash
+./start_handeye_demo.sh all --output .cache/handeye/run-01 --headless
+```
+
+配置、分步执行和误差统计说明见 [手眼标定例程](src/manipulation/handeye_demo/README.md)。
