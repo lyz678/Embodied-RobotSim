@@ -23,7 +23,7 @@
 ./start_mapping_and_explore.sh --sim gazebo
 
 # 使用已有地图导航，在 RViz 设置 Nav2 Goal
-./start_mapping_and_explore.sh --sim gazebo --mode navigation --bundle maps/gazebo/simple_room
+./start_mapping_and_explore.sh --sim gazebo --mode navigation --bundle maps/gazebo/semantic_simple_room
 
 # 独立抓取放置：默认 Isaac Sim、manipulation_test 场景
 ./start_pick_and_place.sh
@@ -47,16 +47,19 @@ ACT 需准备外部 ACT 环境与权重，路径见 [config.json](src/embodied/a
 
 明确的取物指令由代码按阶段执行：
 
-**地图就绪 → 语义区域定位 → Nav2 导航 → VLM 确认房间 → YOLOE 跟踪指定目标 → 接近 → 抓取、抬起、夹持回 Home。**
+**地图就绪 → 房间区域或 VLM 估计搜寻点 → Nav2 导航 → 局部相机建图与目标搜寻 → 视觉伺服进入候选抓取工作区 → 抓取、抬起、夹持回 Home。**
 
 普通指令使用 Qwen 原生工具调用循环；VLM 根据地图中的物体类别、位置和相机观察推断区域。导航与抓取的具体动作由 Nav2、GraspNet／MoveIt 或 ACT 执行。
 
-- **持久地图**：首次缺少地图包时自动探索并保存；已有完整地图包时重新定位，不重复探索。具身默认路径为 `maps/<后端>/semantic_<场景>`，包含 `bundle.json`、`map.pcd`、`map.yaml` 和 `map.pgm`；结构化语义信息保存在同级 `.semantic.json` 文件。
-- **局部地图**：默认深度输入，发布 `/local_map/octomap_full`，用于 MoveIt 避障。
-- **全局地图**：LIO 模式使用 FAST-LIO 点云，发布 `/global_map/octomap_full`；显示话题为 `/global_map/occupied_cells_vis_array`，兼容 `/occupied_cells_vis_array`。
+- **持久地图**：建图和具身入口共用默认路径 `maps/<后端>/semantic_<场景>`；必须指定相同的 `--sim`、`--world` 和 `--bundle`。建图保存几何地图及 `.semantic.json`／`.semantic.json.gz`（物体XYZ、房间区域、VLM估计搜寻点、证据及几何指纹）。房间范围未确认时，允许导航到VLM选出的可通行估计点，到达后开启局部相机建图搜物。详见 [地图交接与保存格式](src/embodied/semantic_navigation/README.md)。
+- **局部地图**：相机深度输入，默认暂停；到达目标区域开始搜物时清空并开启，发布 `/local_map/octomap_full` 供 MoveIt 避障，任务结束后暂停。
+- **全局地图**：LIO 模式持续融合 FAST-LIO 几何，并通过相机掩码投影与 raycast 给可见 LiDAR 占据体素打语义；显示话题为 `/global_map/occupied_cells_vis_array`，兼容 `/occupied_cells_vis_array`。
+- **视觉伺服**：使用新鲜 RGB-D 检测锁定目标实例，低速调整底盘朝向和距离；目标丢失时停止平移并重新观测。进入候选抓取工作区且底盘停稳后，交给 GraspNet／MoveIt 或 ACT；速度指令仍经过平滑、避障与定位安全门。
 - **执行检查**：定位、观测新鲜度、停车误差及视觉确认不满足要求时停止当前阶段。导航地图须匹配仿真后端与场景。
 
-当前已验证地图保存和重启定位；无预设房间坐标的新语义取物流程**尚未通过完整验收**。VLM 区域边界仍有误判，旧固定点实验成功率不能代表该流程。
+建图和具身入口可通过相同的 `--bundle` 交接地图。探索保存器不覆盖已有目录，重新建图时指定新路径；已有完整几何地图时，具身入口直接重定位。几何地图、语义摘要和本地验证数据不纳入 Git。
+
+2026-10-24，Gazebo 单次“厨房拿可乐”完成 VLM 估计点交接、搜寻、视觉伺服、抓取、抬起、回 Home 及2秒夹持检查，总耗时约71秒；伺服目标距离从1.05米收敛至0.72米。前一轮因检测丢失停车，VLM 区域边界仍可能误判，单次成功不代表多起点或遮挡场景的成功率。详情见[语义导航验证记录](src/embodied/semantic_navigation/README.md)。
 
 ## 模块与实验
 

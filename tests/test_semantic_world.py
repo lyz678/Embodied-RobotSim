@@ -20,9 +20,15 @@ class SemanticWorldTests(unittest.TestCase):
  def test_rotated_map_origin_roundtrip(self):
   grid=Grid(np.zeros((20,20)),20,20,.1,[5,-3],math.pi/2)
   self.assertEqual(grid.cell(*grid.point(7,4)),(7,4))
-if __name__=='__main__':unittest.main()
 
 class VLMRegionValidationTests(unittest.TestCase):
+ def test_overlapping_rooms_are_rejected_independent_of_proposal_order(self):
+  from world import regions_from_proposals
+  grid=Grid(np.zeros((40,40)),40,40,.1,[0,0]);objects=[dict(id='a',position=[1,1,.8]),dict(id='b',position=[2,2,.8])]
+  proposals=[dict(name='厨房',bounds_xy=[[.5,.5],[2.5,2.5]],object_ids=['a'],confidence=.9),dict(name='卧室',bounds_xy=[[1.5,1.5],[3,3]],object_ids=['b'],confidence=.9)]
+  for rows in (proposals,proposals[::-1]):
+   rooms,labels,_=regions_from_proposals(grid,rows,objects);self.assertEqual(rooms,[]);self.assertFalse(labels.any())
+
  def test_only_observed_objects_can_support_regions_and_obstacles_stay_excluded(self):
   from world import regions_from_proposals
   a=np.zeros((30,30),np.int16);a[10:15,10:15]=100;grid=Grid(a,30,30,.1,[0,0]);objects=[dict(id='table_1',position=[1.,1.,.8])]
@@ -42,9 +48,15 @@ class MapReasoningTests(unittest.TestCase):
   client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
   cfg=SimpleNamespace(vision_model='local',completion_options=lambda:dict(max_tokens=512))
   grid=Grid(np.zeros((10,10)),10,10,.1,[0,0])
-  objects=[dict(id='cup_1',class_id=2,position=[.5,.5,.8],observations=3)]
+  objects=[dict(id='cup_1',class_id=4,class_name='bottle',position=[.5,.5,.8],observations=3)]
   regions,png,raw=infer_regions(client,cfg,grid,objects)
   self.assertEqual(regions,[]);self.assertTrue(png.startswith(b'\x89PNG'));self.assertEqual(raw,'{"regions":[]}')
   schema=calls[0]['response_format']['json_schema']['schema']['properties']['regions']['items']['properties']
   self.assertNotIn('书房/卧室',schema['name']['enum']);self.assertEqual(schema['object_ids']['items']['enum'],['cup_1'])
   self.assertEqual(calls[0]['max_tokens'],1200)
+  prompt=calls[0]['messages'][0]['content'][1]['text']
+  self.assertIn('"class_name": "bottle"',prompt)
+  self.assertNotIn('"class_name": "table"',prompt)
+  self.assertIn('可包含负数',prompt)
+
+if __name__=='__main__':unittest.main()

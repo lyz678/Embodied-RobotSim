@@ -1,6 +1,7 @@
 #include "semantic_voxel_mapping/core.hpp"
 #include "semantic_voxel_mapping/self_filter.hpp"
 #include "semantic_voxel_mapping/export_cache.hpp"
+#include "semantic_voxel_mapping/semantic_raycast.hpp"
 #include <moveit_msgs/msg/planning_scene.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <std_msgs/msg/int32.hpp>
@@ -12,6 +13,7 @@
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <std_srvs/srv/trigger.hpp>
+#include <std_srvs/srv/set_bool.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -32,12 +34,19 @@ using namespace std::chrono_literals;
 class SemanticMapNode:public rclcpp::Node {
  using Cloud=sensor_msgs::msg::PointCloud2;using Trigger=std_srvs::srv::Trigger;
  svm::Map map_;std::unique_ptr<MapExportCache> exports_;std::unordered_set<svm::Color> palette_;std::string signature_,frame_,file_;
+ std::string signature_prefix_,signature_palette_;
+ rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_callback_;
  double min_range_,max_range_,zmin_,zmax_,confidence_,integration_rate_,publish_rate_;
  size_t budget_;int device_;int64_t last_stamp_=-1;bool clock_fault_=false,dirty_=false;
  uint64_t integrated_=0,dropped_=0,errors_=0;double gpu_ms_=0,total_ms_=0;size_t scratch_=0;double export_ms_=0;size_t input_points_=0,ray_count_=0;
  std::chrono::steady_clock::time_point last_wall_{};
  std::unique_ptr<tf2_ros::Buffer> tf_;std::unique_ptr<tf2_ros::TransformListener> listener_;
  rclcpp::Subscription<Cloud>::SharedPtr input_;
+ rclcpp::Subscription<Cloud>::SharedPtr semantic_input_;
+ rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr enable_service_;
+ bool enabled_=true;int64_t enabled_since_=0,last_semantic_stamp_=-1;uint64_t semantic_frames_=0;
+ size_t semantic_candidates_=0,semantic_low_confidence_=0,semantic_not_visible_=0,semantic_accepted_=0;
+ std::chrono::steady_clock::time_point last_semantic_wall_{};
  std::string planning_frame_;
  bool self_filter_enabled_=false,publish_moveit_=false,geometry_only_=false;double self_padding_=0;
  std::string sensor_frame_;
@@ -61,6 +70,7 @@ class SemanticMapNode:public rclcpp::Node {
  template<class T>T option(const std::string& name,T value){rcl_interfaces::msg::ParameterDescriptor d;d.read_only=true;return declare_parameter(name,value,d);}
  static uint32_t read32(const uint8_t* data,bool swap){uint32_t value;std::memcpy(&value,data,4);return swap?__builtin_bswap32(value):value;}
  static float number(uint32_t bits){float value;std::memcpy(&value,&bits,4);return value;}
+ void refresh_signature(){std::ostringstream s;s<<signature_prefix_<<std::setprecision(17)<<confidence_<<signature_palette_;signature_=s.str();}
 public:
  SemanticMapNode():Node("semantic_voxel_map"){
   svm::Config c;c.resolution=option("resolution",.1);c.hit=option("hit",.7);c.miss=option("miss",.4);
@@ -70,8 +80,9 @@ public:
   c.window=window;c.min_observations=minimum;c.majority=option("majority_threshold",.6);c.max_voxels=maximum;c.validate();
   map_=svm::Map(c);exports_=std::make_unique<MapExportCache>(c.resolution);frame_=option("map_frame",std::string("odom"));file_=option("map_file",std::string("maps/semantic_map.svm"));
   geometry_only_=option("geometry_only",false);sensor_frame_=option("sensor_frame",std::string(""));
+  enabled_=option("enabled_on_start",true);
   min_range_=option("min_range",.2);max_range_=option("max_range",8.);zmin_=option("min_z",.1);zmax_=option("max_z",2.5);
-  confidence_=option("confidence_threshold",.5);integration_rate_=option("integration_rate",5.);publish_rate_=option("publish_rate",1.);
+  confidence_=declare_parameter("confidence_threshold",.5);integration_rate_=option("integration_rate",5.);publish_rate_=option("publish_rate",1.);
   int memory=option("gpu_scratch_mib",512);device_=option("cuda_device",0);
   if(!std::isfinite(min_range_)||!std::isfinite(max_range_)||min_range_<0||max_range_<=min_range_||
    !std::isfinite(zmin_)||!std::isfinite(zmax_)||zmax_<=zmin_||!std::isfinite(confidence_)||confidence_<0||confidence_>1||
@@ -89,8 +100,16 @@ public:
    palette_records.push_back(std::to_string(id)+":"+name+":"+std::to_string(color));
   }
   auto unknown=yaml["default_color"].as<std::vector<int>>();if(unknown!=std::vector<int>({255,255,255})||palette_.empty())throw std::runtime_error("Semantic palette requires white unknown and at least one class");
-  std::sort(palette_records.begin(),palette_records.end());std::ostringstream sig;sig<<std::setprecision(17)<<frame_<<' '<<c.resolution<<' '<<c.hit<<' '<<c.miss<<' '<<c.clamp_min<<' '<<c.clamp_max<<' '<<c.occupied<<' '<<c.window<<' '<<c.min_observations<<' '<<c.majority<<' '<<min_range_<<' '<<max_range_<<' '<<zmin_<<' '<<zmax_<<' '<<confidence_;
-  for(auto& record:palette_records)sig<<' '<<record;signature_=sig.str();
+  std::sort(palette_records.begin(),palette_records.end());std::ostringstream sig;sig<<std::setprecision(17)<<frame_<<' '<<c.resolution<<' '<<c.hit<<' '<<c.miss<<' '<<c.clamp_min<<' '<<c.clamp_max<<' '<<c.occupied<<' '<<c.window<<' '<<c.min_observations<<' '<<c.majority<<' '<<min_range_<<' '<<max_range_<<' '<<zmin_<<' '<<zmax_<<' ';
+  signature_prefix_=sig.str();for(auto& record:palette_records)signature_palette_+=' '+record;refresh_signature();
+  parameter_callback_=add_on_set_parameters_callback([this](const std::vector<rclcpp::Parameter>& parameters){
+   rcl_interfaces::msg::SetParametersResult result;result.successful=true;double value=confidence_;
+   for(const auto& parameter:parameters)if(parameter.get_name()=="confidence_threshold"){
+    if(parameter.get_type()!=rclcpp::ParameterType::PARAMETER_DOUBLE||!std::isfinite(parameter.as_double())||parameter.as_double()<0||parameter.as_double()>1){result.successful=false;result.reason="confidence_threshold must be a finite double in [0,1]";return result;}
+    value=parameter.as_double();
+   }
+   confidence_=value;refresh_signature();return result;
+  });
   svm::require_cuda(device_);
   tf_=std::make_unique<tf2_ros::Buffer>(get_clock());listener_=std::make_unique<tf2_ros::TransformListener>(*tf_);
   auto qos=rclcpp::QoS(1).transient_local().reliable();
@@ -121,9 +140,18 @@ public:
   diagnostics_=create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/semantic_map/diagnostics",10);
   auto topic=option("cloud_topic",std::string("/yoloe_multi_text_prompt/pointcloud_semantic"));
   input_=create_subscription<Cloud>(topic,rclcpp::SensorDataQoS().keep_last(2),[this](Cloud::ConstSharedPtr msg){receive(*msg);});
-  service("clear",[this]{map_.cells.clear();exports_=std::make_unique<MapExportCache>(map_.config.resolution);clock_fault_=false;last_stamp_=-1;last_wall_={};dirty_=true;});
+  auto semantic_topic=option("semantic_cloud_topic",std::string(""));
+  if(!semantic_topic.empty()){
+   if(!geometry_only_)throw std::runtime_error("Independent semantic rays require geometry_only input");
+   semantic_input_=create_subscription<Cloud>(semantic_topic,rclcpp::SensorDataQoS().keep_last(2),[this](Cloud::ConstSharedPtr msg){receive(*msg,true);});
+  }
+  enable_service_=create_service<std_srvs::srv::SetBool>("~/set_enabled",[this](const std_srvs::srv::SetBool::Request::SharedPtr request,std_srvs::srv::SetBool::Response::SharedPtr response){
+   if(request->data&&!enabled_){enabled_since_=now().nanoseconds();last_wall_={};last_semantic_wall_={};}
+   enabled_=request->data;response->success=true;response->message=enabled_?"Map integration enabled":"Map integration paused; collision snapshot retained";
+  });
+  service("clear",[this]{map_.cells.clear();exports_=std::make_unique<MapExportCache>(map_.config.resolution);clock_fault_=false;last_stamp_=-1;last_semantic_stamp_=-1;last_wall_={};last_semantic_wall_={};dirty_=true;});
   service("save",[this]{save();});
-  service("load",[this]{std::ifstream in(file_,std::ios::binary);map_.load(in,signature_,palette_);exports_->rebuild(map_);clock_fault_=false;last_stamp_=-1;last_wall_={};dirty_=true;});
+  service("load",[this]{std::ifstream in(file_,std::ios::binary);map_.load(in,signature_,palette_);exports_->rebuild(map_);clock_fault_=false;last_stamp_=-1;last_semantic_stamp_=-1;last_wall_={};last_semantic_wall_={};dirty_=true;});
   timer_=create_wall_timer(std::chrono::duration<double>(1/publish_rate_),[this]{publish();diagnose();});
   RCLCPP_INFO(get_logger(),"CUDA semantic map: input=%s, resolution=%.3f m, frame=%s, votes=%u, min=%u, majority=%.2f",topic.c_str(),c.resolution,frame_.c_str(),c.window,c.min_observations,c.majority);
  }
@@ -133,18 +161,22 @@ private:
   auto path=std::filesystem::path(file_);if(path.has_parent_path())std::filesystem::create_directories(path.parent_path());
   auto temp=file_+".tmp";try{std::ofstream out(temp,std::ios::binary|std::ios::trunc);map_.save(out,signature_);out.close();if(!out)throw std::runtime_error("Map flush failed");std::filesystem::rename(temp,file_);}catch(...){std::filesystem::remove(temp);throw;}
  }
- void receive(const Cloud& msg){
+ void receive(const Cloud& msg,bool semantics=false){
   auto start=std::chrono::steady_clock::now();int64_t stamp=rclcpp::Time(msg.header.stamp).nanoseconds();
-  if(last_stamp_>=0&&stamp<last_stamp_){clock_fault_=true;RCLCPP_ERROR(get_logger(),"Clock rewind: integration paused; clear or load the map after restarting localization");}
-  if(clock_fault_||stamp==last_stamp_){++dropped_;return;}
-  if(last_wall_.time_since_epoch().count()&&std::chrono::duration<double>(start-last_wall_).count()<1/integration_rate_){++dropped_;return;}
+  if(!enabled_||stamp<enabled_since_){++dropped_;return;}
+  auto& previous_stamp=semantics?last_semantic_stamp_:last_stamp_;auto& previous_wall=semantics?last_semantic_wall_:last_wall_;
+  if(previous_stamp>=0&&stamp<previous_stamp&&!semantics){clock_fault_=true;RCLCPP_ERROR(get_logger(),"Clock rewind: integration paused; clear or load the map after restarting localization");}
+  if(clock_fault_||stamp<=previous_stamp){++dropped_;return;}
+  if(previous_wall.time_since_epoch().count()&&std::chrono::duration<double>(start-previous_wall).count()<1/integration_rate_){++dropped_;return;}
   try{
-   if(msg.header.frame_id.empty()||msg.point_step<(geometry_only_?12u:20u)||uint64_t(msg.row_step)<uint64_t(msg.width)*msg.point_step||msg.data.size()!=uint64_t(msg.row_step)*msg.height)throw std::runtime_error("Malformed semantic cloud layout");
+   const bool labels=semantics||!geometry_only_;
+   if(semantics)semantic_candidates_=semantic_low_confidence_=semantic_not_visible_=semantic_accepted_=0;
+   if(msg.header.frame_id.empty()||msg.point_step<(labels?20u:12u)||uint64_t(msg.row_step)<uint64_t(msg.width)*msg.point_step||msg.data.size()!=uint64_t(msg.row_step)*msg.height)throw std::runtime_error("Malformed semantic cloud layout");
    int offsets[5]={-1,-1,-1,-1,-1};const char* names[]={"x","y","z","rgb","confidence"};
    for(auto& f:msg.fields)for(int i=0;i<5;++i)if(f.name==names[i]){
     if(f.count!=1||uint64_t(f.offset)+4>msg.point_step||(i==3?(f.datatype!=6&&f.datatype!=7):f.datatype!=7))throw std::runtime_error("Invalid semantic cloud field");offsets[i]=f.offset;
    }
-   for(int i=0;i<(geometry_only_?3:5);++i)if(offsets[i]<0)throw std::runtime_error("Missing required point cloud field");
+   for(int i=0;i<(labels?5:3);++i)if(offsets[i]<0)throw std::runtime_error("Missing required point cloud field");
    auto transform=tf_->lookupTransform(frame_,msg.header.frame_id,rclcpp::Time(msg.header.stamp),rclcpp::Duration::from_seconds(.5));
    tf2::Transform pose;tf2::fromMsg(transform.transform,pose);auto origin_tf=sensor_frame_.empty()?transform:tf_->lookupTransform(frame_,sensor_frame_,rclcpp::Time(msg.header.stamp),rclcpp::Duration::from_seconds(.5));
    auto translation=origin_tf.transform.translation;svm::Vec origin{translation.x,translation.y,translation.z};
@@ -161,10 +193,19 @@ private:
     double distance=std::sqrt(std::pow(end.x-origin.x,2)+std::pow(end.y-origin.y,2)+std::pow(end.z-origin.z,2));if(distance<min_range_||distance==0)continue;
     bool hit=distance<=max_range_&&end.z>=zmin_&&end.z<=zmax_;
     if(distance>max_range_){double ratio=max_range_/distance;end={origin.x+(end.x-origin.x)*ratio,origin.y+(end.y-origin.y)*ratio,origin.z+(end.z-origin.z)*ratio};}
-    check_key(end);rays.push_back({origin,end,hit});
-    if(hit){auto k=svm::key(end,map_.config.resolution);evidence.hits.insert(k);if(!geometry_only_){auto rgb=read32(p+offsets[3],swap)&0xffffff;float score=number(read32(p+offsets[4],swap));
-     if(std::isfinite(score)&&score>=confidence_&&score<=1&&palette_.count(rgb))++evidence.votes[k][rgb];}}
+    check_key(end);if(!semantics)rays.push_back({origin,end,hit});
+    if(hit){auto k=svm::key(end,map_.config.resolution);if(!semantics)evidence.hits.insert(k);if(labels){auto rgb=read32(p+offsets[3],swap)&0xffffff;float score=number(read32(p+offsets[4],swap));
+     if(!palette_.count(rgb))continue;
+     if(semantics)++semantic_candidates_;
+     if(!std::isfinite(score)||score<confidence_||score>1){if(semantics)++semantic_low_confidence_;continue;}
+     if(semantics&&!svm::visible_endpoint(map_,{origin,end,true},min_range_,zmin_,zmax_)){++semantic_not_visible_;continue;}
+     ++evidence.votes[k][rgb];if(semantics)++semantic_accepted_;}}
    }
+   if(semantics){
+    auto changed=map_.paint(evidence);for(auto key:changed)exports_->update(map_,key);
+    previous_stamp=stamp;previous_wall=start;++semantic_frames_;dirty_|=!changed.empty();return;
+   }
+   if(rays.empty()){++dropped_;return;}
    auto result=svm::raycast_cuda(rays,map_.config.resolution,zmin_,zmax_,budget_);evidence.free.insert(result.free.begin(),result.free.end());
    auto changed=map_.commit(evidence);for(auto key:changed)exports_->update(map_,key);input_points_=size_t(msg.width)*msg.height;ray_count_=rays.size();gpu_ms_=result.milliseconds;scratch_=result.peak_scratch_bytes;
    total_ms_=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
@@ -255,7 +296,9 @@ private:
  }
  void diagnose(){
   diagnostic_msgs::msg::DiagnosticArray array;array.header.stamp=now();diagnostic_msgs::msg::DiagnosticStatus status;status.name="semantic_voxel_map";status.hardware_id="cuda:"+std::to_string(device_);status.level=clock_fault_?2:0;status.message=clock_fault_?"clock rewind; reset required":"CUDA active";
-  for(auto entry:std::vector<std::pair<std::string,std::string>>{{"integrated_frames",std::to_string(integrated_)},{"dropped_frames",std::to_string(dropped_)},{"errors",std::to_string(errors_)},{"voxels",std::to_string(map_.cells.size())},{"gpu_ms",std::to_string(gpu_ms_)},{"integration_ms",std::to_string(total_ms_)},{"export_ms",std::to_string(export_ms_)},{"input_points",std::to_string(input_points_)},{"rays",std::to_string(ray_count_)},{"occupied_voxels",std::to_string(exports_->occupied().size())},{"scratch_bytes_upper_bound",std::to_string(scratch_)}}){diagnostic_msgs::msg::KeyValue kv;kv.key=entry.first;kv.value=entry.second;status.values.push_back(kv);}array.status.push_back(status);diagnostics_->publish(array);
+  for(auto entry:std::vector<std::pair<std::string,std::string>>{{"integration_enabled",enabled_?"true":"false"},{"semantic_frames",std::to_string(semantic_frames_)},{"integrated_frames",std::to_string(integrated_)},{"dropped_frames",std::to_string(dropped_)},{"errors",std::to_string(errors_)},{"voxels",std::to_string(map_.cells.size())},{"gpu_ms",std::to_string(gpu_ms_)},{"integration_ms",std::to_string(total_ms_)},{"export_ms",std::to_string(export_ms_)},{"input_points",std::to_string(input_points_)},{"rays",std::to_string(ray_count_)},{"occupied_voxels",std::to_string(exports_->occupied().size())},{"scratch_bytes_upper_bound",std::to_string(scratch_)}}){diagnostic_msgs::msg::KeyValue kv;kv.key=entry.first;kv.value=entry.second;status.values.push_back(kv);}
+  for(auto entry:std::vector<std::pair<std::string,std::string>>{{"confidence_threshold",std::to_string(confidence_)},{"semantic_candidates",std::to_string(semantic_candidates_)},{"semantic_low_confidence",std::to_string(semantic_low_confidence_)},{"semantic_not_visible",std::to_string(semantic_not_visible_)},{"semantic_accepted",std::to_string(semantic_accepted_)},{"min_observations",std::to_string(map_.config.min_observations)},{"majority_threshold",std::to_string(map_.config.majority)}}){diagnostic_msgs::msg::KeyValue kv;kv.key=entry.first;kv.value=entry.second;status.values.push_back(kv);}
+  array.status.push_back(status);diagnostics_->publish(array);
  }
 };
 int main(int argc,char** argv){rclcpp::init(argc,argv);try{rclcpp::spin(std::make_shared<SemanticMapNode>());}catch(const std::exception& e){std::cerr<<"Semantic CUDA map startup failed: "<<e.what()<<std::endl;rclcpp::shutdown();return 1;}rclcpp::shutdown();return 0;}

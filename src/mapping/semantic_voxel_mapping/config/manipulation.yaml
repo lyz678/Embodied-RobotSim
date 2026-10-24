@@ -1,6 +1,7 @@
 semantic_voxel_map:
   ros__parameters:
     use_sim_time: true
+    enabled_on_start: false
     cloud_topic: /yoloe_multi_text_prompt/pointcloud_semantic
     map_frame: odom
     palette_file: ""

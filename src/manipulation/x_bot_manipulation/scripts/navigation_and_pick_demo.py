@@ -25,6 +25,7 @@ import os
 from collections import deque
 from gripper_action import control_gripper as execute_gripper
 from robot_action_services import RobotActionServices
+from local_map_session import LocalMapSession
 
 class NavigationAndPickDemo(RobotActionServices, Node):
     """使用实时 YOLOE 检测的抓取放置节点"""
@@ -60,7 +61,7 @@ class NavigationAndPickDemo(RobotActionServices, Node):
         self.scan_client = self.create_client(Trigger, '/robot_actions/scan')
         
         # 推理控制服务客户端
-        self.yoloe_inference_client = self.create_client(SetBool, '/yoloe_multi_text_prompt/enable_inference')
+        self.yoloe_inference_client = self.create_client(SetBool, '/yoloe_multi_text_prompt/enable_pointcloud')
         self.graspnet_inference_client = self.create_client(SetBool, '/graspnet_node/enable_inference')
         self.depth_inference_client = self.create_client(SetBool, '/stereo_matching_node/enable_inference')
         
@@ -105,7 +106,8 @@ class NavigationAndPickDemo(RobotActionServices, Node):
         self.last_motion_status = None
         
         # 启动逻辑线程
-        self.logic_thread = threading.Thread(target=self.run_logic_loop, daemon=True)
+        self.local_map_session = LocalMapSession(self)
+        self.logic_thread = threading.Thread(target=self.run_with_local_mapping, daemon=True)
         self.logic_thread.start()
         
         self.get_logger().info("=== Navigation and Pick Demo - Real-time YOLOE Edition ===")
@@ -535,6 +537,9 @@ class NavigationAndPickDemo(RobotActionServices, Node):
     
     
     def navigate_to(self, x, y, yaw_deg, timeout=120.0):
+        if not self.local_map_session.pause():
+            self.get_logger().error('Could not pause local camera map before navigation')
+            return False
         self.get_logger().info(f">>> Navigating to X={x:.2f}, Y={y:.2f}, Yaw={yaw_deg:.1f}°")
         import math
         rad = yaw_deg * math.pi / 180.0

@@ -38,10 +38,11 @@ from model_config import ModelConfig, create_client
 from fetch_policy import explicit_fetch, stable_grasp, approach_axis
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'manipulation/x_bot_manipulation/scripts'))
 from gripper_action import control_gripper
+from local_map_session import LocalMapSession
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'act_policy'))
 from bridge import run_act_pick, stop_act_pick
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'semantic_navigation'))
-from navigator import install as install_semantic_navigation, SemanticNavigator
+from navigator import install as install_semantic_navigation, SemanticNavigator, base as map_base
 from semantic_world import classify as classify_room
 
 # ─────────────────────────── 配置 ──────────────────────────────────────────
@@ -65,7 +66,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "navigate_to_location",
-            "description": "从结构化语义地图查询房间范围并导航，随后用VLM核验到达；不使用预设坐标",
+            "description": "查询目标房间并导航；范围未确认时使用VLM估计的可通行搜寻点，到达后搜索指定物体",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -152,7 +153,7 @@ SYSTEM_PROMPT = f"""你是一个智能家庭服务机器人的AI助手，可以�
 - 识别当前所在场景/房间
 - 机械臂归位
 
-导航位置由全局结构化语义地图查询，不能编造或使用预设坐标。到达房间必须经VLM确认，目标接近必须有新鲜YOLOE跟踪；GraspNet／MoveIt核验最终抓取可达性。
+导航位置由全局结构化语义地图查询，不能编造或使用预设坐标。房间范围缺失时，可使用VLM从地图可通行候选中选出的估计点，到达后开启局部相机建图、转向搜索物体；估计点不表示房间已经确认。目标接近必须有新鲜YOLOE跟踪，GraspNet／MoveIt核验最终抓取可达性。
 
 任务执行规则：
 1. 理解用户意图，将复杂任务分解为步骤
@@ -204,7 +205,7 @@ class LLMAgentNode(Node):
         # 服务客户端
         self.go_home_client  = self.create_client(Trigger, "/robot_actions/go_home")
         self.scan_client     = self.create_client(Trigger, "/robot_actions/scan")
-        self.yoloe_client    = self.create_client(SetBool, "/yoloe_multi_text_prompt/enable_inference")
+        self.yoloe_client    = self.create_client(SetBool, "/yoloe_multi_text_prompt/enable_pointcloud")
         self.graspnet_client = self.create_client(SetBool, "/graspnet_node/enable_inference")
 
         # 状态
@@ -237,6 +238,7 @@ class LLMAgentNode(Node):
         self.create_subscription(JointState, '/joint_states', self._cb_joints, 10)
 
         install_semantic_navigation(self)
+        self.local_map_session = LocalMapSession(self)
         self.get_logger().info("LLM Agent Node ready")
 
     # ── 回调 ──────────────────────────────────────────────────────────────
@@ -348,6 +350,7 @@ class LLMAgentNode(Node):
             self.pub_explore_control.publish(Bool(data=False))
         if self._nav_handle and self._nav_handle.accepted:self._nav_handle.cancel_goal_async()
         self.pub_vel.publish(Twist())
+        self.pub_servo_vel.publish(Twist())
 
     # ── 服务调用（同步，在线程池中使用）────────────────────────────────────
 
@@ -551,9 +554,19 @@ class RobotController:
             return await self._navigate(location)
 
     async def _navigate(self, location: str) -> tuple:
+        self.semantic.room = None
+        self._node.current_scene = '未知'
+        paused = await self._loop.run_in_executor(self._exec, self._node.local_map_session.pause)
+        if not paused:
+            return False, '无法暂停局部相机建图，未启动房间导航'
         return await self.semantic.navigate(location)
 
-    async def _go_pose(self,loc):
+    async def _go_pose(self,loc,accept_radius=None):
+        if accept_radius is not None:
+            x,y,_=map_base(self._node)
+            if math.dist([x,y],[loc['x'],loc['y']])<=accept_radius:
+                stopped=await self._loop.run_in_executor(self._exec,self._node.base_stopped)
+                if stopped:return True,'已在VLM估计搜寻点附近，底盘已停稳'
         future: asyncio.Future = self._loop.create_future()
         # 在 ROS2 线程中发起导航
         self._loop.run_in_executor(
@@ -561,6 +574,29 @@ class RobotController:
             lambda: self._node.send_nav_goal(loc["x"], loc["y"], loc["yaw_deg"], future, self._loop)
         )
         try:
+            if accept_radius is not None:
+                deadline=time.monotonic()+100.
+                while not future.done():
+                    if self._node._nav_cancel_requested:return False,'任务已取消'
+                    if time.monotonic()>deadline:raise asyncio.TimeoutError
+                    x,y,_=map_base(self._node)
+                    if math.dist([x,y],[loc['x'],loc['y']])<=accept_radius:
+                        handle=self._node._nav_handle
+                        if handle is not None and handle.accepted:
+                            handle.cancel_goal_async()
+                            end=time.monotonic()+3.
+                            while not future.done() and time.monotonic()<end:await asyncio.sleep(.05)
+                            if not future.done():
+                                self._node.cancel_navigation()
+                                return False,'未确认Nav2停止，暂不能交接视觉伺服'
+                            self._node.pub_servo_vel.publish(Twist())
+                            self._node.pub_vel.publish(Twist())
+                            stopped=await self._loop.run_in_executor(self._exec,self._node.base_stopped)
+                            x,y,_=map_base(self._node)
+                            if stopped and math.dist([x,y],[loc['x'],loc['y']])<=accept_radius:
+                                return True,f'已到估计搜寻点{accept_radius:.2f}m范围内，Nav2已结束、底盘已停稳'
+                            return False,'估计搜寻点附近未能停稳'
+                    await asyncio.sleep(.1)
             result = await asyncio.wait_for(asyncio.shield(future), timeout=100.0)
             if not result[0]:
                 return result
@@ -575,17 +611,28 @@ class RobotController:
             return False, f"未知物体: {object_name}"
         class_id = OBJECTS[object_name]
         async with self._pick_lock:
-            ok,msg=await self.semantic.approach(class_id,progress_cb)
-            if not ok:return False,msg
-            return await self._loop.run_in_executor(
-                self._exec,
-                lambda: run_act_pick(self._node, class_id, progress_cb) if self._node.pick_backend=='act'
-                        else self._node.pick_sequence(class_id, progress_cb)
-            )
+            if self.semantic.room is None:
+                return False, '先导航到目标区域或VLM估计的搜寻点，再开启局部搜物建图'
+            try:
+                ready = await self._loop.run_in_executor(self._exec, self._node.local_map_session.start)
+                if not ready:return False, '局部相机碰撞地图未就绪，停止搜物和抓取'
+                home = await self._loop.run_in_executor(self._exec,lambda:self._node.call_trigger(self._node.go_home_client,timeout=45.))
+                if not home:return False,'机械臂未能进入观察姿态，停止视觉伺服'
+                ok,msg=await self.semantic.approach(class_id,progress_cb)
+                if not ok:return False,msg
+                return await self._loop.run_in_executor(
+                    self._exec,
+                    lambda: run_act_pick(self._node, class_id, progress_cb) if self._node.pick_backend=='act'
+                            else self._node.pick_sequence(class_id, progress_cb)
+                )
+            finally:
+                await self._loop.run_in_executor(self._exec, self._node.local_map_session.pause)
 
     async def move(self, direction: str, speed: float = 0.2, duration: float = 1.0):
         if direction=='stop':
-            self._node.cancel_navigation();stop_act_pick(self._node);return
+            self._node.cancel_navigation();stop_act_pick(self._node)
+            await self._loop.run_in_executor(self._exec, self._node.local_map_session.pause)
+            return
         async with self._pick_lock:
             await self._loop.run_in_executor(self._exec,lambda:self._node.move_direct(direction,speed,duration))
 
@@ -596,6 +643,7 @@ class RobotController:
     async def stop(self):
         self._node.cancel_navigation()
         stop_act_pick(self._node)
+        await self._loop.run_in_executor(self._exec, self._node.local_map_session.pause)
 
     async def recognize_scene(self, vl_client: OpenAI) -> str:
         b64 = await self._loop.run_in_executor(self._exec, self._node.get_camera_base64)
@@ -722,7 +770,12 @@ class Qwen3Agent:
             if name == "navigate_to_location":
                 loc = args["location"]
                 await send({"type": "status", "task": f"导航→{loc}"})
-                ok, msg = await r.navigate(loc)
+                loop=asyncio.get_running_loop()
+                def navigation_progress(text):
+                    loop.call_soon_threadsafe(asyncio.create_task,send({'type':'progress','content':text}))
+                r._node.navigation_progress=navigation_progress
+                try:ok, msg = await r.navigate(loc)
+                finally:r._node.navigation_progress=None
                 self._navigation_failed=not ok
                 # current_scene is set only after visual confirmation.
                 return ok, msg
@@ -798,6 +851,11 @@ async def index():
 async def status():
     if _node is None:
         return {"error": "ROS2 not ready"}
+    try:
+        pose_tf=_node.tf_buffer.lookup_transform('map','base_footprint',rclpy.time.Time())
+        pose_stamp=pose_tf.header.stamp.sec+pose_tf.header.stamp.nanosec/1e9
+        pose_age=round(_node.get_clock().now().nanoseconds/1e9-pose_stamp,3)
+    except Exception:pose_age=None
     return {
         "llm_configured": bool(API_KEY),
         "llm_backend": MODEL_CONFIG.backend,
@@ -807,9 +865,12 @@ async def status():
         "scene": _node.current_scene,
         "pick_backend": _node.pick_backend,
         "act_model": os.environ.get("EMBODIED_ACT_MODEL", "rgb"),
-        "locations": {v["name"]: {"x":v["center"][0],"y":v["center"][1],"bounds_xy":v["bounds_xy"]} for v in _node.semantic_world.get("rooms",[]) if v["name"]!="未知"},
+        "locations": {**{v['name']:dict(x=v['position'][0],y=v['position'][1],estimated=True,confidence=v['confidence']) for v in _node.semantic_world.get('navigation_hints',[])},**{v["name"]: {"x":v["center"][0],"y":v["center"][1],"bounds_xy":v["bounds_xy"],"estimated":False} for v in _node.semantic_world.get("rooms",[]) if v["name"]!="未知"}},
         "semantic_world": _node.semantic_world,
         "semantic_phase": getattr(_node,"semantic_phase",None),
+        "navigation_map_received": _node.semantic_grid is not None,
+        "semantic_state_age_s": round(time.monotonic()-_node.semantic_received,2) if _node.semantic_received else None,
+        "map_transform_age_s": pose_age,
     }
 
 

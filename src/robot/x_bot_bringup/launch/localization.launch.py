@@ -73,6 +73,8 @@ def setup(context):
                  parameters=[common, {'yaml_filename':str(bundle/'map.yaml')}]),
             Node(package='nav2_lifecycle_manager', executable='lifecycle_manager', name='map_lifecycle',
                  parameters=[common, {'autostart':True, 'node_names':['map_server']}]),
+            Node(package='x_bot_mapping', executable='map_activation_guard',
+                 parameters=[common], output='screen'),
         ])
     return nodes
 

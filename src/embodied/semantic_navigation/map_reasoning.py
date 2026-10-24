@@ -8,19 +8,22 @@ def infer_regions(client,cfg,grid,objects,observations=()):
  ranked=sorted(objects,key=lambda o:(o.get('source')!='yoloe_tracking',-o['observations']))
  objects=[];counts={}
  for obj in ranked:
-  cid=obj['class_id']
+  cid=obj.get('class_name',obj['class_id'])
   if counts.get(cid,0)>=3:continue
   objects.append(obj);counts[cid]=counts.get(cid,0)+1
   if len(objects)>=25:break
  pixels=np.where(grid.a<0,170,np.where(grid.a>20,35,240)).astype(np.uint8);image=Image.fromarray(pixels[::-1]).convert('RGB');draw=ImageDraw.Draw(image)
  rows=[]
  for obj in objects:
-  row,col=grid.cell(*obj['position'][:2]);draw.ellipse((col-3,image.height-row-4,col+3,image.height-row+2),fill='red');draw.text((col+3,image.height-row),obj['id']+' '+NAMES.get(obj['class_id'],'unknown'),fill='blue')
-  rows.append(dict(id=obj['id'],class_name=NAMES.get(obj['class_id'],'unknown'),xyz=[round(v,2) for v in obj['position']]))
+  name=obj.get('class_name',NAMES.get(obj['class_id'],'unknown'))
+  row,col=grid.cell(*obj['position'][:2]);draw.ellipse((col-3,image.height-row-4,col+3,image.height-row+2),fill='red');draw.text((col+3,image.height-row),obj['id']+' '+name,fill='blue')
+  rows.append(dict(id=obj['id'],class_name=name,xyz=[round(v,2) for v in obj['position']]))
  image.thumbnail((640,640));buffer=io.BytesIO();image.save(buffer,format='PNG');b64=base64.b64encode(buffer.getvalue()).decode()
  prompt='根据全局地图上已观测到的物体推断区域用途。白色可通行，黑色障碍，灰色未知。坐标来自测量，不可编造物体。返回JSON {"regions":[{"name":"厨房/客厅/书房/卧室/走廊/卫生间","bounds_xy":[[xmin,ymin],[xmax,ymax]],"object_ids":["证据物体id"],"confidence":0到1,"reason":"依据"}]}。bounds_xy必须包围每一个object_ids证据物体的XY坐标，不可遗漏远处证据；不能把所有物体强行归为同一房间。边界应包围支持物体及附近至少0.8m宽的可通行区域；证据不足的区域不要命名。房间可能开放连通，不能仅根据单个可移动杯子或可乐就断言厨房。物体：'+json.dumps(rows,ensure_ascii=False)
  # Observer positions are supplementary evidence, never assumed room coordinates.
  nearby=[{k:o[k] for k in ('room','confidence','position','evidence') if k in o} for o in observations if o.get('confidence',0)>=.65 and any(np.linalg.norm(np.asarray(o['position'][:2])-np.asarray(obj['position'][:2]))<4 for obj in objects)][-12:]
+ corners=[grid.point(y,x) for y,x in ((0,0),(0,grid.a.shape[1]-1),(grid.a.shape[0]-1,0),(grid.a.shape[0]-1,grid.a.shape[1]-1))]
+ prompt+='。地图坐标说明：所有坐标单位为米，坐标系为map，可包含负数；bounds_xy必须使用物体xyz相同的map坐标，不能使用像素坐标或从0开始另建坐标。地图四角map坐标：'+json.dumps(corners)
  prompt+='。辅助相机观测（position仅为观察者位置，不能直接当作房间或物体位置）：'+json.dumps(nearby,ensure_ascii=False)
  schema=region_schema([o['id'] for o in objects])
  options=cfg.completion_options();options['max_tokens']=1200

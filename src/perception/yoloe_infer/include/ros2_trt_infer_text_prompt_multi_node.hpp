@@ -26,6 +26,8 @@
 #include <vision_msgs/msg/detection3_d_array.hpp>
 #include <vision_msgs/msg/detection3_d.hpp>
 #include <vision_msgs/msg/object_hypothesis_with_pose.hpp>
+#include <deque>
+#include <chrono>
 
 namespace yoloe_infer {
 
@@ -41,6 +43,18 @@ private:
         const sensor_msgs::msg::Image::ConstSharedPtr& image_msg,
         const sensor_msgs::msg::Image::ConstSharedPtr& depth_msg,
         const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info_msg);
+    void process_depth(
+        const sensor_msgs::msg::Image::ConstSharedPtr& image_msg,
+        const sensor_msgs::msg::Image::ConstSharedPtr& depth_msg,
+        const sensor_msgs::msg::CameraInfo::ConstSharedPtr& info_msg);
+    void drain_depth();
+    struct PendingDepth {
+        sensor_msgs::msg::Image::ConstSharedPtr image,depth;
+        sensor_msgs::msg::CameraInfo::ConstSharedPtr info;
+        std::chrono::steady_clock::time_point received;
+    };
+    std::deque<PendingDepth> pending_depth_;
+    rclcpp::TimerBase::SharedPtr depth_timer_;
 
     void lidar_sync_callback(
         const sensor_msgs::msg::Image::ConstSharedPtr& image_msg,
@@ -107,12 +121,15 @@ private:
     using LidarSyncPolicy = message_filters::sync_policies::ApproximateTime<
         sensor_msgs::msg::Image, sensor_msgs::msg::PointCloud2, sensor_msgs::msg::CameraInfo>;
     std::shared_ptr<message_filters::Synchronizer<LidarSyncPolicy>> lidar_sync_;
+    bool publish_lidar_semantics_ = false;
+    std::deque<std::pair<std::pair<int64_t,std::string>,std::vector<Detection>>> inference_cache_;
     std::string semantic_cloud_source_, lidar_frame_, projection_fixed_frame_;
     double lidar_sync_slop_, occlusion_tolerance_;
     int semantic_depth_stride_ = 1;
     
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_pointcloud_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_semantic_cloud_;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_lidar_semantic_cloud_;
     
     // Publisher for 3D detections with class ID and position
     rclcpp::Publisher<vision_msgs::msg::Detection3DArray>::SharedPtr pub_detections_3d_;

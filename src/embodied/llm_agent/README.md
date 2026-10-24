@@ -1,8 +1,10 @@
 # 具身 Agent
 
-前端使用原生HTML/CSS/JavaScript，没有使用React。Agent使用原生tool_calls循环：模型选择工具、执行工具、读取结果后继续，最多8轮；属于ReAct风格，没有引入专用ReAct框架。明确的“到厨房拿可乐”指令走固定导航→抓取流程，不调用LLM决策。
+前端使用原生HTML/CSS/JavaScript，没有使用React。Agent使用原生tool_calls循环：模型选择工具、执行工具、读取结果后继续，最多8轮；属于ReAct风格，没有引入专用ReAct框架。明确的“到厨房拿可乐”指令由代码编排导航→搜寻与视觉伺服→抓取阶段；VLM负责地图区域推断及估计搜寻点，底盘与机械臂动作由执行器完成。
 
 保留文件：`agent_server.py`（ROS工具、Agent循环和HTTP/WebSocket接口）、`fetch_policy.py`（明确取物意图与稳定抓取候选）、`model_config.py`（本地／云端配置）、`setup_local_model.py`（模型安装）、`start_local_model.sh`（服务启动）、`wait_local_model.py`（就绪检查）。
+
+房间范围未确认时允许使用VLM选出的可通行估计点。Nav2结束且底盘停稳后，开启局部相机碰撞建图、机械臂进入观察姿态，再通过新鲜RGB-D观测闭环接近同一目标。伺服收敛后才进入抓取，任务结束暂停局部建图。阈值、地图持久化及2026-10-24单次Gazebo抓取验证见[语义导航说明](../semantic_navigation/README.md)；下列固定点实验与该流程分开统计。
 
 ## 本地模型验证结果
 

@@ -23,7 +23,7 @@ Complete the [dependency, model and build setup](INSTALL.md), then run from the 
 ./start_mapping_and_explore.sh --sim gazebo
 
 # Navigate on an existing map; set Nav2 Goal in RViz
-./start_mapping_and_explore.sh --sim gazebo --mode navigation --bundle maps/gazebo/simple_room
+./start_mapping_and_explore.sh --sim gazebo --mode navigation --bundle maps/gazebo/semantic_simple_room
 
 # Standalone pick-and-place: Isaac Sim, manipulation_test world by default
 ./start_pick_and_place.sh
@@ -47,16 +47,19 @@ ACT requires an external ACT environment and checkpoints configured in [config.j
 
 Explicit fetch commands follow predefined stages:
 
-**Map readiness → semantic region lookup → Nav2 navigation → camera VLM room confirmation → YOLOE target tracking → approach → grasp, lift and return the arm Home while holding the object.**
+**Map readiness → room region or VLM-estimated search waypoint → Nav2 navigation → local camera mapping and target search → visual servoing into a candidate grasp workspace → grasp, lift and return the arm Home while holding the object.**
 
 Other commands use Qwen's native tool-calling loop. The VLM infers regions from mapped objects and camera observations; Nav2, GraspNet / MoveIt or ACT execute the movements.
 
-- **Persistent maps:** explore and save when no complete bundle exists; otherwise relocalize on the saved map. The embodied default is `maps/<backend>/semantic_<world>`, containing `bundle.json`, `map.pcd`, `map.yaml` and `map.pgm`, with a sibling `.semantic.json` file for structured semantics.
-- **Local map:** depth input by default, publishing `/local_map/octomap_full` for MoveIt collision checking.
-- **Global map:** FAST-LIO clouds in LIO mode, publishing `/global_map/octomap_full`; visualize `/global_map/occupied_cells_vis_array`, also available through `/occupied_cells_vis_array`.
+- **Persistent maps:** both launchers default to `maps/<backend>/semantic_<world>`; use the same `--sim`, `--world` and `--bundle`. Geometry is stored as `bundle.json`, `map.pcd`, `map.yaml` and `map.pgm`. Sibling `.semantic.json` and `.semantic.json.gz` files store object XYZ, room regions, VLM search hints, evidence and a geometry fingerprint. When room boundaries remain unconfirmed, the VLM can choose a map-checked search waypoint, followed by local visual search. See the [map handoff and storage format](src/embodied/semantic_navigation/README.md).
+- **Local map:** camera depth input, paused by default; reset and enabled when target search starts, publishing `/local_map/octomap_full` for MoveIt collision checking, then paused when the task ends.
+- **Global map:** continuously integrates FAST-LIO geometry in LIO mode; camera mask projection and raycasting label visible occupied LiDAR voxels. Visualize `/global_map/occupied_cells_vis_array`, also available through `/occupied_cells_vis_array`.
+- **Visual servoing:** locks a target instance using fresh RGB-D detections and adjusts base heading and distance at low speed. Detection loss stops translation and triggers reacquisition. After the target enters a candidate grasp workspace and the base stops, GraspNet / MoveIt or ACT takes over. Commands still pass through velocity smoothing, collision checking and the localization safety gate.
 - **Execution checks:** localization, observation freshness, parking error and visual confirmation gate execution. Maps must match the backend and world.
 
-Map saving and restart localization have been verified. The new semantic fetch pipeline without predefined room coordinates **has not passed end-to-end validation**. VLM region boundaries remain unreliable; historical fixed-goal results do not establish this pipeline's success rate.
+Pass the same `--bundle` to hand maps from exploration to embodied tasks. Exploration refuses to overwrite an existing bundle; select a new path when remapping. Embodied tasks relocalize directly when a complete geometry bundle exists. Generated maps, semantic summaries and local validation data are excluded from Git.
+
+On 2026-10-24, one Gazebo kitchen-cola trial completed VLM waypoint handoff, search, visual servoing, grasping, lifting, return Home and a two-second hold check in about 71 seconds. Servo distance converged from 1.05 m to 0.72 m. The preceding trial stopped after losing the detection; VLM boundaries can still be incorrect. This single success does not establish performance across starting poses or occlusions. See the [semantic navigation validation record](src/embodied/semantic_navigation/README.md).
 
 ## Modules and experiments
 

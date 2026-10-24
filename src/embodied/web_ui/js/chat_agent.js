@@ -130,6 +130,7 @@ const ChatAgent = {
         this._appendSystem(`💭 ${ev.content}`);
         break;
       case 'tool_call':
+        this._removeTyping();
         this._appendTool(ev.name, ev.args, 'running', ev.id);
         break;
       case 'tool_result':

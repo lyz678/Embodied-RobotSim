@@ -37,6 +37,9 @@ public:
     radius_ = declare_parameter<double>("crop_radius", 45.);
     max_rmse_ = declare_parameter<double>("max_rmse", .15);
     min_overlap_ = declare_parameter<double>("min_overlap", .65);
+    registration_rate_ = declare_parameter<double>("registration_rate",8.);
+    if(!std::isfinite(registration_rate_)||registration_rate_<=0||registration_rate_>40.)
+      throw std::runtime_error("registration_rate must be in (0,40]");
     correction_time_constant_ = declare_parameter<double>("correction_time_constant", .5);
     if (!std::isfinite(correction_time_constant_) || correction_time_constant_ < 0 || correction_time_constant_ > 5)
       throw std::runtime_error("correction_time_constant must be in [0,5] seconds");
@@ -49,7 +52,7 @@ public:
     valid_pub_ = create_publisher<std_msgs::msg::Bool>("/localization/valid", 10);
     status_pub_ = create_publisher<std_msgs::msg::String>("/localization/status", 10);
     display_pub_ = create_publisher<sensor_msgs::msg::PointCloud2>("/localization/cloud_map", 10);
-    odom_sub_ = create_subscription<nav_msgs::msg::Odometry>("/odom", 30,
+    odom_sub_ = create_subscription<nav_msgs::msg::Odometry>("/odom", 1,
       [this](nav_msgs::msg::Odometry::ConstSharedPtr msg) {
         const auto ns = rclcpp::Time(msg->header.stamp).nanoseconds();
         if (latest_ns_ && ns <= latest_ns_) { fault_ = true; report(false,"clock_rewind_restart_required"); return; }
@@ -77,7 +80,7 @@ public:
         last_correction_ns_=0;
         report(false,"initializing");
       });
-    cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>("/fastlio/cloud_odom", 10,
+    cloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>("/fastlio/cloud_odom", 1,
       std::bind(&Registration::scan, this, std::placeholders::_1));
     timer_ = create_wall_timer(std::chrono::milliseconds(200), [this]() {
       if (std::chrono::steady_clock::now()-last_scan_ > std::chrono::seconds(2)) report(false,"stale_scan");
@@ -102,6 +105,12 @@ private:
     if ((now()-rclcpp::Time(msg->header.stamp)).seconds() > .5) {
       report(false,"stale_cloud"); return;
     }
+    // ICP can take longer than a 20 Hz LiDAR interval. Keep current paired
+    // samples instead of accumulating half a second of obsolete registrations.
+    const auto wall=std::chrono::steady_clock::now();
+    if(last_registration_wall_.time_since_epoch().count()&&
+       std::chrono::duration<double>(wall-last_registration_wall_).count()<1./registration_rate_)return;
+    last_registration_wall_=wall;
     auto scan = std::make_shared<xbot::Cloud>();
     pcl::fromROSMsg(*msg, *scan);
     std::vector<int> indices;
@@ -149,6 +158,8 @@ private:
     report(true,detail.str());
   }
   xbot::Cloud::Ptr map_;
+  double registration_rate_=8.;
+  std::chrono::steady_clock::time_point last_registration_wall_{};
   Matrix correction_=Matrix::Identity(), seed_=Matrix::Identity(), latest_odom_=Matrix::Identity();
   Matrix published_correction_=Matrix::Identity();
   std::map<int64_t,Matrix> poses_;

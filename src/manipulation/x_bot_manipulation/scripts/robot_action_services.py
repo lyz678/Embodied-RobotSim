@@ -7,6 +7,9 @@ class RobotActionServices:
     def perform_scan(self) -> bool:
         """执行扫描"""
         self.get_logger().info(">>> Triggering Scan Sequence...")
+        if not self.local_map_session.start():
+            self.get_logger().error('Local camera collision map not ready; scan aborted')
+            return False
 
         if not self.scan_client.wait_for_service(timeout_sec=2.0):
             self.get_logger().error("Scan service not available")
@@ -28,6 +31,12 @@ class RobotActionServices:
         except Exception as e:
             self.get_logger().error(f"Scan call failed: {e}")
             return False
+
+    def run_with_local_mapping(self):
+        try:
+            self.run_logic_loop()
+        finally:
+            self.local_map_session.pause()
 
     def perform_go_home(self) -> bool:
         """返回初始位置 (使用 Robot Actions Service)"""

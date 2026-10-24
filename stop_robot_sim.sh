@@ -52,6 +52,7 @@ patterns=(
     "behavior_server"
     "smoother_server"
     "agent_server.py"
+    "semantic_world.py"
     "llama-server.*--alias embodied-qwen-local"
     "rosbridge_websocket"
     "web_video_server"

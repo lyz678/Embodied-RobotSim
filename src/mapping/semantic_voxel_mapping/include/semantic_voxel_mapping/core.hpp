@@ -55,6 +55,26 @@ class Map {
   if(occupied(c)&&!tie&&c.history.size()>=config.min_observations&&result.fraction>=config.majority)result.color=color;
   return result;
  }
+ void append_vote(Cell& c,const std::unordered_map<Color,unsigned>& votes)const{
+  unsigned best=0;Color color=UNKNOWN;bool tie=false;
+  for(auto entry:votes){if(entry.first==UNKNOWN)continue;
+   if(entry.second>best){best=entry.second;color=entry.first;tie=false;}else if(entry.second==best)tie=true;
+  }
+  if(!best||tie)return;
+  if(c.history.size()==config.window)c.history.erase(c.history.begin());c.history.push_back(color);
+ }
+ // Semantics never creates voxels or changes LiDAR occupancy probabilities.
+ std::vector<Key> paint(const Frame& frame){
+  std::unordered_map<Key,Cell> changes;
+  for(const auto& entry:frame.votes){
+   auto it=cells.find(entry.first);if(it==cells.end()||!occupied(it->second))continue;
+   Cell cell=it->second;append_vote(cell,entry.second);
+   if(cell.history!=it->second.history)changes.emplace(entry.first,std::move(cell));
+  }
+  std::vector<Key> changed;changed.reserve(changes.size());
+  for(auto& entry:changes){changed.push_back(entry.first);std::swap(cells.at(entry.first),entry.second);}
+  return changed;
+ }
  std::vector<Key> commit(const Frame& frame){
   size_t additions=0;for(auto k:frame.hits)if(!cells.count(k))++additions;
   for(auto k:frame.free)if(!frame.hits.count(k)&&!cells.count(k))++additions;
@@ -79,12 +99,7 @@ class Map {
    if(current!=cells.end()&&current->second.odds>=upper&&!frame.votes.count(k))continue;
    auto& c=cell_copy(k);c.odds=std::min(upper,c.odds+logit(config.hit));
    auto it=frame.votes.find(k);if(it==frame.votes.end())continue;
-   unsigned best=0;Color color=UNKNOWN;bool tie=false;
-   for(auto entry:it->second){if(entry.first==UNKNOWN)continue;
-    if(entry.second>best){best=entry.second;color=entry.first;tie=false;}else if(entry.second==best)tie=true;
-   }
-   if(!best||tie)continue;
-   if(c.history.size()==config.window)c.history.erase(c.history.begin());c.history.push_back(color);
+   append_vote(c,it->second);
   }
   std::vector<Key> changed;changed.reserve(changes.size());
   for(const auto& entry:changes)changed.push_back(entry.first);

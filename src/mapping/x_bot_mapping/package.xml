@@ -5,6 +5,7 @@
 <buildtool_depend>ament_cmake</buildtool_depend>
 <buildtool_depend>ament_cmake_python</buildtool_depend>
 <depend>nav_msgs</depend>
+<depend>lifecycle_msgs</depend>
 <depend>python3-numpy</depend>
 <depend>rclpy</depend>
 <depend>semantic_voxel_mapping</depend>

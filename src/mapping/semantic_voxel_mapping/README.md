@@ -153,9 +153,15 @@ WebSocket 确认能收到地图和三维数据；当前环境没有可用的浏�
 | 用途 | 几何输入 | OctoMap | RViz MarkerArray |
 |---|---|---|---|
 | 抓取局部图 | YOLOE 仿真深度语义点云 `/yoloe_multi_text_prompt/pointcloud_semantic` | `/local_map/octomap_full` | `/local_map/occupied_cells_vis_array` |
-| 全局图 | FAST-LIO 单帧去畸变点云 `/fastlio/cloud_odom` | `/global_map/octomap_full` | `/global_map/occupied_cells_vis_array` |
+| 全局语义图 | FAST-LIO 单帧去畸变点云 `/fastlio/cloud_odom`，叠加相机掩码投影的 LiDAR 语义射线 | `/global_map/octomap_full` | `/global_map/occupied_cells_vis_array` |
 
-`/occupied_cells_vis_array` 是全局图的兼容显示话题。局部图默认2m观测范围、2cm体素，保留类别过滤、自体过滤及MoveIt `/planning_scene` 更新；全局图默认10m观测范围、10cm体素，只更新全局几何，不向MoveIt写入碰撞场景。局部图为近距观测融合，当前不实现随底座移动裁剪历史体素的滚动窗口。
+`/occupied_cells_vis_array` 是全局图的兼容显示话题。全局图默认10m观测范围、10cm体素，不向 MoveIt 写入碰撞场景。原始 LiDAR 始终独立执行占据/空闲 raycast；相机掩码投影到时间配对的 LiDAR 点后，通过 `/yoloe_multi_text_prompt/pointcloud_semantic_lidar` 提交独立语义射线，只给第一个可见且已占据的测量端点投票。语义更新不会新建障碍或改变 LiDAR 占据概率，遮挡、未知区域和白色背景不接受语义标签。
+
+局部图默认2m观测范围、2cm体素，供 MoveIt `/planning_scene` 避障，保留类别过滤和自体过滤。它默认暂停，不参与探索或沿导航路径累积几何。到达目标区域并开始搜物后，控制器先暂停输入、清空上一处局部图，再开启相机点云和局部融合，并等待新鲜相机碰撞图；有效自由空间观测可以没有占据体素，清图产生的零时间戳不算传感器观测。搜物/抓取结束后暂停融合，保留本次碰撞快照，下一次搜物重新清空。当前不实现移动滚动窗口。
+
+局部生命周期接口：`/local_map/semantic_voxel_map/set_enabled`（`std_srvs/SetBool`），`/local_map/semantic_voxel_map/clear`（`std_srvs/Trigger`）；相机点云开关为 `/yoloe_multi_text_prompt/enable_pointcloud`。后者不影响独立的 LiDAR 语义点云。`LocalMapSession` 负责调用顺序和新图核验，导航及暂停时不会误关全局语义推理。
+
+全局 `confidence_threshold` 默认0.25，与 YOLOE 检测阈值一致。旧配置隐式使用0.50，会导致0.25–0.49的物体有检测框但语义体素仍为白色。每个体素仍要求至少3次有效观测，最近最多30次投票中同类占比至少60%；掩码、可见性及已占据体素校验继续执行。该阈值支持通过 `ros2 param set /global_map/semantic_voxel_map confidence_threshold 0.25` 在线调整，已有几何和投票历史保留，后续保存文件记录新阈值。诊断话题新增当前阈值、`semantic_candidates`、`semantic_low_confidence`、`semantic_not_visible` 和 `semantic_accepted`，后三项为最近一帧语义射线的过滤/接收计数。
 
 全局输入已经位于odom，`global_fastlio.yaml` 显式指定 `sensor_frame: mid360_link`，射线清除和量程裁剪均相对于采样时刻雷达原点计算。FAST-LIO图不依赖YOLOE是否暂停。两套实例的voxels、projected_map、diagnostics及clear/save/load服务均按local_map/global_map隔离；保存文件为local_octomap.svm和global_octomap.svm。二维导航 `/map` 保持现有定位链路。
 
@@ -166,4 +172,4 @@ ros2 launch x_bot_mapping octomap_server.launch.py map_scope:=local semantic_con
 ros2 launch x_bot_mapping octomap_server.launch.py map_scope:=global semantic_config:=/home/lyz/Embodied-RobotSim/src/mapping/semantic_voxel_mapping/config/global_fastlio.yaml use_rviz:=false
 ```
 
-VIO模式不提供FAST-LIO点云，因此不会启动全局FAST-LIO图。探索模式保留原YOLOE语义融合图至local_map输出，同时独立发布FAST-LIO全局OctoMap。`map_scope:=legacy`保留旧单实例话题接口。
+VIO模式不提供FAST-LIO点云，因此不会启动全局FAST-LIO图。LIO 探索模式仅启动全局 LiDAR 语义图，不启动局部相机碰撞图。结构化语义摘要订阅 `/global_map/voxels`，不依赖抓取局部图。`map_scope:=legacy`保留旧单实例话题接口。

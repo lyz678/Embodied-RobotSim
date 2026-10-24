@@ -79,6 +79,11 @@ while (($#)); do
     shift
 done
 
+if [[ "$BUNDLE" == "$ROOT_DIR/maps/semantic_simple_room" ]]; then
+    BUNDLE="$ROOT_DIR/maps/$SIM_BACKEND/semantic_$WORLD"
+fi
+[[ "$BUNDLE" == /* ]] || BUNDLE="$ROOT_DIR/$BUNDLE"
+
 case "$SIM_BACKEND" in
     isaac|gazebo) ;;
     *) echo "仿真器必须为 isaac 或 gazebo" >&2; exit 2 ;;
@@ -121,8 +126,8 @@ case "$SEMANTIC_CLOUD_SOURCE" in
     fastlio|depth) ;;
     *) echo "语义点云来源必须为 fastlio 或 depth" >&2; exit 2 ;;
 esac
-if [[ "$MODE" == llm && "$SEMANTIC_CLOUD_SOURCE" != depth ]]; then
-    echo "具身抓取需要 --semantic-cloud-source depth；FAST-LIO 语义分支不发布 GraspNet 的三维检测和彩色点云。" >&2
+if [[ ( "$MODE" == llm || "$MODE" == pick || "$MODE" == navigation_pick ) && "$SEMANTIC_CLOUD_SOURCE" != depth ]]; then
+    echo "抓取局部图需要 --semantic-cloud-source depth；FAST-LIO 语义分支不发布 GraspNet 的三维检测和彩色点云。" >&2
     exit 2
 fi
 USE_LSM=false
@@ -149,6 +154,10 @@ for topic in "$DEPTH_IMAGE_TOPIC" "$OCTOMAP_CLOUD_TOPIC"; do
 done
 
 [[ -f "$YOLOE_CONFIG" && "$YOLOE_CONFIG" != *"'"* && "$YOLOE_CONFIG" != *$'\n'* ]] || { echo "YOLOE 配置无效：$YOLOE_CONFIG" >&2; exit 2; }
+if [[ "$MODE" == explore && -e "$BUNDLE" ]]; then
+    echo "错误：建图目标目录已存在：$BUNDLE；保存器不会覆盖旧地图。请用 --bundle 指定新目录，随后让 start_embodied.sh 使用同一 --bundle；尚未停止当前仿真。" >&2
+    exit 1
+fi
 
 cd "$ROOT_DIR"
 # Keep large camera/cloud writes off lifecycle/service callback threads.
@@ -173,8 +182,20 @@ case "${LLM_BACKEND:-cloud}" in
     local|cloud) ;;
     *) echo "LLM 后端必须为 local 或 cloud" >&2; exit 2 ;;
 esac
-if [[ "$MODE" == llm && "${LLM_BACKEND:-cloud}" == local ]]; then
+if [[ ( "$MODE" == llm || "$MODE" == explore ) && "${LLM_BACKEND:-cloud}" == local ]]; then
     bash "$ROOT_DIR/src/embodied/llm_agent/start_local_model.sh" --check
+fi
+if [[ "$MODE" == explore || "$MODE" == llm ]]; then
+    semantic_python="${AGENT_PYTHON:-$ROOT_DIR/.venv/agent/bin/python}"
+    [[ -x "$semantic_python" ]] || semantic_python=python3
+    "$semantic_python" -c 'import openai, PIL, numpy, yaml' || {
+        echo "错误：缺少语义建图 Python 依赖；请执行 scripts/setup/setup_embodied_dependencies.sh --local；尚未停止当前仿真。" >&2
+        exit 1
+    }
+    if [[ "${LLM_BACKEND:-cloud}" == cloud && -z "${AGENT_API_KEY:-${DASHSCOPE_API_KEY:-}}" ]]; then
+        echo "错误：云端语义建图需要 AGENT_API_KEY 或 DASHSCOPE_API_KEY，或使用 --llm local；尚未停止当前仿真。" >&2
+        exit 1
+    fi
 fi
 # Check optional Web dependencies before stopping an existing simulation.
 if [[ "$MODE" == llm ]]; then
@@ -240,7 +261,7 @@ else
 fi
 [[ "$SIM_BACKEND" != isaac ]] || REQUIRED_PACKAGES+=(x_bot_isaac)
 [[ "$MODE" != llm ]] || REQUIRED_PACKAGES+=(explore_lite)
-case "$MODE" in pick|navigation_pick|llm) REQUIRED_PACKAGES+=(x_bot_manipulation x_bot_moveit_config graspnet_ros yoloe_infer) ;; explore) REQUIRED_PACKAGES+=(yoloe_infer) ;; esac
+case "$MODE" in pick|navigation_pick|llm) REQUIRED_PACKAGES+=(x_bot_manipulation x_bot_moveit_config graspnet_ros yoloe_infer) ;; explore|navigation) REQUIRED_PACKAGES+=(yoloe_infer) ;; esac
 [[ "$MODE" != llm ]] || REQUIRED_PACKAGES+=(rosbridge_server web_video_server)
 [[ "$SIM_BACKEND" != gazebo ]] || REQUIRED_PACKAGES+=(x_bot_gazebo ros_gz_sim ros_gz_bridge gz_ros2_control)
 for package in "${REQUIRED_PACKAGES[@]}"; do
@@ -272,24 +293,24 @@ fi
 # 与 main 的启动流程一致：探索/抓取建图，导航类要求已有地图。
 LOCALIZATION_MODE=mapping
 AUTO_SEMANTIC_EXPLORE=false
-if [[ "$MODE" == llm ]]; then
-    [[ "$BUNDLE" != "$ROOT_DIR/maps/semantic_simple_room" ]] || BUNDLE="$ROOT_DIR/maps/$SIM_BACKEND/semantic_$WORLD"
+if [[ "$MODE" == explore || "$MODE" == llm ]]; then
+    export EMBODIED_MAP_BUNDLE="$BUNDLE"
     export EMBODIED_SEMANTIC_WORLD="$BUNDLE.semantic.json"
-    AUTO_SEMANTIC_EXPLORE=true
-    if [[ -f "$EMBODIED_SEMANTIC_WORLD" ]]; then
-        if python3 - "$EMBODIED_SEMANTIC_WORLD" <<'PYCODE'
-import json,sys
-try:
-    data=json.load(open(sys.argv[1]));valid=data.get('exploration_status')=='complete'
-except (ValueError,OSError):valid=False
-sys.exit(not valid)
-PYCODE
-        then AUTO_SEMANTIC_EXPLORE=false; fi
-    fi
+    export EMBODIED_YOLOE_CONFIG="$YOLOE_CONFIG"
     export EMBODIED_GEOMETRY_READY=0
+    export EMBODIED_SAVE_VOXELS=""
+    if [[ "$MODE" == explore ]]; then
+        [[ "$ODOMETRY_SOURCE" != lio ]] || export EMBODIED_SAVE_VOXELS=global
+    fi
+fi
+if [[ "$MODE" == llm ]]; then
+    AUTO_SEMANTIC_EXPLORE=true
     if [[ -f "$BUNDLE/bundle.json" && -f "$BUNDLE/map.pcd" && -f "$BUNDLE/map.yaml" && -f "$BUNDLE/map.pgm" ]]; then
         AUTO_SEMANTIC_EXPLORE=false
         export EMBODIED_GEOMETRY_READY=1
+    fi
+    if [[ "$AUTO_SEMANTIC_EXPLORE" == true ]]; then
+        [[ "$ODOMETRY_SOURCE" != lio ]] || export EMBODIED_SAVE_VOXELS=global
     fi
 fi
 if [[ "$MODE" == navigation || "$MODE" == navigation_pick || ( "$MODE" == llm && "$AUTO_SEMANTIC_EXPLORE" == false ) ]]; then
@@ -390,7 +411,9 @@ launch_navigation() {
 }
 
 launch_yoloe() {
-    launch_window "YOLOE Vision" "$ROS_ENV && ros2 run yoloe_infer ros2_trt_infer_text_prompt_multi_node --ros-args -p use_sim_time:=true -p config_path:='$YOLOE_CONFIG' -p depth_topic:='$DEPTH_IMAGE_TOPIC' -p semantic_cloud_source:='$SEMANTIC_CLOUD_SOURCE'"
+    local lidar_semantics=false
+    [[ "$ODOMETRY_SOURCE" != lio ]] || lidar_semantics=true
+    launch_window "YOLOE Vision" "$ROS_ENV && ros2 run yoloe_infer ros2_trt_infer_text_prompt_multi_node --ros-args -p use_sim_time:=true -p config_path:='$YOLOE_CONFIG' -p depth_topic:='$DEPTH_IMAGE_TOPIC' -p semantic_cloud_source:='$SEMANTIC_CLOUD_SOURCE' -p publish_lidar_semantics:=$lidar_semantics -p enable_pointcloud:=false"
 }
 
 if [[ "$USE_LSM" == true ]]; then
@@ -404,20 +427,29 @@ launch_global_octomap() {
         echo "VIO 模式没有 FAST-LIO 点云，全局 FAST-LIO OctoMap 不启动。"
         return
     fi
-    echo "全局 OctoMap：/fastlio/cloud_odom -> /global_map/octomap_full；可视化 /global_map/occupied_cells_vis_array（兼容 /occupied_cells_vis_array）"
-    launch_window "Global OctoMap" "$ROS_ENV && ros2 launch x_bot_mapping octomap_server.launch.py map_scope:=global semantic_config:='$ROOT_DIR/src/mapping/semantic_voxel_mapping/config/global_fastlio.yaml' map_file:='$BUNDLE/global_octomap.svm' use_sim_time:=true use_rviz:=false"
+    echo "全局 OctoMap：FAST-LIO 几何 + 相机掩码投影的 LiDAR 语义射线；可视化 /global_map/occupied_cells_vis_array"
+    launch_window "Global OctoMap" "$ROS_ENV && ros2 launch x_bot_mapping octomap_server.launch.py map_scope:=global semantic_config:='$ROOT_DIR/src/mapping/semantic_voxel_mapping/config/global_fastlio.yaml' palette_file:='$YOLOE_CONFIG' map_file:='$BUNDLE/global_octomap.svm' use_sim_time:=true use_rviz:=false"
 }
 
-SEMANTIC_SAVE_ARGS=""
-[[ "$SIM_BACKEND" != gazebo ]] || SEMANTIC_SAVE_ARGS="map_file:='$BUNDLE/local_octomap.svm'"
+SEMANTIC_SAVE_ARGS="map_file:='$BUNDLE/local_octomap.svm'"
+
+launch_semantic_world() {
+    MODEL_WAIT=""
+    if [[ "${LLM_BACKEND:-cloud}" == local ]]; then
+        launch_window "Local Qwen Model" "bash '$ROOT_DIR/src/embodied/llm_agent/start_local_model.sh'"
+        MODEL_WAIT="python3 '$ROOT_DIR/src/embodied/llm_agent/wait_local_model.py' && "
+    fi
+    echo "结构化语义地图：$EMBODIED_SEMANTIC_WORLD（同目录另存 .gz；只复用匹配几何地图的语义信息）"
+    launch_window "Semantic World" "$ROS_ENV && $MODEL_WAIT'$AGENT_PYTHON' '$ROOT_DIR/src/embodied/semantic_navigation/semantic_world.py'"
+}
 
 launch_manipulation_stack() {
     launch_window "MoveIt" "$ROS_ENV && ros2 launch x_bot_moveit_config move_group.launch.py sim_backend:=$SIM_BACKEND use_sim_time:=true"
     launch_yoloe
     sleep 2
-    launch_window "Local OctoMap" "$ROS_ENV && ros2 launch x_bot_mapping octomap_server.launch.py map_scope:=local backend:='$OCTOMAP_BACKEND' $SEMANTIC_SAVE_ARGS semantic_config:='$SEMANTIC_MAP_CONFIG' palette_file:='$YOLOE_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC' resolution:='$OCTOMAP_RESOLUTION' use_sim_time:=true use_rviz:=false"
+    launch_window "Local OctoMap" "$ROS_ENV && ros2 launch x_bot_mapping octomap_server.launch.py map_scope:=local backend:='$OCTOMAP_BACKEND' $SEMANTIC_SAVE_ARGS semantic_config:='$SEMANTIC_MAP_CONFIG' palette_file:='$YOLOE_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC' resolution:='$OCTOMAP_RESOLUTION' enabled_on_start:=false use_sim_time:=true use_rviz:=false"
     launch_global_octomap
-    echo "局部 OctoMap：深度点云 $OCTOMAP_CLOUD_TOPIC -> /local_map/octomap_full；可视化 /local_map/occupied_cells_vis_array"
+    echo "局部 OctoMap：默认暂停；到达目标区域开始搜物时清空并开启深度建图，供 MoveIt 避障"
     sleep 2
     if [[ "$MODE" != llm || "${EMBODIED_PICK_BACKEND:-graspnet}" != act ]]; then
         launch_window "GraspNet" "$ROS_ENV && ros2 run graspnet_ros graspnet_node --ros-args -p use_sim_time:=true --params-file '$(ros2 pkg prefix --share graspnet_ros)/config/config.yaml' -p graspnet_node:engine_path:='$(ros2 pkg prefix --share graspnet_ros)/models/graspnet.trt' -p graspnet_node:plugin_path:='$INSTALL_DIR/fps_plugin/lib/libfps_plugin.so' -p graspnet_node:yoloe_config_path:='$YOLOE_CONFIG' -p target_frame:=base_footprint"
@@ -429,6 +461,7 @@ case "$MODE" in
     explore)
         launch_navigation
         launch_yoloe
+        launch_semantic_world
         if [[ "$AUTO_EXPLORE" == true ]]; then
             echo "🧭 自动探索已启用：等待定位和 Nav2 就绪后发送探索目标。"
             EXPLORE_SAVE_ARGS="map_save_service:=/localization/save_map"
@@ -436,11 +469,11 @@ case "$MODE" in
         else
             echo "手动建图导航模式：在 RViz 中设置 Nav2 Goal。"
         fi
-        launch_window "Semantic Map" "$ROS_ENV && ros2 launch x_bot_mapping octomap_server.launch.py map_scope:=local backend:='$OCTOMAP_BACKEND' $SEMANTIC_SAVE_ARGS semantic_config:='$SEMANTIC_MAP_CONFIG' palette_file:='$YOLOE_CONFIG' cloud_topic:='$OCTOMAP_CLOUD_TOPIC' use_rviz:=false"
         launch_global_octomap
         ;;
     navigation)
         launch_navigation
+        [[ "$ODOMETRY_SOURCE" != lio ]] || launch_yoloe
         launch_global_octomap
         ;;
     pick)
@@ -456,11 +489,7 @@ case "$MODE" in
         launch_window "Navigation Pick Demo" "$ROS_ENV && $READY --nav2 && ros2 run x_bot_manipulation navigation_and_pick_demo.py --ros-args -p use_sim_time:=true"
         ;;
     llm)
-        MODEL_WAIT=""
-        if [[ "${LLM_BACKEND:-cloud}" == local ]]; then
-            launch_window "Local Qwen Model" "bash '$ROOT_DIR/src/embodied/llm_agent/start_local_model.sh'"
-            MODEL_WAIT="python3 '$ROOT_DIR/src/embodied/llm_agent/wait_local_model.py' && "
-        fi
+        launch_semantic_world
         launch_navigation
         sleep 5
         launch_manipulation_stack
@@ -468,9 +497,8 @@ case "$MODE" in
         # Keep chat/status available while localization or Nav2 is starting.
         # Robot actions check readiness inside the Agent; the base safety gate
         # continues to enforce localization health on every velocity command.
-        launch_window "Semantic World" "$ROS_ENV && $MODEL_WAIT'$AGENT_PYTHON' '$ROOT_DIR/src/embodied/semantic_navigation/semantic_world.py'"
         if [[ "$AUTO_SEMANTIC_EXPLORE" == true ]]; then
-            echo "无已完成语义地图：先自动探索、VLM区域命名及目标建图，完成后执行取物。"
+            echo "缺少几何地图：先自动探索并保存地图包；取物前还需确认目标房间语义区域。"
             launch_window "Auto Explore" "$ROS_ENV && $READY --nav2 && ros2 launch explore_lite explore.launch.py map_save_service:=/localization/save_map return_to_init:=false"
         fi
         launch_window "Qwen3 LLM Agent" "$ROS_ENV && unset ALL_PROXY all_proxy HTTP_PROXY HTTPS_PROXY http_proxy https_proxy && $MODEL_WAIT'$AGENT_PYTHON' '$ROOT_DIR/src/embodied/llm_agent/agent_server.py' --ros-args -p use_sim_time:=true"

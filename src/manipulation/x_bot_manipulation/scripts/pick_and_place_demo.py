@@ -36,6 +36,7 @@ from ament_index_python.packages import get_package_share_directory
 from collections import deque
 from gripper_action import control_gripper as execute_gripper
 from robot_action_services import RobotActionServices
+from local_map_session import LocalMapSession
 
 class PickAndPlaceDemo(RobotActionServices, Node):
     """使用实时 YOLOE 检测的抓取放置节点"""
@@ -144,7 +145,8 @@ class PickAndPlaceDemo(RobotActionServices, Node):
         self.create_subscription(String, self.get_parameter('physical_state_topic').value, self.truth_callback, 10)
 
         # 启动逻辑线程
-        self.logic_thread = threading.Thread(target=self.run_logic_loop, daemon=True)
+        self.local_map_session = LocalMapSession(self)
+        self.logic_thread = threading.Thread(target=self.run_with_local_mapping, daemon=True)
         self.logic_thread.start()
         
         self.get_logger().info("=== Pick and Place Demo - Real-time YOLOE Edition ===")

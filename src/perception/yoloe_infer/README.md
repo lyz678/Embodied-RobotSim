@@ -122,6 +122,13 @@ RGB/depth 时间差不超过 50 ms；深度或 TF 不可用时打印警告并降
 
 ## 厨房任务的图像卡顿与分类诊断（2026-10-12）
 
+`publish_lidar_semantics:=true` 可在深度抓取模式同时输出独立的
+`~/pointcloud_semantic_lidar`，供全局 LiDAR 图进行语义 raycast。
+RGB/LiDAR 与 RGB/depth 分别按时间同步，同一幅 RGB 的检测结果缓存复用；
+关闭 `~/enable_pointcloud` 只暂停相机/局部点云，不会关闭全局 LiDAR 语义输出。
+
+深度模式将配对的RGB/depth/CameraInfo放入最多两帧的短队列，等待采集时刻的精确odom TF可用后再生成三维检测。10ms定时器非阻塞重试；墙钟等待超过0.3秒或图像仿真年龄超过0.5秒则丢弃。这样可以容纳定位TF常见的10–35ms延迟，不必在每帧做二维关联降级。历史图像测量仍使用原采集时间；视觉伺服另用年龄≤0.35秒的最新相机TF预测当前视野。
+
 - 当前 web_video_server 不解码 query 中的 `%2F`，会把编码后的话题当作非法 ROS
   话题拒绝。前端保留 `/`，请求 `qos_profile=sensor_data`；编码请求实测只有
   22 字节结束边界，修正请求正常返回 JPEG。MJPEG 的 `<img>` 不提供每帧事件，

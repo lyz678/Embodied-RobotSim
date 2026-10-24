@@ -1,4 +1,4 @@
-# Geometry-only global OctoMap, independent of YOLOE/depth inference.
+# LiDAR owns occupancy; camera masks paint visible occupied LiDAR surfaces.
 semantic_voxel_map:
   ros__parameters:
     use_sim_time: true
@@ -6,6 +6,8 @@ semantic_voxel_map:
     map_frame: odom
     sensor_frame: mid360_link
     geometry_only: true
+    semantic_cloud_topic: /yoloe_multi_text_prompt/pointcloud_semantic_lidar
+    confidence_threshold: 0.25 # Match YOLOE detections; temporal voting still requires 3 observations.
     map_file: maps/global_fastlio_map.svm
     resolution: 0.10
     min_range: 0.2

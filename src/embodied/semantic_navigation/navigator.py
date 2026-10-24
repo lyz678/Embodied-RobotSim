@@ -6,8 +6,13 @@ from rclpy.qos import QoSProfile,DurabilityPolicy,qos_profile_sensor_data
 from nav_msgs.msg import OccupancyGrid
 from std_msgs.msg import String,Bool
 from vision_msgs.msg import Detection3DArray
+from sensor_msgs.msg import CameraInfo
+from geometry_msgs.msg import Twist
+from action_msgs.msg import GoalStatusArray
+from visual_servo import Observation
 from world import Grid,candidates
 from semantic_world import classify
+from waypoint_reasoning import search_region
 
 def install(node):
  node.semantic_world={};node.semantic_grid=None;node.target_tracks=deque(maxlen=200);node.semantic_received=0.
@@ -23,58 +28,121 @@ def install(node):
    result=d.results[0];h=d.header if d.header.frame_id else msg.header;t=h.stamp.sec+h.stamp.nanosec/1e9;now=node.get_clock().now().nanoseconds/1e9
    if not -.1<=now-t<=.75 or result.hypothesis.score<.25:continue
    try:
-    p=d.bbox.center.position;tf=node.tf_buffer.lookup_transform('map',h.frame_id,rclpy.time.Time.from_msg(h.stamp));q=tf.transform.rotation;v=np.array([q.x,q.y,q.z]);a=np.array([p.x,p.y,p.z]);a=a+2*np.cross(v,np.cross(v,a)+q.w*a);tr=tf.transform.translation;a+=np.array([tr.x,tr.y,tr.z]);node.target_tracks.append((int(result.hypothesis.class_id),time.monotonic(),t,a))
+    p=d.bbox.center.position;a=np.array([p.x,p.y,p.z])
+    if h.frame_id!='odom':
+     tf=node.tf_buffer.lookup_transform('odom',h.frame_id,rclpy.time.Time.from_msg(h.stamp));q=tf.transform.rotation;v=np.array([q.x,q.y,q.z]);a=a+2*np.cross(v,np.cross(v,a)+q.w*a);tr=tf.transform.translation;a+=np.array([tr.x,tr.y,tr.z])
+    node.target_tracks.append(Observation(int(result.hypothesis.class_id),time.monotonic(),t,a,d.id))
    except Exception:continue
  node.pub_explore_control=node.create_publisher(Bool,'/explore/resume',10)
- node._semantic_subs=[node.create_subscription(String,'/semantic_world/state',world,qos),node.create_subscription(OccupancyGrid,'/map',grid,qos),node.create_subscription(Detection3DArray,'/yoloe_multi_text_prompt/detections_3d',detections,10)]
+ node.pub_servo_vel=node.create_publisher(Twist,'/cmd_vel_nav',10)
+ node.servo_camera_info=None
+ node.servo_nav_active=False
+ def camera_info(msg):node.servo_camera_info=msg
+ def nav_status(msg):node.servo_nav_active=any(s.status in (1,2,3) for s in msg.status_list)
+ node._semantic_subs=[node.create_subscription(String,'/semantic_world/state',world,qos),node.create_subscription(OccupancyGrid,'/map',grid,qos),node.create_subscription(Detection3DArray,'/yoloe_multi_text_prompt/detections_3d',detections,10),node.create_subscription(Detection3DArray,'/yoloe_multi_text_prompt/tracks_3d',detections,10),node.create_subscription(CameraInfo,'/x_bot/camera_left/camera_info',camera_info,qos_profile_sensor_data),node.create_subscription(GoalStatusArray,'/navigate_to_pose/_action/status',nav_status,qos)]
 
-def base(node):
- t=node.tf_buffer.lookup_transform('map','base_footprint',rclpy.time.Time());age=node.get_clock().now().nanoseconds/1e9-(t.header.stamp.sec+t.header.stamp.nanosec/1e9)
- if not -.1<=age<=.5:raise ValueError('Base map transform is stale')
+def base(node,frame='map'):
+ t=node.tf_buffer.lookup_transform('odom','base_footprint',rclpy.time.Time());age=node.get_clock().now().nanoseconds/1e9-(t.header.stamp.sec+t.header.stamp.nanosec/1e9)
+ if not -.1<=age<=.35:raise ValueError(f'Base odom transform is stale (age={age:.3f}s)')
  p=t.transform.translation;q=t.transform.rotation
- return p.x,p.y,math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))
+ yaw=math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))
+ if frame=='odom':return p.x,p.y,yaw
+ correction=node.tf_buffer.lookup_transform('map','odom',rclpy.time.Time());age=node.get_clock().now().nanoseconds/1e9-(correction.header.stamp.sec+correction.header.stamp.nanosec/1e9)
+ if not -.1<=age<=1.:raise ValueError(f'Map correction is stale (age={age:.3f}s)')
+ tr=correction.transform.translation;q=correction.transform.rotation;v=np.array([q.x,q.y,q.z]);a=np.array([p.x,p.y,p.z]);a=a+2*np.cross(v,np.cross(v,a)+q.w*a)
+ return a[0]+tr.x,a[1]+tr.y,yaw+math.atan2(2*(q.w*q.z+q.x*q.y),1-2*(q.y*q.y+q.z*q.z))
 
 def room_contains(grid,room,x,y):
  stride=max(1,round(room['cell_resolution']/grid.res));y,x=grid.cell(x,y);y//=stride;x//=stride
  return any(row==y and start<=x<=end for row,start,end in room['cell_runs'])
 
+def object_in_room(grid,room,xy):
+ # Objects can occupy obstacle cells, but must be near this room's free space.
+ lo,hi=np.asarray(room['bounds_xy']);p=np.asarray(xy)
+ if not np.all((p>=lo)&(p<=hi)):return False
+ stride=max(1,round(room['cell_resolution']/grid.res));row,col=grid.cell(*p);row/=stride;col/=stride
+ return any((y-row)**2+(min(max(col,start),end)-col)**2<=(.75/room['cell_resolution'])**2 for y,start,end in room['cell_runs'])
+
 class SemanticNavigator:
  def __init__(self,robot):self.robot=robot;self.room=None
- async def navigate(self,name):
-  n=self.robot._node;n._nav_cancel_requested=False
-  if n.semantic_world.get('exploration_status')=='paused':n.pub_explore_control.publish(Bool(data=True))
-  deadline=time.monotonic()+1800
-  while n.semantic_world.get('exploration_status')!='complete':
+ def notify(self,phase,message):
+  n=self.robot._node;n.semantic_phase=phase;n.get_logger().info(message)
+  callback=getattr(n,'navigation_progress',None)
+  if callback:callback(message)
+ async def wait_map(self):
+  n=self.robot._node;started=time.monotonic();last_notice=-100.;resumed=False
+  while True:
+   now=time.monotonic();elapsed=now-started
    if n._nav_cancel_requested:return False,'任务已取消'
-   if n.semantic_world.get('exploration_status') in ('failed','save_failed'):return False,'探索或地图保存失败，需要检查地图链路'
-   if time.monotonic()>deadline:return False,'自动探索尚未完成，不能使用未核验的地图导航'
-   await asyncio.sleep(2)
+   fresh=bool(n.semantic_world) and now-n.semantic_received<=15
+   if not fresh:
+    phase='waiting_semantic_world';message='等待结构化语义地图节点发布状态'
+    if elapsed>=10:return False,'10秒内未收到有效语义地图状态，未发送导航目标；请检查 Semantic World 节点和 /map'
+   elif n.semantic_grid is None:
+    phase='waiting_map';message='等待二维 /map，地图服务可能尚未激活'
+    if elapsed>=10:return False,'未收到二维 /map，未发送导航目标；请检查 map_server 是否 active'
+   else:
+    status=n.semantic_world.get('exploration_status')
+    if status=='complete':return True,''
+    if status in ('failed','save_failed'):return False,'探索或地图保存失败，需要检查地图链路'
+    if status not in ('running','saving','paused'):
+     return False,'几何地图未就绪且没有正在执行的探索任务，未发送导航目标'
+    if status=='paused' and not resumed:n.pub_explore_control.publish(Bool(data=True));resumed=True
+    phase='waiting_exploration';message=f'等待自动探索及地图保存完成，当前状态：{status}'
+    if elapsed>=1800:return False,'自动探索尚未完成，不能使用未核验的地图导航'
+   if now-last_notice>=5:self.notify(phase,message);last_notice=now
+   await asyncio.sleep(.2)
+ async def navigate(self,name):
+  n=self.robot._node;n._nav_cancel_requested=False;self.room=None;n.current_scene='未知';n.semantic_phase='room_lookup'
   try:
+   ready,message=await self.wait_map()
+   if not ready:return False,message
    if n.semantic_grid is None or time.monotonic()-n.semantic_received>15:return False,'结构化语义地图缺失或更新中断'
    rooms=[r for r in n.semantic_world['rooms'] if r['name']==name]
+   guessed=False
    if not rooms:
-    await self.survey(name)
-    rooms=[r for r in n.semantic_world['rooms'] if r['name']==name]
-   if not rooms:return False,f'地图视觉巡查后仍未确认{name}范围，不使用固定坐标兜底'
-   self.room=min(rooms,key=lambda r:math.dist(base(n)[:2],r['center']));target=getattr(self.robot,'target_class',None)
-   objects=[o for o in n.semantic_world['objects'] if o['class_id']==target and o['room_id']==self.room['id']]
+    if n.semantic_world.get('navigation_hints_status')=='pending':
+     self.notify('waiting_room_hint',f'正在让VLM估计{name}的搜寻位置')
+     deadline=time.monotonic()+45
+     while time.monotonic()<deadline and n.semantic_world.get('navigation_hints_status')=='pending':
+      if n._nav_cancel_requested:return False,'任务已取消'
+      await asyncio.sleep(.5)
+    hints=[h for h in n.semantic_world.get('navigation_hints',[]) if h['name']==name]
+    if not hints:return False,f'语义地图尚未确认{name}范围，VLM也未提供可用搜寻点；未发送导航目标'
+    hint=max(hints,key=lambda h:h['confidence']);room=search_region(n.semantic_grid,hint)
+    if room is None:return False,f'VLM估计的{name}位置没有足够净空，未发送导航目标'
+    rooms=[room];guessed=True
+    self.notify('room_hint_navigation',f"VLM估计{name}搜寻点 ({room['center'][0]:.2f}, {room['center'][1]:.2f})，到达后搜索目标；依据：{room['reason']}")
+   room=min(rooms,key=lambda r:math.dist(base(n)[:2],r['center']));target=getattr(self.robot,'target_class',None)
+   objects=[o for o in n.semantic_world['objects'] if o['class_id']==target and (o.get('room_id')==room['id'] or (guessed and object_in_room(n.semantic_grid,room,o['position'][:2])))]
    goals=[]
-   if objects:
-    goals=candidates(n.semantic_grid,objects[0]['position'][:2],base(n)[:2],lambda x,y:room_contains(n.semantic_grid,self.room,x,y))
-   if not goals:
-    stride=max(1,round(self.room['cell_resolution']/n.semantic_grid.res))
-    for row,start,end in self.room['cell_runs']:
+   if guessed:
+    x,y=room['center'];aim=min(objects,key=lambda o:math.dist(o['position'][:2],[x,y]))['position'][:2] if objects else None
+    yaw=math.atan2(aim[1]-y,aim[0]-x) if aim else base(n)[2]
+    goals.append(dict(x=x,y=y,yaw_deg=math.degrees(yaw),distance=0.))
+   elif objects:
+    goals=candidates(n.semantic_grid,objects[0]['position'][:2],base(n)[:2],lambda x,y:room_contains(n.semantic_grid,room,x,y))
+   if not goals or guessed:
+    stride=max(1,round(room['cell_resolution']/n.semantic_grid.res))
+    for row,start,end in room['cell_runs']:
      for col in range(start,end+1,3):
       x,y=n.semantic_grid.point(row*stride,col*stride)
-      if n.semantic_grid.clear(x,y):goals.append(dict(x=x,y=y,yaw_deg=math.degrees(math.atan2(self.room['center'][1]-y,self.room['center'][0]-x)),distance=math.dist([x,y],self.room['center'])))
+      if n.semantic_grid.clear(x,y,radius=.48 if guessed else .30):goals.append(dict(x=x,y=y,yaw_deg=math.degrees(math.atan2(room['center'][1]-y,room['center'][0]-x)),distance=math.dist([x,y],room['center'])))
     goals.sort(key=lambda p:p['distance'])
    if not goals:return False,'房间内没有满足机器人净空要求的导航候选'
+   n.semantic_phase='room_navigation'
    # Failed plans may try another free candidate; no direct velocity override.
    for goal in goals[:3]:
     if n._nav_cancel_requested:return False,'任务已取消'
-    ok,msg=await self.robot._go_pose(goal)
+    ok,msg=await self.robot._go_pose(goal,accept_radius=.30) if guessed else await self.robot._go_pose(goal)
     if ok:break
+    if n._nav_cancel_requested:return False,msg
    if not ok:return False,msg
+   if not room_contains(n.semantic_grid,room,*base(n)[:2]):return False,'实际停车位置不在目标房间区域内'
+   if guessed:
+    self.room=room;n.semantic_phase='room_search_ready'
+    return True,f'已到达VLM估计的{name}搜寻点，接下来开启局部相机建图并搜索目标；{msg}'
+   n.semantic_phase='room_confirmation'
    client=getattr(self.robot,'vision_client',None)
    if client is None:return False,'VLM未配置，不能确认到达房间'
    b64=await self.robot._loop.run_in_executor(self.robot._exec,n.get_camera_base64)
@@ -83,8 +151,11 @@ class SemanticNavigator:
    result=await self.robot._loop.run_in_executor(self.robot._exec,lambda:classify(client,ModelConfig.from_env(),b64))
    n.get_logger().info('ARRIVAL_VLM '+json.dumps(result,ensure_ascii=False))
    if result['room']!=name or result['confidence']<.65:return False,'VLM未确认到达'+name+'：'+json.dumps(result,ensure_ascii=False)
-   n.current_scene=name;return True,'地图导航及VLM房间确认通过：'+json.dumps(result,ensure_ascii=False)
+   if n._nav_cancel_requested:return False,'任务已取消'
+   self.room=room;n.current_scene=name;n.semantic_phase='room_confirmed';return True,'地图导航及VLM房间确认通过：'+json.dumps(result,ensure_ascii=False)
   except Exception as e:return False,'语义导航失败：'+str(e)
+  finally:
+   if self.room is None:n.semantic_phase='room_navigation_failed'
  async def survey(self,requested):
   n=self.robot._node;grid=n.semantic_grid;n.semantic_phase='semantic_survey';attempted=[]
   for step in range(8):
@@ -109,38 +180,6 @@ class SemanticNavigator:
     await asyncio.sleep(3)
     if any(r['name']==requested for r in n.semantic_world.get('rooms',[])):return
  async def approach(self,class_id,progress=None):
-  n=self.robot._node
   if self.room is None:return False,'先按语义地图导航并确认目标房间'
-  def notify(msg):
-   n.get_logger().info(msg)
-   if progress:progress(msg)
-  for correction in range(8):
-   if n._nav_cancel_requested:return False,'任务已取消'
-   end=time.monotonic()+8;target=None
-   while time.monotonic()<end:
-    rows=[r for r in n.target_tracks if r[0]==class_id and time.monotonic()-r[1]<.75]
-    unique={r[2]:r[3] for r in rows}
-    if len(unique)>=3:
-     xyz=np.stack(list(unique.values()))
-     if np.max(np.linalg.norm(xyz-np.median(xyz,axis=0),axis=1))<.05:target=np.median(xyz,axis=0);break
-    await asyncio.sleep(.1)
-   if target is None:
-    memory=[o for o in n.semantic_world['objects'] if o['class_id']==class_id and o['room_id']==self.room['id']]
-    if not memory:
-     if correction>=4:return False,'当前房间中未找到新鲜目标，观察搜索结束'
-     x,y,yaw=base(n);notify('地图目标未知，在已到达区域用Nav2转向观察')
-     ok,msg=await self.robot._go_pose(dict(x=x,y=y,yaw_deg=math.degrees(yaw+math.pi/2)))
-     if not ok:return False,msg
-     continue
-    target=np.asarray(memory[0]['position']);fresh=False
-   else:fresh=True
-   x,y,yaw=base(n);distance=math.dist([x,y],target[:2]);angle=math.atan2(target[1]-y,target[0]-x);error=abs(math.atan2(math.sin(angle-yaw),math.cos(angle-yaw)))
-   notify(f'目标跟踪 class={class_id} fresh={fresh} distance={distance:.3f}m heading_error={math.degrees(error):.1f}deg correction={correction}')
-   if fresh and .62<=distance<=.76 and error<=.10:
-    stopped=await self.robot._loop.run_in_executor(self.robot._exec,n.base_stopped)
-    if stopped:return True,'稳定实时目标已进入候选抓取范围，最终可达性由GraspNet／MoveIt核验'
-   goals=candidates(n.semantic_grid,target[:2],[x,y],lambda x,y:room_contains(n.semantic_grid,self.room,x,y))
-   if not goals:return False,'目标附近没有无障碍的可抓取距离候选位姿'
-   ok,msg=await self.robot._go_pose(goals[min(correction,len(goals)-1)])
-   if not ok:return False,'目标接近失败：'+msg
-  return False,'目标跟踪接近未收敛；禁止仅凭地图旧位置抓取'
+  from servo_navigation import run
+  return await run(self.robot,self.room,class_id,progress)

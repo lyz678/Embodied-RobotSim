@@ -60,6 +60,15 @@ class BackendTests(unittest.TestCase):
                 if name == 'start_embodied.sh':
                     self.assertEqual(baseline[baseline.index('--semantic-cloud-source')+1], 'depth')
                     self.assertEqual(baseline[baseline.index('--depth-source')+1], 'sim')
+                if name in ('start_mapping_and_explore.sh','start_embodied.sh'):
+                    self.assertEqual(baseline[baseline.index('--bundle')+1],str(root/'maps/semantic_simple_room'))
+
+    def test_existing_mapping_bundle_is_rejected_before_cleanup(self):
+        with tempfile.TemporaryDirectory() as bundle:
+            result=subprocess.run(['bash',str(ROOT/'scripts/runtime/robot_services.sh'),'explore','--bundle',bundle],capture_output=True,text=True)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn('不会覆盖旧地图',result.stderr)
+            self.assertIn('尚未停止当前仿真',result.stderr)
 
     def test_embodied_pipeline_and_model_are_forwarded_and_invalid_rejected(self):
         with tempfile.TemporaryDirectory() as temp:

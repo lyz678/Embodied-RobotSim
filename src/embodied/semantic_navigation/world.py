@@ -103,7 +103,9 @@ def regions_from_proposals(grid,proposals,objects):
    if not np.all((evidence>=lo)&(evidence<=hi)):continue
    mask=np.all((points>=lo)&(points<=hi),axis=1);selected=np.flatnonzero(mask)
    if len(selected)*(grid.res*stride)**2<.75:continue
-   label=len(rooms)+1;labels[yy[selected],xx[selected]]=label;runs=[]
+   # Conflicting room boxes cannot both own the same navigable cells.
+   # Reject the conflicting proposals rather than silently using list order.
+   label=len(rooms)+1;runs=[]
    for row in sorted(set(yy[selected])):
     xs=sorted(xx[selected][yy[selected]==row]);start=last=int(xs[0])
     for x in xs[1:]:
@@ -112,4 +114,13 @@ def regions_from_proposals(grid,proposals,objects):
     runs.append([int(row),start,last])
    rooms.append(dict(id=label,name=name,bounds_xy=[lo.tolist(),hi.tolist()],center=points[selected].mean(0).tolist(),cell_runs=runs,cell_resolution=grid.res*stride,area_m2=len(selected)*(grid.res*stride)**2,confidence=confidence,object_ids=ids,reason=proposal.get('reason',''),boundary_source='vlm_objects_and_occupancy'))
   except (ValueError,KeyError,TypeError):continue
+ conflicts=set()
+ for i,room in enumerate(rooms):
+  for other in rooms[i+1:]:
+   rows={}
+   for row,start,end in room['cell_runs']:rows.setdefault(row,[]).append((start,end))
+   if any(max(start,a)<=min(end,b) for row,start,end in other['cell_runs'] for a,b in rows.get(row,[])):conflicts.update((room['id'],other['id']))
+ rooms=[r for r in rooms if r['id'] not in conflicts]
+ for room in rooms:
+  for row,start,end in room['cell_runs']:labels[row,start:end+1]=room['id']
  return rooms,labels,stride

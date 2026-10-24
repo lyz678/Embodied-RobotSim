@@ -22,6 +22,9 @@ def semantic_node(context):
     topic = LaunchConfiguration('cloud_topic').perform(context)
     palette = LaunchConfiguration('palette_file').perform(context)
     map_file = LaunchConfiguration('map_file').perform(context)
+    enabled = LaunchConfiguration('enabled_on_start').perform(context)
+    if enabled:
+        overrides['enabled_on_start'] = enabled == 'true'
     if map_file:
         overrides['map_file'] = map_file
     if palette:
@@ -50,6 +53,7 @@ def generate_launch_description():
         DeclareLaunchArgument('semantic_config', default_value=''),
         DeclareLaunchArgument('palette_file', default_value=''),
         DeclareLaunchArgument('map_file', default_value='', description='Optional semantic map save path'),
+        DeclareLaunchArgument('enabled_on_start', default_value='', choices=['','true','false']),
         DeclareLaunchArgument('resolution', default_value='', description='Optional voxel size override in meters'),
         DeclareLaunchArgument('cloud_topic', default_value='', description='Optional semantic cloud topic override'),
         DeclareLaunchArgument('use_sim_time', default_value='true'),

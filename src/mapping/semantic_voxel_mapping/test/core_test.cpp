@@ -1,10 +1,24 @@
 #include "semantic_voxel_mapping/core.hpp"
+#include "semantic_voxel_mapping/semantic_raycast.hpp"
 #include <iostream>
 #include <sstream>
 using namespace svm;
 static void require(bool test,const char* message){if(!test)throw std::runtime_error(message);}
 int main(){try{
  const Color red=0xff0000,blue=0x0000ff;auto k=key(-2,3,4);
+ {
+  Config config;config.resolution=1.;Map lidar(config);Frame geometry;
+  auto surface=key(3,0,0),absent=key(5,0,0);geometry.hits.insert(surface);lidar.commit(geometry);
+  double odds=lidar.cells.at(surface).odds;Frame semantic;semantic.votes[surface][red]=100;semantic.votes[absent][blue]=100;
+  for(int i=0;i<3;++i)lidar.paint(semantic);
+  require(lidar.cells.size()==1&&lidar.cells.at(surface).odds==odds,"Semantic painting cannot create geometry or modify LiDAR odds");
+  require(lidar.label(lidar.cells.at(surface)).color==red,"Independent semantic rays require repeated votes");
+  Ray ray{{.5,.5,.5},{3.5,.5,.5},true};
+  require(visible_endpoint(lidar,ray,.1,-10,10),"First occupied endpoint may receive semantics");
+  Frame wall;wall.hits.insert(key(1,0,0));lidar.commit(wall);
+  require(!visible_endpoint(lidar,ray,.1,-10,10),"Foreground blocks labels from passing through walls");
+  require(!visible_endpoint(lidar,{{.5,1.5,.5},{3.5,1.5,.5},true},.1,-10,10),"Free or unknown rays cannot invent semantic surfaces");
+ }
  require(coordinate(k,0)==-2&&coordinate(k,1)==3&&coordinate(k,2)==4,"Signed voxel keys");
  auto rays=std::vector<Ray>{{{.5,.5,.5},{3.5,.5,.5},true}};auto free=raycast_reference(rays,1,-10,10);
  require(free==std::vector<Key>({key(0,0,0),key(1,0,0),key(2,0,0)}),"Endpoint excluded from free ray");

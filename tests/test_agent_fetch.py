@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock,Mock,patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src/embodied/llm_agent'))
-from agent_server import Qwen3Agent,LLMAgentNode,LOCATIONS,OBJECTS
+from agent_server import Qwen3Agent,LLMAgentNode,RobotController,LOCATIONS,OBJECTS
 from fetch_policy import explicit_fetch,stable_grasp
 
 def detection(x=1.,stamp=1,q=(0,0,0,1)):
@@ -15,6 +15,32 @@ def detection(x=1.,stamp=1,q=(0,0,0,1)):
     return NS(header=NS(frame_id='odom',stamp=NS(sec=stamp,nanosec=0)),results=[NS(pose=NS(pose=pose),hypothesis=NS(class_id='9',score=.8))])
 
 class FetchPolicyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_coarse_search_point_already_reached_hands_over_without_starting_nav2(self):
+        import asyncio
+        node=NS(local_map_session=object(),base_stopped=Mock(return_value=True),send_nav_goal=Mock())
+        robot=RobotController(node,asyncio.get_running_loop())
+        try:
+            with patch('agent_server.map_base',return_value=(1.2,1.,0.)):
+                ok,message=await robot._go_pose(dict(x=1.,y=1.,yaw_deg=90.),accept_radius=.3)
+            self.assertTrue(ok,message);node.send_nav_goal.assert_not_called()
+        finally:robot._exec.shutdown(wait=True)
+
+    async def test_search_requires_room_and_fresh_local_collision_map(self):
+        import asyncio
+        session=NS(start=Mock(return_value=False),pause=Mock(return_value=True))
+        robot=RobotController(NS(local_map_session=session,call_trigger=Mock(return_value=True),go_home_client=object()),asyncio.get_running_loop())
+        robot.semantic.approach=AsyncMock(return_value=(False,'未找到目标'))
+        try:
+            self.assertFalse((await robot.pick('可乐'))[0]);session.start.assert_not_called()
+            robot.semantic.room={'name':'厨房'}
+            self.assertFalse((await robot.pick('可乐'))[0]);robot.semantic.approach.assert_not_awaited()
+            session.pause.assert_called_once()
+            session.start.return_value=True
+            self.assertFalse((await robot.pick('可乐'))[0])
+            robot.semantic.approach.assert_awaited_once()
+            self.assertEqual(session.pause.call_count,2)
+        finally:robot._exec.shutdown(wait=True)
+
     def test_settling_uses_pose_window_and_requires_fresh_data(self):
         for moving,fresh,expected in ((False,True,True),(True,True,False),(False,False,False)):
             tick=[0.]

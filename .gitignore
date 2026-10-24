@@ -73,6 +73,9 @@ venv/
 /results/
 /outputs/
 /checkpoints/
+# Semantic summaries can also be siblings of custom bundles outside /maps/.
+*.semantic.json
+*.semantic.json.gz
 *.svm
 *.svm.tmp
 *.bt
